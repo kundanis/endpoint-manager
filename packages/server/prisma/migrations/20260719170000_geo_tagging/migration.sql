@@ -1,0 +1,27 @@
+BEGIN TRY
+
+BEGIN TRAN;
+
+-- AlterTable
+ALTER TABLE [dbo].[Agent] ADD
+[location] NVARCHAR(200),
+[ipGeoCity] NVARCHAR(100),
+[ipGeoRegion] NVARCHAR(100),
+[ipGeoCountry] NVARCHAR(100),
+[ipGeoLat] FLOAT(53),
+[ipGeoLon] FLOAT(53),
+[ipGeoLookupIp] NVARCHAR(64),
+[ipGeoUpdatedAt] DATETIME2;
+
+COMMIT TRAN;
+
+END TRY
+BEGIN CATCH
+
+IF @@TRANCOUNT > 0
+BEGIN
+    ROLLBACK TRAN;
+END;
+THROW
+
+END CATCH

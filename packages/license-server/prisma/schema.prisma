@@ -1,0 +1,105 @@
+datasource db {
+  provider          = "sqlserver"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// Custom, package-local output — deliberately NOT the default (hoisted) location.
+// @license/server and @em/server both depend on "@prisma/client": "^5.22.0", so npm
+// workspaces would hoist both to the same root node_modules/@prisma/client otherwise,
+// meaning whichever package's `prisma generate` ran last would silently overwrite the
+// other's generated client (wrong schema, wrong types). This keeps the two systems'
+// generated clients — like their databases — genuinely independent.
+//
+// Output sits at the PACKAGE ROOT (sibling of src/ and dist/), not inside src/ — both
+// src/db.ts (dev, run directly via tsx) and the compiled dist/db.js (production, `node
+// dist/index.js`) import "../generated/prisma", which resolves to this same one location
+// from either src/ or dist/ since both sit one level deep from the package root. Putting
+// it under src/ instead (an earlier version of this schema did) breaks the production
+// build silently: tsc only compiles .ts files, so it never copies the generated client's
+// plain .js/.d.ts output into dist/ at all.
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+model LicenseAdmin {
+  id           String    @id @default(uuid())
+  email        String    @unique @db.NVarChar(255)
+  passwordHash String    @db.NVarChar(100)
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+}
+
+model Entity {
+  id           String       @id @default(uuid())
+  name         String       @db.NVarChar(200)
+  contactEmail String?      @db.NVarChar(255)
+  createdAt    DateTime     @default(now())
+  licenseKeys  LicenseKey[]
+}
+
+// Never a plaintext key column — same discipline this vendor's OWN Endpoint Manager
+// product already applies to EnrollmentToken.tokenHash/Agent.apiKeyHash: a bearer
+// secret is hashed at rest, shown to the issuing admin exactly once at creation time.
+// keySuffix (last 4 chars, plaintext) exists purely so a support admin can identify
+// "the key ending in ...4F2K" without ever seeing the full value again.
+model LicenseKey {
+  id                String          @id @default(uuid())
+  keyStringHash     String          @unique @db.NVarChar(128)
+  keySuffix         String          @db.NVarChar(10)
+  entityId          String
+  entity            Entity          @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  maxAgents         Int
+  // Denormalized JSON array of LicenseModule keys (see @license/shared's LICENSE_MODULES)
+  // — same idiom this vendor's own Endpoint Manager product already uses for small,
+  // fixed-vocabulary sets (e.g. CommandJob.targetGroupIds). Defaults to every module for
+  // rows that predate this column (a real migration concern: an already-activated
+  // customer's license must not suddenly lose access to everything the moment this
+  // ships) — new keys always have this explicitly set by the issuing admin.
+  modules           String          @default("[\"ENDPOINT_MANAGER\",\"NETWORK_MANAGER\",\"SOFTWARE_MANAGER\",\"SECURITY_MANAGER\",\"DATA_MANAGER\",\"USER_MANAGER\"]") @db.NVarChar(1000)
+  validityType      String          @db.NVarChar(20) // ONE_YEAR | TWO_YEAR | THREE_YEAR | PERPETUAL
+  // Null until activation (computed then as activatedAt + N years); stays null forever
+  // for PERPETUAL. Not set at issuance time since validity counts from first use, not
+  // from when the vendor happened to generate the key.
+  validUntil        DateTime?
+  status            String          @default("ISSUED") @db.NVarChar(20) // ISSUED | ACTIVATED | REVOKED
+  boundDeploymentId String?         @db.NVarChar(100)
+  // Same hash-at-rest discipline as keyStringHash — this server verifies possession via
+  // tokensMatch(), it never needs to read the value back out.
+  //
+  // Deliberately NOT @unique here, even though it must be unique whenever set - SQL
+  // Server's default unique index only allows a single NULL across the whole table, and
+  // every not-yet-activated key has bindingTokenHash = NULL. A plain @unique here means
+  // the second-ever unactivated key (and every one after it) fails to insert at all with
+  // "Unique constraint failed" - a real bug this shipped with and hit in production.
+  // Uniqueness is instead enforced by a hand-written FILTERED unique index (WHERE
+  // bindingTokenHash IS NOT NULL) in the migration - see migration.sql's comment.
+  bindingTokenHash  String?         @db.NVarChar(128)
+  issuedByAdminId   String
+  issuedAt          DateTime        @default(now())
+  activatedAt       DateTime?
+  revokedAt         DateTime?
+  unlockRequests    UnlockRequest[]
+
+  @@index([entityId])
+}
+
+// No proof-of-possession required to file one (see unlockRequest.schema.ts in
+// @license/shared for why) — the missing cryptographic check is deliberately
+// compensated by requiring a human vendor admin to review and approve before anything
+// actually unlocks.
+model UnlockRequest {
+  id                     String     @id @default(uuid())
+  licenseKeyId           String
+  licenseKey             LicenseKey @relation(fields: [licenseKeyId], references: [id], onDelete: Cascade)
+  requestingDeploymentId String     @db.NVarChar(100)
+  reason                 String     @db.NVarChar(2000)
+  status                 String     @default("PENDING") @db.NVarChar(20) // PENDING | APPROVED | REJECTED
+  requestedAt            DateTime   @default(now())
+  resolvedAt             DateTime?
+  resolvedByAdminId      String?
+  resolutionNote         String?    @db.NVarChar(1000)
+
+  @@index([licenseKeyId])
+}

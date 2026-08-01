@@ -1,0 +1,19 @@
+BEGIN TRY
+
+BEGIN TRAN;
+
+-- AlterTable
+ALTER TABLE [dbo].[SecurityBenchmark] ADD [targetType] NVARCHAR(30) NOT NULL CONSTRAINT [SecurityBenchmark_targetType_df] DEFAULT 'WINDOWS_10';
+
+COMMIT TRAN;
+
+END TRY
+BEGIN CATCH
+
+IF @@TRANCOUNT > 0
+BEGIN
+    ROLLBACK TRAN;
+END;
+THROW
+
+END CATCH

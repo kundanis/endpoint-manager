@@ -1,0 +1,22 @@
+{
+  "name": "@em/agent",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/package-installer.ps1"
+  },
+  "dependencies": {
+    "@em/shared": "*",
+    "axios": "^1.7.9",
+    "systeminformation": "^5.25.11"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

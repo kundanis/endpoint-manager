@@ -1,0 +1,76 @@
+; DLPFilter.inf — Minifilter DLP driver installation
+; Class: FSFilter Content Screener (altitude 265000)
+; Install: pnputil /add-driver DLPFilter.inf /install  (elevated)
+; Adapted from E:\Claude-Projects\DLPAgent\driver\DLPFilter.inf — mechanics unchanged.
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = "ContentScreener"
+ClassGuid   = {3e3f0674-c83c-11d2-9065-00c04fb111b7}
+Provider    = %ManufacturerName%
+DriverVer   = 07/18/2026,1.0.0.0
+CatalogFile = DLPFilter.cat
+
+[DestinationDirs]
+DefaultDestDir       = 12
+MiniFilter.CopyFiles = 12
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64
+
+[Standard.NTamd64]
+%DLPFilter.DeviceDesc% = DLPFilter.Install,root\DLPFilter
+
+; ---- Install section -------------------------------------------------------
+[DLPFilter.Install]
+CopyFiles = MiniFilter.CopyFiles
+
+[DLPFilter.Install.Services]
+AddService = %ServiceName%,,MiniFilter.ServiceInstall
+
+[DLPFilter.Install.Wdm.CoInstallers]
+
+; ---- Service install -------------------------------------------------------
+[MiniFilter.ServiceInstall]
+DisplayName    = %ServiceDescription%
+Description    = %ServiceDescription%
+ServiceBinary  = %12%\%DriverName%.sys
+ServiceType    = 2    ; SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 3    ; SERVICE_DEMAND_START — never auto/boot
+ErrorControl   = 1    ; SERVICE_ERROR_NORMAL — log, continue on failure
+LoadOrderGroup = "FSFilter Content Screener"
+AddReg         = MiniFilter.Registry
+
+[MiniFilter.Registry]
+HKR,,"DebugFlags",     0x00010001, 0x0
+HKR,,"SupportedFeatures", 0x00010001, 0x3
+HKR,"Instances","DefaultInstance", 0x00000000, %DefaultInstance%
+HKR,"Instances\%DefaultInstance%","Altitude", 0x00000000, %MiniFilterAltitude%
+HKR,"Instances\%DefaultInstance%","Flags",    0x00010001, 0x0
+
+; ---- Uninstall -------------------------------------------------------------
+[DLPFilter.Install.Remove]
+DelFiles = MiniFilter.CopyFiles
+
+[DLPFilter.Install.Remove.Services]
+DelService = %ServiceName%, 0x200
+
+[MiniFilter.CopyFiles]
+%DriverName%.sys
+
+[SourceDisksNames]
+1 = %DiskId1%,,,""
+
+[SourceDisksFiles]
+%DriverName%.sys = 1,,
+
+; ---- Strings ---------------------------------------------------------------
+[Strings]
+ManufacturerName       = "EndpointPro"
+ServiceDescription     = "Endpoint Pro DLP Content Screener"
+ServiceName            = "DLPFilter"
+DriverName             = "DLPFilter"
+DiskId1                = "Endpoint Pro DLP Installation Disk"
+DefaultInstance        = "DLPFilter Instance"
+MiniFilterAltitude     = "265000"
+DLPFilter.DeviceDesc   = "Endpoint Pro DLP Minifilter"

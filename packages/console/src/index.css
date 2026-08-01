@@ -1,0 +1,708 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --panel-bg: #ffffff;
+  --border: #dde1e6;
+  --text: #1a1d23;
+  --text-muted: #5b6270;
+  --accent: #8b0000;
+  --accent-hover: #6e0000;
+  --accent-soft: #fbe9e7;
+  --header-grad: linear-gradient(120deg, #6e0000 0%, #b3121b 100%);
+  --danger: #e63946;
+  --danger-soft: #fdeaea;
+  --warn: #b3720a;
+  --warn-soft: #fff4e0;
+  --online: #1b8a5a;
+  --online-soft: #e4f7ee;
+  --offline: #6b7280;
+  --offline-soft: #eef0f3;
+  --stripe: #f7f9fd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem;
+  color: var(--text);
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+  color: var(--accent);
+}
+
+h3 {
+  font-size: 0.95rem;
+  margin: 1.25rem 0 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+}
+
+.app-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem;
+  background: var(--header-grad);
+  box-shadow: 2px 0 10px rgba(139, 0, 0, 0.25);
+}
+
+/* Preserves the vertical position the module list originally started at (below
+   the brand block) now that the brand itself lives only in the top header. */
+.sidebar-spacer {
+  height: 28px;
+}
+
+.module-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.module-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.module-nav .module-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.module-nav .module-link:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.module-nav .module-link.active {
+  background: #fff;
+  color: var(--accent);
+}
+
+.module-nav .module-link .chevron {
+  color: inherit;
+  font-size: 0.7rem;
+}
+
+.module-nav .module-link.locked {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.module-nav .module-link.locked:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.module-nav .module-link.active.locked {
+  color: rgba(139, 0, 0, 0.55);
+}
+
+.module-nav .module-link svg {
+  flex: none;
+  margin: 0 0.35rem;
+}
+
+.submodule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.3rem 0 0.5rem 0.75rem;
+}
+
+.submodule-link {
+  padding: 0.4rem 0.65rem;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.65);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.submodule-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.submodule-link.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-weight: 600;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-subheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.user-menu button {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.user-menu button:hover:not(:disabled) {
+  background: #f5d5d0;
+}
+
+.app-content {
+  flex: 1;
+  padding: 1.5rem;
+  width: 100%;
+}
+
+.app-footer {
+  padding: 0.75rem 1.5rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+.page-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-form {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2rem;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  background: #fff;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button-like {
+  display: inline-block;
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.button-like:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 3px rgba(20, 30, 60, 0.05);
+}
+
+.tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+}
+
+.tab-link {
+  padding: 0.6rem 1rem;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.tab-link:hover {
+  color: var(--accent);
+}
+
+.tab-link.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.panel > summary {
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.panel[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+}
+
+.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.data-table th {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: var(--stripe);
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Small per-endpoint summary sub-row (Zero Trust/vulnerability counts + quarantine
+   action) directly under each endpoint's main row in the Endpoints table. */
+.agent-summary-row td {
+  padding: 0.35rem 0.9rem 0.7rem;
+  background: var(--stripe);
+}
+
+.agent-summary-row-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.quarantine-toggle-btn {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--danger);
+}
+
+.quarantine-toggle-btn:hover:not(:disabled) {
+  background: #c22e3a;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background: var(--accent-soft);
+}
+
+.selected-row {
+  background: var(--accent-soft);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-badge svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: none;
+}
+
+.status-badge.online {
+  background: var(--online-soft);
+  color: var(--online);
+}
+.status-badge.online svg {
+  fill: var(--online);
+}
+
+.status-badge.offline {
+  background: var(--offline-soft);
+  color: var(--offline);
+}
+.status-badge.offline svg {
+  fill: var(--offline);
+}
+
+.status-badge.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.status-badge.danger svg {
+  fill: var(--danger);
+}
+
+.status-badge.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.status-badge.warn svg {
+  fill: var(--warn);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-grid strong {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.mono-cell {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
+.output-block {
+  margin: 0.25rem 0;
+  padding: 0.5rem;
+  background: #f4f5f7;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* KPI tile row — dashboard-style summary counts, click to filter a table below.
+   Uses the original theme's semantic colors (--online/--danger), not a new palette. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.875rem;
+  margin-bottom: 1.25rem;
+}
+
+.tile {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.125rem;
+  cursor: pointer;
+  transition: box-shadow 0.12s;
+}
+
+.tile:hover {
+  box-shadow: 0 0 0 1px var(--text-muted) inset;
+}
+
+.tile.active {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.tile .tile-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.tile .tile-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile.accent-good .tile-value {
+  color: var(--online);
+}
+
+.tile.accent-critical .tile-value {
+  color: var(--danger);
+}
+
+/* Dashboard KPI tiles are informational, not click-to-filter like AgentsPage's. */
+.tile.static {
+  cursor: default;
+}
+
+.tile.static:hover {
+  box-shadow: none;
+}
+
+/* Dashboard donut charts */
+.dashboard-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-chart-card h3 {
+  margin-top: 0;
+  font-size: 0.95rem;
+}
+
+.dashboard-donut-wrap {
+  position: relative;
+}
+
+.dashboard-donut-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.dashboard-donut-center-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-donut-center-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.dashboard-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.dashboard-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+}
+
+.dashboard-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Category-accent cards — colored top border per topic, used for grouping
+   condition/rule authoring forms. Deliberately distinct hues per category
+   (not tied to the app's red accent) so categories stay visually distinguishable. */
+.card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 1.125rem 1.25rem;
+}
+
+.card h2 {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.card .hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin: -0.3rem 0 0.6rem;
+}
+
+.card.accent-blue {
+  border-top-color: #2a78d6;
+}
+.card.accent-blue h2 {
+  color: #2a78d6;
+}
+.card.accent-orange {
+  border-top-color: #d6532a;
+}
+.card.accent-orange h2 {
+  color: #d6532a;
+}
+.card.accent-teal {
+  border-top-color: #0d9488;
+}
+.card.accent-teal h2 {
+  color: #0d9488;
+}
+.card.accent-green {
+  border-top-color: #3fa34d;
+}
+.card.accent-green h2 {
+  color: #3fa34d;
+}
+.card.accent-gold {
+  border-top-color: #b6862a;
+}
+.card.accent-gold h2 {
+  color: #b6862a;
+}
+.card.accent-purple {
+  border-top-color: #7c5fd6;
+}
+.card.accent-purple h2 {
+  color: #7c5fd6;
+}
+
+.chevron {
+  display: inline-block;
+  transition: transform 0.15s;
+  color: var(--text-muted);
+}
+
+.chevron.open {
+  transform: rotate(90deg);
+}

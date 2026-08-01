@@ -1,0 +1,25 @@
+{
+  "name": "endpoint-manager",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^10.1.0",
+    "typescript": "^5.7.2"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,console \"npm:dev:server\" \"npm:dev:console\"",
+    "dev:all": "concurrently -n server,console,agent -c blue,green,yellow \"npm:dev:server\" \"npm:dev:console\" \"npm:dev:agent\"",
+    "dev:server": "cross-env NODE_OPTIONS=--use-system-ca npm run dev -w @em/server",
+    "dev:console": "npm run dev -w @em/console",
+    "dev:agent": "cross-env UEM_SERVER_URL=https://SSSIL-LAP-92:4000 npm run dev -w @em/agent",
+    "build": "npm run build -w @em/shared && npm run build -w @em/server && npm run build -w @em/console && npm run build -w @em/agent",
+    "db:migrate": "npm run db:migrate -w @em/server",
+    "db:seed": "npm run db:seed -w @em/server"
+  }
+}

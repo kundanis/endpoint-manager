@@ -1,0 +1,19 @@
+BEGIN TRY
+
+BEGIN TRAN;
+
+-- AlterTable
+ALTER TABLE [dbo].[DataDiscoveryFinding] ADD [maskedSamples] NVARCHAR(2000) NOT NULL CONSTRAINT [DataDiscoveryFinding_maskedSamples_df] DEFAULT '{}';
+
+COMMIT TRAN;
+
+END TRY
+BEGIN CATCH
+
+IF @@TRANCOUNT > 0
+BEGIN
+    ROLLBACK TRAN;
+END;
+THROW
+
+END CATCH

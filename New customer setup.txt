@@ -1,0 +1,12 @@
+New customer setup
+Files:
+
+Machine B (License Server): packages\license-server\dist-installer\LicenseServerInstaller.zip
+Machine A (Endpoint Manager): packages\server\dist-installer\EndpointManagerServerInstaller.zip — this one now already includes the agent installer inside it, nothing extra needed.
+
+Steps:
+
+On Machine B: unzip, run Setup.bat, log into the License Console, create the customer's Entity, issue a LicenseKey (agent cap, validity, modules).
+On Machine A: unzip, run Setup.bat, log into the console → Licensing → Licence API → enter Machine B's URL → Connect → enter the license key → Activate.
+Console → Endpoint Manager → Enrollment Tokens → Download agent installer (works immediately, it's already in the zip) → create a token (optionally pick a target group) → Download setup script → run both on each endpoint.
+Existing customer upgrade

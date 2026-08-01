@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DLPService userspace agent (C++17, Win32 console/service application).
+  Adapted from E:\Claude-Projects\DLPAgent\service\KernelAgentService.vcxproj — drops
+  libcurl (no network calls from this process at all) and ClaudeBridge/PolicyEngine/
+  ServerComm/ActionExecutor (unused or removed); adds AgentBridge (local-file
+  handoff to the Node.js agent).
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{4C7D8E9F-1A2B-4C3D-9E8F-7A6B5C4D3E2F}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectName>DLPService</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <!-- vcpkg user-wide integration (nlohmann-json only — no curl needed) -->
+  <Import Project="$(LOCALAPPDATA)\vcpkg\vcpkg.user.props"
+          Condition="Exists('$(LOCALAPPDATA)\vcpkg\vcpkg.user.props')" />
+  <Import Project="$(VCPKG_ROOT)\scripts\buildsystems\msbuild\vcpkg.props"
+          Condition="!Exists('$(LOCALAPPDATA)\vcpkg\vcpkg.user.props') And Exists('$(VCPKG_ROOT)\scripts\buildsystems\msbuild\vcpkg.props')" />
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_WIN64;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <ExceptionHandling>Async</ExceptionHandling>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)..\common;$(ProjectDir)include;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- fltLib.lib for FilterConnectCommunicationPort / FilterGetMessage etc. -->
+      <AdditionalDependencies>
+        fltLib.lib;%(AdditionalDependencies)
+      </AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_WIN64;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)..\common;$(ProjectDir)include;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>
+        fltLib.lib;%(AdditionalDependencies)
+      </AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\FilterComm.cpp" />
+    <ClCompile Include="src\ContentScanner.cpp" />
+    <ClCompile Include="src\PolicyCache.cpp" />
+    <ClCompile Include="src\AgentBridge.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="include\FilterComm.h" />
+    <ClInclude Include="include\ContentScanner.h" />
+    <ClInclude Include="include\PolicyCache.h" />
+    <ClInclude Include="include\AgentBridge.h" />
+    <ClInclude Include="..\common\DLPProtocol.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <Import Project="$(LOCALAPPDATA)\vcpkg\vcpkg.user.targets"
+          Condition="Exists('$(LOCALAPPDATA)\vcpkg\vcpkg.user.targets')" />
+  <Import Project="$(VCPKG_ROOT)\scripts\buildsystems\msbuild\vcpkg.targets"
+          Condition="!Exists('$(LOCALAPPDATA)\vcpkg\vcpkg.user.targets') And Exists('$(VCPKG_ROOT)\scripts\buildsystems\msbuild\vcpkg.targets')" />
+
+</Project>

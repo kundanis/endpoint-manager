@@ -1,0 +1,19 @@
+BEGIN TRY
+
+BEGIN TRAN;
+
+-- AlterTable
+ALTER TABLE [dbo].[SoftwareLicense] ADD [billingCycle] NVARCHAR(20) NOT NULL CONSTRAINT [SoftwareLicense_billingCycle_df] DEFAULT 'YEARLY';
+
+COMMIT TRAN;
+
+END TRY
+BEGIN CATCH
+
+IF @@TRANCOUNT > 0
+BEGIN
+    ROLLBACK TRAN;
+END;
+THROW
+
+END CATCH

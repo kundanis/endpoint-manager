@@ -1,0 +1,1290 @@
+datasource db {
+  provider          = "sqlserver"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AdminUser {
+  id           String    @id @default(uuid())
+  email        String    @unique @db.NVarChar(255)
+  passwordHash String    @db.NVarChar(100)
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+  assetNotes   AssetNote[]
+}
+
+model EnrollmentToken {
+  id            String      @id @default(uuid())
+  tokenHash     String      @unique @db.NVarChar(128)
+  label         String
+  usesRemaining Int         @default(1)
+  expiresAt     DateTime
+  revoked       Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  // Optional - when set, an agent that enrolls with this token is automatically added as a
+  // member of this group (see enrollAgent() in enrollment.service.ts). SetNull rather than
+  // Cascade: deleting a group later shouldn't retroactively invalidate an already-issued,
+  // still-valid token, it just stops implying a group going forward.
+  groupId       String?
+  group         AssetGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+}
+
+model Agent {
+  id              String              @id @default(uuid())
+  hostname        String
+  apiKeyHash      String              @unique @db.NVarChar(128)
+  osPlatform      String
+  osVersion       String
+  osArch          String
+  agentVersion    String
+  ipAddress       String?
+  macAddress      String?
+  tags            String              @default("[]")
+  lifecycleStatus String              @default("ACTIVE") @db.NVarChar(20)
+  serialNumber       String?          @db.NVarChar(100)
+  vendor             String?          @db.NVarChar(100)
+  purchaseDate       DateTime?
+  warrantyExpiryDate DateTime?
+  deviceTypeOverride String?          @db.NVarChar(20)
+  quarantined     Boolean             @default(false)
+  edrEnabled      Boolean             @default(true)
+  remoteAccessEnabled  Boolean        @default(false)
+  remoteAccessEnabledAt DateTime?
+  remoteAccessAllowedIp String?       @db.NVarChar(45)
+  location        String?             @db.NVarChar(200)
+  ipGeoCity       String?             @db.NVarChar(100)
+  ipGeoRegion     String?             @db.NVarChar(100)
+  ipGeoCountry    String?             @db.NVarChar(100)
+  ipGeoLat        Float?
+  ipGeoLon        Float?
+  ipGeoLookupIp   String?             @db.NVarChar(64)
+  ipGeoUpdatedAt  DateTime?
+  lastCheckinAt   DateTime?
+  createdAt       DateTime            @default(now())
+  inventory       InventorySnapshot?
+  commandTasks    CommandTask[]
+  deployTasks     DeploymentTask[]
+  patchFindings         PatchFinding[]
+  patchTasks            PatchTask[]
+  vulnerabilityFindings VulnerabilityFinding[]
+  groupMemberships      AgentGroupMembership[]
+  customFieldValues     AgentCustomFieldValue[]
+  notes                 AssetNote[]
+  discoveredHostMatches DiscoveredHost[]
+  securityBenchmarkFindings    SecurityBenchmarkFinding[]
+  securityBenchmarkAssignments SecurityBenchmarkAssignment[]
+  zeroTrustFindings    ZeroTrustFinding[]
+  zeroTrustAssignments ZeroTrustPolicyAssignment[]
+  dataDiscoveryFindings    DataDiscoveryFinding[]
+  dataDiscoveryAssignments DataDiscoveryPolicyAssignment[]
+  dataDiscoveryScanStates  DataDiscoveryScanState[]
+  dlpEvents      DlpEvent[]
+  dlpAssignments DlpPolicyAssignment[]
+  dataMovementEvents      DataMovementEvent[]
+  dataMovementAssignments DataMovementPolicyAssignment[]
+  appControlEvents      AppControlEvent[]
+  appControlAssignments AppControlPolicyAssignment[]
+  webBlockAssignments   WebBlockPolicyAssignment[]
+  commandBlockEvents      CommandBlockEvent[]
+  commandBlockAssignments CommandBlockPolicyAssignment[]
+  ipBlockAssignments IpBlockPolicyAssignment[]
+  usbControlEvents      UsbControlEvent[]
+  usbControlAssignments UsbControlPolicyAssignment[]
+  policyAccessExceptions PolicyAccessException[]
+  userSessions UserSession[]
+  userProductivityDailyLogs UserProductivityDailyLog[]
+  edrEvents EdrEvent[]
+  edrPersistenceBaseline EdrPersistenceBaseline[]
+}
+
+model InventorySnapshot {
+  id                String   @id @default(uuid())
+  agentId           String   @unique
+  agent             Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  cpuModel          String?
+  cpuCores          Int?
+  cpuPhysicalCores  Int?
+  cpuSpeedGhz       Float?
+  totalMemBytes     BigInt?
+  memLayout         String   @default("[]") @db.NVarChar(Max)
+  osInfo            String   @db.NVarChar(Max)
+  osBuild           String?  @db.NVarChar(50)
+  pcSystemType      Int?
+  osLicenseStatus     String? @db.NVarChar(30)
+  osLicenseChannel    String? @db.NVarChar(50)
+  osPartialProductKey String? @db.NVarChar(20)
+  lastLoggedOnUser  String?  @db.NVarChar(300)
+  diskInfo          String   @db.NVarChar(Max)
+  diskVolumes       String   @default("[]") @db.NVarChar(Max)
+  installedSoftware String   @db.NVarChar(Max)
+  batteryPresent               Boolean  @default(false)
+  batteryDesignCapacityMwh     Int?
+  batteryFullChargeCapacityMwh Int?
+  batteryChargePercent         Int?
+  batteryCycleCount            Int?
+  batteryCharging              Boolean?
+  batteryAcConnected           Boolean?
+  collectedAt       DateTime @default(now())
+}
+
+model CommandTemplate {
+  id               String   @id @default(uuid())
+  name             String   @db.NVarChar(150)
+  description      String?  @db.NVarChar(500)
+  shell            String   @db.NVarChar(20)
+  script           String   @db.NVarChar(Max)
+  createdByAdminId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model CommandJob {
+  id               String        @id @default(uuid())
+  shell            String
+  script           String        @db.NVarChar(Max)
+  timeoutSec       Int           @default(120)
+  createdByAdminId String
+  targetGroupIds   String        @default("[]") @db.NVarChar(1000)
+  createdAt        DateTime      @default(now())
+  tasks            CommandTask[]
+}
+
+model CommandTask {
+  id           String     @id @default(uuid())
+  jobId        String
+  job          CommandJob @relation(fields: [jobId], references: [id])
+  agentId      String
+  agent        Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status       String     @default("PENDING")
+  exitCode     Int?
+  stdout       String?    @db.NVarChar(Max)
+  stderr       String?    @db.NVarChar(Max)
+  dispatchedAt DateTime?
+  completedAt  DateTime?
+}
+
+model Package {
+  id                String          @id @default(uuid())
+  name              String
+  version           String
+  filename          String
+  storagePath       String
+  fileSizeBytes     Int
+  sha256            String
+  installerType     String
+  silentArgs        String
+  uploadedByAdminId String
+  createdAt         DateTime        @default(now())
+  deployJobs        DeploymentJob[]
+}
+
+model DeploymentJob {
+  id               String           @id @default(uuid())
+  packageId        String
+  package          Package          @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  createdByAdminId String
+  targetGroupIds   String           @default("[]") @db.NVarChar(1000)
+  createdAt        DateTime         @default(now())
+  tasks            DeploymentTask[]
+}
+
+model DeploymentTask {
+  id           String        @id @default(uuid())
+  jobId        String
+  job          DeploymentJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  agentId      String
+  agent        Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status       String        @default("PENDING")
+  exitCode     Int?
+  message      String?       @db.NVarChar(Max)
+  dispatchedAt DateTime?
+  completedAt  DateTime?
+}
+
+model PatchDefinition {
+  id             String         @id @default(uuid())
+  updateId       String         @unique @db.NVarChar(64)
+  revisionNumber Int
+  title          String         @db.NVarChar(500)
+  severity       String?        @db.NVarChar(50)
+  kbArticleIds   String         @default("[]") @db.NVarChar(1000)
+  categories     String         @default("[]") @db.NVarChar(1000)
+  sizeBytes      BigInt?
+  firstSeenAt    DateTime       @default(now())
+  lastSeenAt     DateTime       @default(now())
+  findings       PatchFinding[]
+}
+
+model PatchFinding {
+  id                String          @id @default(uuid())
+  agentId           String
+  agent             Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  patchDefinitionId String
+  patchDefinition   PatchDefinition @relation(fields: [patchDefinitionId], references: [id], onDelete: Cascade)
+  status            String          @default("MISSING")
+  detectedAt        DateTime        @default(now())
+  lastSeenAt        DateTime        @default(now())
+  installedAt       DateTime?
+
+  @@unique([agentId, patchDefinitionId])
+}
+
+model PatchJob {
+  id               String      @id @default(uuid())
+  updateIds        String      @db.NVarChar(Max)
+  createdByAdminId String
+  targetGroupIds   String      @default("[]") @db.NVarChar(1000)
+  createdAt        DateTime    @default(now())
+  tasks            PatchTask[]
+}
+
+model PatchTask {
+  id             String    @id @default(uuid())
+  jobId          String
+  job            PatchJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  agentId        String
+  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status         String    @default("PENDING")
+  rebootRequired Boolean   @default(false)
+  results        String?   @db.NVarChar(Max)
+  message        String?   @db.NVarChar(Max)
+  dispatchedAt   DateTime?
+  completedAt    DateTime?
+}
+
+model VulnerabilityDefinition {
+  id                 String                  @id @default(uuid())
+  cveId              String                  @unique @db.NVarChar(32)
+  description        String                  @db.NVarChar(Max)
+  cvssVersion        String?                 @db.NVarChar(10)
+  cvssBaseScore      Float?
+  cvssSeverity       String?                 @db.NVarChar(20)
+  cvssVector         String?                 @db.NVarChar(512)
+  publishedAt        DateTime
+  lastModifiedAt     DateTime
+  sourceLastSyncedAt DateTime                @default(now())
+  cpeMatches         VulnerabilityCpeMatch[]
+  findings           VulnerabilityFinding[]
+
+  @@index([cvssSeverity])
+  @@index([lastModifiedAt])
+}
+
+model VulnerabilityCpeMatch {
+  id                        String                  @id @default(uuid())
+  vulnerabilityDefinitionId String
+  vulnerabilityDefinition   VulnerabilityDefinition @relation(fields: [vulnerabilityDefinitionId], references: [id], onDelete: Cascade)
+  criteria                  String                  @db.NVarChar(512)
+  part                      String                  @db.NVarChar(4)
+  vendorNormalized          String                  @db.NVarChar(256)
+  productNormalized         String                  @db.NVarChar(256)
+  productCompact            String                  @db.NVarChar(256)
+  versionExact              String?                 @db.NVarChar(128)
+  versionStartIncluding     String?                 @db.NVarChar(128)
+  versionStartExcluding     String?                 @db.NVarChar(128)
+  versionEndIncluding       String?                 @db.NVarChar(128)
+  versionEndExcluding       String?                 @db.NVarChar(128)
+  vulnerable                Boolean                 @default(true)
+
+  @@index([productCompact])
+  @@index([productNormalized])
+}
+
+model VulnerabilityFinding {
+  id                        String                  @id @default(uuid())
+  agentId                   String
+  agent                     Agent                   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  vulnerabilityDefinitionId String
+  vulnerabilityDefinition   VulnerabilityDefinition @relation(fields: [vulnerabilityDefinitionId], references: [id], onDelete: Cascade)
+  matchedSoftwareName       String                  @db.NVarChar(300)
+  matchedSoftwareVersion    String?                 @db.NVarChar(100)
+  matchedCpeCriteria        String                  @db.NVarChar(512)
+  matchConfidence           String                  @db.NVarChar(20)
+  status                    String                  @default("OPEN") @db.NVarChar(20)
+  detectedAt                DateTime                @default(now())
+  lastSeenAt                DateTime                @default(now())
+  resolvedAt                DateTime?
+
+  @@unique([agentId, vulnerabilityDefinitionId, matchedSoftwareName])
+  @@index([agentId, status])
+}
+
+model VulnerabilitySyncRun {
+  id                 String    @id @default(uuid())
+  triggeredByAdminId String
+  windowStartAt      DateTime
+  windowEndAt        DateTime
+  mode               String    @db.NVarChar(20)
+  status             String    @default("RUNNING") @db.NVarChar(20)
+  cveUpsertedCount   Int       @default(0)
+  pagesFetched       Int       @default(0)
+  errorMessage       String?   @db.NVarChar(Max)
+  startedAt          DateTime  @default(now())
+  completedAt        DateTime?
+}
+
+model AssetGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique @db.NVarChar(200)
+  description String?  @db.NVarChar(1000)
+  createdAt   DateTime @default(now())
+  members     AgentGroupMembership[]
+  securityBenchmarkAssignments SecurityBenchmarkAssignment[]
+  zeroTrustAssignments ZeroTrustPolicyAssignment[]
+  dataDiscoveryAssignments DataDiscoveryPolicyAssignment[]
+  dlpAssignments DlpPolicyAssignment[]
+  appControlAssignments AppControlPolicyAssignment[]
+  webBlockAssignments   WebBlockPolicyAssignment[]
+  commandBlockAssignments CommandBlockPolicyAssignment[]
+  dataMovementAssignments DataMovementPolicyAssignment[]
+  ipBlockAssignments IpBlockPolicyAssignment[]
+  usbControlAssignments UsbControlPolicyAssignment[]
+  enrollmentTokens   EnrollmentToken[]
+}
+
+model AgentGroupMembership {
+  id      String     @id @default(uuid())
+  agentId String
+  agent   Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId String
+  group   AssetGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  addedAt DateTime   @default(now())
+
+  @@unique([agentId, groupId])
+  @@index([groupId])
+}
+
+model CustomFieldDefinition {
+  id        String   @id @default(uuid())
+  name      String   @unique @db.NVarChar(200)
+  fieldType String   @db.NVarChar(20)
+  options   String   @default("[]") @db.NVarChar(1000)
+  createdAt DateTime @default(now())
+  values    AgentCustomFieldValue[]
+}
+
+model AgentCustomFieldValue {
+  id                String                @id @default(uuid())
+  agentId           String
+  agent             Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  fieldDefinitionId String
+  fieldDefinition   CustomFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+  value             String                @db.NVarChar(1000)
+  updatedAt         DateTime              @default(now())
+
+  @@unique([agentId, fieldDefinitionId])
+}
+
+model AssetNote {
+  id               String    @id @default(uuid())
+  agentId          String
+  agent            Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  createdByAdminId String
+  createdByAdmin   AdminUser @relation(fields: [createdByAdminId], references: [id])
+  body             String    @db.NVarChar(Max)
+  createdAt        DateTime  @default(now())
+}
+
+// No FK to Agent — seats-in-use is estimated at read time by name-matching softwareName
+// against each agent's installed-software inventory (same heuristic as vulnerability
+// matching), not a manual per-device assignment table. Keeps this self-correcting as
+// inventory changes without requiring an admin to manually (re)assign seats.
+model NetworkVlan {
+  id               String           @id @default(uuid())
+  name             String           @db.NVarChar(100)
+  description      String?          @db.NVarChar(500)
+  cidr             String           @db.NVarChar(50)
+  // Plain column, not a live FK relation to Agent — a real relation here, combined with
+  // this model's own NetworkScanRun/DiscoveredHost chain (both cascading), would give SQL
+  // Server two paths from Agent into DiscoveredHost (this one, and the pre-existing direct
+  // DiscoveredHost.matchedAgentId), which it rejects. Resolved to a hostname at read time
+  // with an "(agent deleted)" fallback, and validated fresh on every scan trigger (see
+  // triggerVlanScan in networkVlan.service.ts) rather than relying on the DB to auto-clear it.
+  assignedAgentId  String?
+  enabled          Boolean          @default(true)
+  createdByAdminId String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  scanRuns         NetworkScanRun[]
+}
+
+model NetworkScanRun {
+  id                 String           @id @default(uuid())
+  cidr               String           @db.NVarChar(50)
+  status             String           @default("RUNNING") @db.NVarChar(20)
+  hostsScanned       Int              @default(0)
+  hostsFound         Int              @default(0)
+  errorMessage       String?          @db.NVarChar(Max)
+  triggeredByAdminId String
+  vlanId             String?
+  vlan               NetworkVlan?     @relation(fields: [vlanId], references: [id], onDelete: SetNull)
+  // Snapshotted at trigger time so a run stays groupable/labeled even after its VLAN is
+  // deleted — the live join above covers the common case (VLAN still exists), this is the
+  // fallback. See NetworkVlan deletion handling in networkVlan.service.ts.
+  vlanNameSnapshot   String?          @db.NVarChar(100)
+  // The agent that actually executed THIS run (null = server-side). Deliberately a plain
+  // column, not a live FK relation to Agent — a real relation here would give SQL Server
+  // two cascade paths into this table (direct, and via NetworkVlan.assignedAgentId), which
+  // it rejects outright. Resolved to a hostname at read time with a "(agent deleted)"
+  // fallback, same pattern as resolveGroupNames()'s "(deleted group)" elsewhere in this codebase.
+  agentId            String?
+  startedAt          DateTime         @default(now())
+  completedAt        DateTime?
+  hosts              DiscoveredHost[]
+  task               NetworkScanTask?
+
+  @@index([vlanId])
+}
+
+// 1:1 with a run, not fan-out — a VLAN has at most one assigned agent, so there's no
+// fan-out case to support (unlike CommandJob/CommandTask). Purely dispatch-mechanics state:
+// which agent should pick this up is derived via scanRun.agentId (no separate agentId/FK
+// here — same multi-cascade-path reason as NetworkScanRun.agentId above).
+model NetworkScanTask {
+  id           String         @id @default(uuid())
+  scanRunId    String         @unique
+  scanRun      NetworkScanRun @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  status       String         @default("PENDING") @db.NVarChar(20)
+  dispatchedAt DateTime?
+  completedAt  DateTime?
+}
+
+model DiscoveredHost {
+  id             String         @id @default(uuid())
+  scanRunId      String
+  scanRun        NetworkScanRun @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  ipAddress      String         @db.NVarChar(45)
+  macAddress     String?        @db.NVarChar(20)
+  hostname       String?        @db.NVarChar(255)
+  openPorts      String         @default("[]") @db.NVarChar(500)
+  responseTimeMs Int?
+  matchedAgentId String?
+  matchedAgent   Agent?         @relation(fields: [matchedAgentId], references: [id], onDelete: SetNull)
+  discoveredAt   DateTime       @default(now())
+
+  @@index([scanRunId])
+}
+
+model SoftwareLicense {
+  id               String    @id @default(uuid())
+  softwareName     String    @db.NVarChar(300)
+  vendor           String?   @db.NVarChar(200)
+  licenseKey       String?   @db.NVarChar(500)
+  licenseType      String    @db.NVarChar(30)
+  seatsPurchased   Int
+  purchaseDate     DateTime?
+  expiryDate       DateTime?
+  cost             Float?
+  // How often `cost` recurs - MONTHLY | QUARTERLY | HALF_YEARLY | YEARLY. Defaults to
+  // YEARLY for both new records (see the zod schema) and the migration backfill of
+  // existing rows, so a pre-existing cost value's displayed yearly total is unchanged
+  // until an admin deliberately picks a different cycle.
+  billingCycle     String    @default("YEARLY") @db.NVarChar(20)
+  notes            String?   @db.NVarChar(2000)
+  createdByAdminId String
+  createdAt        DateTime  @default(now())
+}
+
+model SecurityBenchmark {
+  id               String                         @id @default(uuid())
+  name             String                         @db.NVarChar(200)
+  description      String?                        @db.NVarChar(1000)
+  source           String                         @db.NVarChar(20) // BUILT_IN | CUSTOM
+  targetType       String                         @default("WINDOWS_10") @db.NVarChar(30) // WINDOWS_10 | WINDOWS_11 | WINDOWS_SERVER | SQL_SERVER
+  createdByAdminId String?
+  createdAt        DateTime                       @default(now())
+  rules            SecurityBenchmarkRule[]
+  assignments      SecurityBenchmarkAssignment[]
+  findings         SecurityBenchmarkFinding[]
+}
+
+model SecurityBenchmarkRule {
+  id                    String                     @id @default(uuid())
+  benchmarkId           String
+  benchmark             SecurityBenchmark          @relation(fields: [benchmarkId], references: [id], onDelete: Cascade)
+  ruleKey               String                     @db.NVarChar(50)
+  title                 String                     @db.NVarChar(300)
+  description           String?                    @db.NVarChar(2000)
+  severity              String                     @db.NVarChar(20) // HIGH | MEDIUM | LOW
+  checkPowerShell       String                     @db.NVarChar(Max)
+  operator              String                     @db.NVarChar(20) // EQUALS|NOT_EQUALS|GTE|LTE|CONTAINS|REGEX_MATCH
+  expectedValue         String                     @db.NVarChar(500)
+  remediationPowerShell String?                    @db.NVarChar(Max)
+  createdAt             DateTime                   @default(now())
+  findings              SecurityBenchmarkFinding[]
+
+  @@unique([benchmarkId, ruleKey])
+}
+
+// agentId or groupId is set, never both — same standing-assignment shape as
+// AgentGroupMembership, resolved at scan-fetch time (not fanned out to per-agent
+// rows like PatchTask/CommandTask, since this isn't a one-off job).
+model SecurityBenchmarkAssignment {
+  id          String            @id @default(uuid())
+  benchmarkId String
+  benchmark   SecurityBenchmark @relation(fields: [benchmarkId], references: [id], onDelete: Cascade)
+  agentId     String?
+  agent       Agent?            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId     String?
+  group       AssetGroup?       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+model SecurityBenchmarkFinding {
+  id            String                @id @default(uuid())
+  agentId       String
+  agent         Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  benchmarkId   String
+  // NoAction — deleting a benchmark already cascades to its rules (below), which in
+  // turn cascade-delete this finding; a second cascade path to the same row via
+  // benchmarkId directly is rejected by SQL Server ("multiple cascade paths").
+  benchmark     SecurityBenchmark     @relation(fields: [benchmarkId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ruleId        String
+  rule          SecurityBenchmarkRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  actualValue   String?               @db.NVarChar(2000)
+  status        String                @default("FAIL") @db.NVarChar(20) // PASS | FAIL | ERROR
+  detectedAt    DateTime              @default(now())
+  lastSeenAt    DateTime              @default(now())
+
+  @@unique([agentId, ruleId])
+  @@index([agentId, status])
+}
+
+model ZeroTrustPolicy {
+  id               String                      @id @default(uuid())
+  name             String                      @db.NVarChar(200)
+  description      String?                     @db.NVarChar(1000)
+  enabled          Boolean                     @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                    @default(now())
+  conditions       ZeroTrustCondition[]
+  assignments      ZeroTrustPolicyAssignment[]
+  findings         ZeroTrustFinding[]
+}
+
+model ZeroTrustCondition {
+  id              String             @id @default(uuid())
+  policyId        String
+  policy          ZeroTrustPolicy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  conditionKey    String             @db.NVarChar(50)
+  title           String             @db.NVarChar(300)
+  description     String?            @db.NVarChar(2000)
+  checkPowerShell String             @db.NVarChar(Max)
+  operator        String             @db.NVarChar(20) // EQUALS|NOT_EQUALS|GTE|LTE|CONTAINS|REGEX_MATCH
+  expectedValue   String             @db.NVarChar(500)
+  enabled         Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  findings        ZeroTrustFinding[]
+
+  @@unique([policyId, conditionKey])
+}
+
+// agentId or groupId is set, never both — same standing-assignment shape as
+// SecurityBenchmarkAssignment.
+model ZeroTrustPolicyAssignment {
+  id        String          @id @default(uuid())
+  policyId  String
+  policy    ZeroTrustPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+model ZeroTrustFinding {
+  id          String             @id @default(uuid())
+  agentId     String
+  agent       Agent              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId    String
+  // NoAction — deleting a policy already cascades to its conditions, which in turn
+  // cascade-delete this finding; a second cascade path via policyId directly is
+  // rejected by SQL Server ("multiple cascade paths"). Same fix as SecurityBenchmarkFinding.
+  policy      ZeroTrustPolicy    @relation(fields: [policyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  conditionId String
+  condition   ZeroTrustCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  actualValue String?            @db.NVarChar(2000)
+  status      String             @default("FAIL") @db.NVarChar(20) // PASS | FAIL | ERROR
+  detectedAt  DateTime           @default(now())
+  lastSeenAt  DateTime           @default(now())
+
+  @@unique([agentId, conditionId])
+  @@index([agentId, status])
+}
+
+// Unlike SecurityBenchmark/ZeroTrust, there's no per-policy child table for the
+// individual PII patterns being checked — the pattern catalog (Aadhaar/PAN/email/...)
+// is a fixed, code-level list in @em/shared, resolved from `regulation` at scan time,
+// not authored per policy. That means DataDiscoveryFinding has only one path down from
+// DataDiscoveryPolicy (this direct relation), so normal Cascade is safe here — no
+// "multiple cascade paths" issue like SecurityBenchmarkFinding/ZeroTrustFinding had.
+model DataDiscoveryPolicy {
+  id               String                          @id @default(uuid())
+  name             String                          @db.NVarChar(200)
+  description      String?                         @db.NVarChar(1000)
+  regulation       String                          @db.NVarChar(10) // DPDP | GDPR | BOTH
+  targetPaths      String                          @db.NVarChar(Max) // JSON string array; env vars expanded agent-side
+  enabled          Boolean                         @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                        @default(now())
+  assignments      DataDiscoveryPolicyAssignment[]
+  findings         DataDiscoveryFinding[]
+  scanStates       DataDiscoveryScanState[]
+}
+
+// agentId or groupId is set, never both — same standing-assignment shape as
+// SecurityBenchmarkAssignment/ZeroTrustPolicyAssignment.
+model DataDiscoveryPolicyAssignment {
+  id        String              @id @default(uuid())
+  policyId  String
+  policy    DataDiscoveryPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime            @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// One row per (agent, policy, file currently matching) — a fresh full scan replaces
+// the set each time (files renamed/edited/deleted so they no longer match are removed,
+// not left stale). matchedPatternKeys/matchCounts are JSON; deliberately no column ever
+// holds the actual matched substrings — only which pattern types matched and how many
+// times, so the sensitive data being detected never lands in this database.
+model DataDiscoveryFinding {
+  id                 String              @id @default(uuid())
+  agentId            String
+  agent              Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId           String
+  policy             DataDiscoveryPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  filePath           String              @db.NVarChar(1000)
+  fileSizeBytes      BigInt
+  fileModifiedAt     DateTime
+  matchedPatternKeys String              @default("[]") @db.NVarChar(500)
+  matchCounts        String              @default("{}") @db.NVarChar(1000)
+  // patternKey -> up to a few masked previews (e.g. "••••••••6789") — never the raw
+  // matched value. Lets an admin confirm a real match / spot a false positive without
+  // this database ever holding the actual sensitive data it's scanning for.
+  maskedSamples      String              @default("{}") @db.NVarChar(2000)
+  detectedAt         DateTime            @default(now())
+  lastSeenAt         DateTime            @default(now())
+
+  @@unique([agentId, policyId, filePath])
+  @@index([agentId])
+}
+
+// Upserted on every scan report, regardless of whether any files matched — a clean
+// scan (0 findings) is otherwise indistinguishable from "never scanned" in
+// DataDiscoveryFinding alone, since that table only ever holds currently-matching
+// files. Not an append-only history log, just the latest state per (agent, policy).
+// scanRequested is also how "Scan now" is signaled to the agent: set true when an
+// admin requests an immediate scan, delivered via the next checkin response (same
+// mechanism as CommandTask/PatchTask dispatch), and cleared back to false the moment
+// this agent+policy's scan result actually comes in — deliberately a plain boolean
+// flag rather than comparing scanRequestedAt/lastScannedAt timestamps against each
+// other, which Prisma can't do in a single query without raw SQL.
+model DataDiscoveryScanState {
+  id            String              @id @default(uuid())
+  agentId       String
+  agent         Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId      String
+  policy        DataDiscoveryPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  filesScanned  Int?
+  lastScannedAt DateTime?
+  scanRequested Boolean             @default(false)
+
+  @@unique([agentId, policyId])
+}
+
+// DLP (Data Loss Prevention) — inline, real-time detection on file writes, unlike Data
+// Discovery's scheduled at-rest scan. Phase 1 (this schema + admin/console/agent
+// plumbing) has no enforcement teeth on its own; Phase 2 is a native kernel-driver
+// sidecar (adapted from an existing, already-validated minifilter project) that the
+// Node.js agent relays policy to and events from — the agent itself never inspects
+// file content. Same PII pattern catalog/regulation taxonomy as Data Discovery (see
+// DataDiscoveryPolicy) — DLP differs in when detection runs and what happens on a
+// match, not in what counts as personal data.
+// A DLP policy is a set of admin-authored rules (DlpRule), not a regulation scope —
+// see DlpRule for the rule taxonomy (content keyword/regex/pattern, blocked path,
+// trusted process, file extension filter).
+model DlpPolicy {
+  id                 String                @id @default(uuid())
+  name               String                @db.NVarChar(200)
+  description        String?               @db.NVarChar(1000)
+  enforcementMode    String                @default("ALERT_ONLY") @db.NVarChar(20) // ALERT_ONLY | BLOCK
+  removableMediaOnly Boolean               @default(true)
+  enabled            Boolean               @default(true)
+  createdByAdminId   String?
+  createdAt          DateTime              @default(now())
+  rules              DlpRule[]
+  assignments        DlpPolicyAssignment[]
+  events             DlpEvent[]
+}
+
+// One row per admin-authored rule. `value` means something different depending on
+// ruleType: keyword text, regex source, a PII_PATTERN_KEYS key, a path substring, a
+// process image name, or a file extension. See DLP_RULE_TYPES in
+// packages/shared/src/schemas/dlp.schema.ts for the full taxonomy.
+model DlpRule {
+  id        String    @id @default(uuid())
+  policyId  String
+  policy    DlpPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String    @db.NVarChar(30)
+  value     String    @db.NVarChar(500)
+  label     String?   @db.NVarChar(200)
+  createdAt DateTime  @default(now())
+}
+
+// agentId or groupId is set, never both — same standing-assignment shape as
+// SecurityBenchmarkAssignment/ZeroTrustPolicyAssignment/DataDiscoveryPolicyAssignment.
+model DlpPolicyAssignment {
+  id        String    @id @default(uuid())
+  policyId  String
+  policy    DlpPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// One row per real-time occurrence (a rule matched, or a blocked-path/trusted-process
+// gate fired) — not a current-state table like DataDiscoveryFinding, so nothing is
+// ever deleted/replaced here, just appended. matchedRuleIds/maskedSamples follow the
+// identical never-the-raw-value discipline as DataDiscoveryFinding — a BLOCKED_PATH
+// trigger has no content sample, so maskedSamples simply has no entry for its rule id.
+model DlpEvent {
+  id                     String    @id @default(uuid())
+  agentId                String
+  agent                  Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId               String
+  policy                 DlpPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  filePath               String    @db.NVarChar(1000)
+  processName            String?   @db.NVarChar(300)
+  destinationIsRemovable Boolean   @default(false)
+  action                 String    @db.NVarChar(20) // ALERTED | BLOCKED
+  matchedRuleIds         String    @default("[]") @db.NVarChar(500)
+  maskedSamples          String    @default("{}") @db.NVarChar(2000)
+  occurredAt             DateTime  @default(now())
+
+  @@index([agentId])
+  @@index([policyId])
+}
+
+// Data Movement — lightweight, agent-side exfiltration-channel monitoring (no kernel
+// driver, unlike DLP's Phase 2 plan). Each scan cycle looks for files whose mtime falls
+// within the recent lookback window in three kinds of locations: attached removable
+// (USB) drives, well-known cloud-sync client folders (OneDrive/Dropbox/Google Drive)
+// plus admin-configured extra paths, and currently-mapped network drives. This is a
+// heuristic ("recently modified in a monitored location"), not a real interception —
+// it can miss a copy made and then immediately scanned-past, or double-report if a
+// file is touched again near a scan boundary; the per-event unique key absorbs the
+// latter.
+model DataMovementPolicy {
+  id                  String                         @id @default(uuid())
+  name                String                         @db.NVarChar(200)
+  description         String?                        @db.NVarChar(1000)
+  monitorUsb          Boolean                        @default(true)
+  monitorCloudSync    Boolean                        @default(true)
+  monitorNetworkShare Boolean                        @default(true)
+  // JSON string array; env vars (%USERPROFILE% etc.) expanded agent-side — same idiom
+  // as DataDiscoveryPolicy.targetPaths. Supplements the built-in OneDrive/Dropbox/
+  // Google Drive candidate paths, doesn't replace them.
+  extraCloudSyncPaths String                         @default("[]") @db.NVarChar(Max)
+  enabled             Boolean                        @default(true)
+  createdByAdminId    String?
+  createdAt           DateTime                       @default(now())
+  assignments         DataMovementPolicyAssignment[]
+  events              DataMovementEvent[]
+}
+
+// agentId or groupId is set, never both — same standing-assignment shape as every
+// other policy module (SecurityBenchmark/ZeroTrust/DataDiscovery/Dlp/...Assignment).
+model DataMovementPolicyAssignment {
+  id        String             @id @default(uuid())
+  policyId  String
+  policy    DataMovementPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime           @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// One row per detected copy — append-only like DlpEvent, not a current-state table like
+// DataDiscoveryFinding, since each detection is a distinct occurrence in time. The
+// unique key includes fileModifiedAt specifically so the same physical copy detected
+// again in an overlapping scan window (timer drift) upserts into the same row instead
+// of creating a duplicate, while a genuinely new copy of the same path (different
+// mtime) still creates a new event.
+model DataMovementEvent {
+  id             String             @id @default(uuid())
+  agentId        String
+  agent          Agent              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId       String
+  policy         DataMovementPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  filePath       String             @db.NVarChar(1000)
+  fileSizeBytes  BigInt
+  fileModifiedAt DateTime
+  channel        String             @db.NVarChar(20) // USB | CLOUD_SYNC | NETWORK_SHARE
+  // Channel-specific identity, JSON so the shape can vary without extra columns —
+  // USB: {driveLetter, volumeLabel, serialNumber}; CLOUD_SYNC: {provider}; NETWORK_SHARE: {uncPath}.
+  channelDetail  String             @default("{}") @db.NVarChar(1000)
+  detectedAt     DateTime           @default(now())
+
+  @@unique([agentId, policyId, filePath, channel, fileModifiedAt])
+  @@index([agentId])
+  @@index([policyId])
+}
+
+// User Productivity — passive session/idle tracking, not policy-gated (every enrolled
+// agent always reports this, like inventory/patch scanning). loginAt is part of the
+// identity key because the same (agent, username) has many distinct sign-ins over time,
+// and Windows recycles numeric session IDs across logins — the logon timestamp itself is
+// the only stable identity for "this one sign-in". "Logout" is inferred, not exact: the
+// agent's quser-based scan only reports currently-visible sessions, so a session that
+// stops appearing between polls has isActive/logoutAt stamped from the LAST poll it was
+// seen in, bounded by the scan interval's granularity, not the true logoff instant.
+model UserSession {
+  id                 String    @id @default(uuid())
+  agentId            String
+  agent              Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  username           String    @db.NVarChar(300)
+  loginAt            DateTime
+  lastSeenAt         DateTime
+  logoutAt           DateTime?
+  currentIdleSeconds Int       @default(0)
+  activeSecondsTotal Int       @default(0)
+  idleSecondsTotal   Int       @default(0)
+  isActive           Boolean   @default(true)
+
+  @@unique([agentId, username, loginAt])
+  @@index([agentId])
+}
+
+// One row per (agent, user, calendar day) — a persisted daily rollup so historical
+// records/reports survive independently of UserSession (which tracks live per-login-session
+// state, not a day boundary). Updated incrementally on every scan rather than by a
+// midnight rollover job, same "accumulate as you go" shape as UserSession itself. A
+// session's elapsed window is attributed entirely to the calendar day of the scan that
+// observed it — a midnight-spanning session can misattribute at most one scan interval's
+// worth of time to the wrong day, the same bounded-by-scan-interval coarseness already
+// accepted everywhere else in this module.
+model UserProductivityDailyLog {
+  id                 String    @id @default(uuid())
+  agentId            String
+  agent              Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  username           String    @db.NVarChar(300)
+  logDate            DateTime
+  firstLoginAt       DateTime
+  // Last time this specific day's row was touched by a scan — lets a PAST day's row
+  // show a sensible "last seen" fallback in place of a real logout when the session
+  // simply carried over past midnight without ever truly signing out that day.
+  lastSeenAt         DateTime  @default(now())
+  lastLogoutAt       DateTime?
+  activeSecondsTotal Int       @default(0)
+  idleSecondsTotal   Int       @default(0)
+
+  @@unique([agentId, username, logDate])
+  @@index([agentId])
+}
+
+// EDR-lite — built-in (not admin-authored) detections, append-only like every other
+// *Event table in this codebase. category discriminates PROCESS (a process-tree or
+// command-line rule matched — ruleKey/severity/killed all apply) from PERSISTENCE (a
+// new Run-key/service/scheduled-task entry — no ruleKey, always MEDIUM, never killed).
+model EdrEvent {
+  id         String   @id @default(uuid())
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  category   String   @db.NVarChar(20)
+  ruleKey    String?  @db.NVarChar(50)
+  severity   String   @db.NVarChar(10)
+  summary    String   @db.NVarChar(300)
+  // Max, not a fixed cap — this is a JSON envelope around an already-bounded (2000 char)
+  // commandLine/command field; the envelope's own overhead can push a near-cap value
+  // past a same-sized column, so the wrapper needs headroom the wrapped field doesn't.
+  detail     String   @db.NVarChar(Max)
+  killed     Boolean  @default(false)
+  detectedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([agentId])
+}
+
+// The server-held "known persistence items" baseline EdrEvent's PERSISTENCE category
+// diffs against — an agent restart never re-floods "everything is new" because the
+// agent always reports its full current snapshot, not a self-tracked delta (see
+// edr.schema.ts). The machine's pre-existing startup items are seeded silently on an
+// agent's first-ever scan; only entries appearing in a LATER scan are flagged.
+model EdrPersistenceBaseline {
+  id       String   @id @default(uuid())
+  agentId  String
+  agent    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  location String   @db.NVarChar(300)
+  name     String   @db.NVarChar(300)
+  seenAt   DateTime @default(now())
+
+  @@unique([agentId, location, name])
+  @@index([agentId])
+}
+
+// EPM — Application & Extension Control (Software Restriction Policy-based).
+model AppControlPolicy {
+  id               String                       @id @default(uuid())
+  name             String                       @db.NVarChar(200)
+  description      String?                      @db.NVarChar(1000)
+  enabled          Boolean                      @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                     @default(now())
+  rules            AppControlRule[]
+  assignments      AppControlPolicyAssignment[]
+  events           AppControlEvent[]
+}
+
+model AppControlRule {
+  id        String           @id @default(uuid())
+  policyId  String
+  policy    AppControlPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String           @db.NVarChar(30)
+  value     String           @db.NVarChar(500)
+  label     String?          @db.NVarChar(200)
+  createdAt DateTime         @default(now())
+}
+
+model AppControlPolicyAssignment {
+  id        String           @id @default(uuid())
+  policyId  String
+  policy    AppControlPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// ruleId is a plain string (not a live FK) so deleting a rule never cascades away
+// historical events — same discipline as DlpEvent.matchedRuleIds. policyId IS a real FK
+// (SetNull) since deleting the whole policy is a coarser, more deliberate action where
+// orphaned history is acceptable.
+model AppControlEvent {
+  id          String            @id @default(uuid())
+  agentId     String
+  agent       Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId    String?
+  policy      AppControlPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  ruleId      String?
+  matchedPath String?           @db.NVarChar(1000)
+  processName String?           @db.NVarChar(300)
+  occurredAt  DateTime          @default(now())
+
+  @@index([agentId])
+}
+
+// EPM — Web & Cloud Storage/Email Blocking (hosts-file + browser managed policy).
+model WebBlockPolicy {
+  id               String                     @id @default(uuid())
+  name             String                     @db.NVarChar(200)
+  description      String?                    @db.NVarChar(1000)
+  enabled          Boolean                    @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                   @default(now())
+  rules            WebBlockRule[]
+  assignments      WebBlockPolicyAssignment[]
+}
+
+model WebBlockRule {
+  id        String         @id @default(uuid())
+  policyId  String
+  policy    WebBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String         @db.NVarChar(30)
+  value     String         @db.NVarChar(255)
+  label     String?        @db.NVarChar(200)
+  createdAt DateTime       @default(now())
+}
+
+// lastSyncedAt/lastSyncStatus/lastSyncError live directly on the assignment row rather than
+// a separate event log — hosts-file/registry blocking has no convenient "a block just
+// happened" signal, so this is a health-check style status, not an audit trail.
+model WebBlockPolicyAssignment {
+  id             String         @id @default(uuid())
+  policyId       String
+  policy         WebBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId        String?
+  agent          Agent?         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          AssetGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?        @db.NVarChar(20)
+  lastSyncError  String?        @db.NVarChar(1000)
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// EPM — IP Blocking (Windows Firewall block rules on assigned IP/CIDR addresses). Same
+// re-assert-declarative-state shape as Web Block: no event log (asserting a firewall rule
+// has no convenient "a connection was just blocked" signal without enabling and parsing
+// firewall logs), just a sync-health snapshot per assignment.
+model IpBlockPolicy {
+  id               String                  @id @default(uuid())
+  name             String                  @db.NVarChar(200)
+  description      String?                 @db.NVarChar(1000)
+  enabled          Boolean                 @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                @default(now())
+  rules            IpBlockRule[]
+  assignments      IpBlockPolicyAssignment[]
+}
+
+model IpBlockRule {
+  id        String        @id @default(uuid())
+  policyId  String
+  policy    IpBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String        @db.NVarChar(30)
+  value     String        @db.NVarChar(64)
+  label     String?       @db.NVarChar(200)
+  createdAt DateTime      @default(now())
+}
+
+model IpBlockPolicyAssignment {
+  id             String        @id @default(uuid())
+  policyId       String
+  policy         IpBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId        String?
+  agent          Agent?        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          AssetGroup?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?       @db.NVarChar(20)
+  lastSyncError  String?       @db.NVarChar(1000)
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// EPM — Custom Command Blocking (periodic process command-line scan-and-kill).
+model CommandBlockPolicy {
+  id               String                         @id @default(uuid())
+  name             String                         @db.NVarChar(200)
+  description      String?                        @db.NVarChar(1000)
+  enabled          Boolean                        @default(true)
+  // Defaults to BLOCK at the DB level specifically so this migration's backfill preserves
+  // every pre-existing policy's actual current behavior (always kills on match, the only
+  // behavior that ever existed before this column). The zod create schema separately
+  // defaults NEW policies to ALERT_ONLY - see commandBlock.schema.ts's comment.
+  enforcementMode  String                         @default("BLOCK") @db.NVarChar(20)
+  createdByAdminId String?
+  createdAt        DateTime                       @default(now())
+  rules            CommandBlockRule[]
+  assignments      CommandBlockPolicyAssignment[]
+  events           CommandBlockEvent[]
+}
+
+model CommandBlockRule {
+  id        String             @id @default(uuid())
+  policyId  String
+  policy    CommandBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String             @db.NVarChar(30)
+  value     String             @db.NVarChar(500)
+  label     String?            @db.NVarChar(200)
+  createdAt DateTime           @default(now())
+}
+
+model CommandBlockPolicyAssignment {
+  id        String             @id @default(uuid())
+  policyId  String
+  policy    CommandBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime           @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// ruleId required (not nullable, unlike AppControlEvent) — a command-block match is always
+// directly attributable to the specific rule that fired, no ambiguous OS-log correlation
+// involved. Plain string, not a live FK, same reasoning as AppControlEvent.ruleId.
+model CommandBlockEvent {
+  id                 String              @id @default(uuid())
+  agentId            String
+  agent              Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId           String?
+  policy             CommandBlockPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  ruleId             String
+  matchedCommandLine String              @db.NVarChar(2000)
+  processName        String?             @db.NVarChar(300)
+  // Historical events were always real kills (no alert-only mode existed before this
+  // column), hence the BLOCKED default for the backfill.
+  action             String              @default("BLOCKED") @db.NVarChar(20)
+  occurredAt         DateTime            @default(now())
+
+  @@index([agentId])
+}
+
+// EPM — USB/removable-storage device control. Unlike App Control/Web Block (no reliable
+// block-just-happened signal), a disabled device IS a well-defined, directly-attributable
+// event — same reasoning as CommandBlockEvent, so this gets an event log too. Rule value is
+// a USB drive's serial number (parsed agent-side from its PNPDeviceID); enforcement disables
+// the specific PnP device instance rather than a GPO-level device-ID allow/deny list, since
+// Windows' native DeviceInstall\Restrictions policy matches on hardware ID (vendor/product),
+// not the per-unit serial number baked into the instance ID.
+model UsbControlPolicy {
+  id               String                     @id @default(uuid())
+  name             String                     @db.NVarChar(200)
+  description      String?                    @db.NVarChar(1000)
+  enabled          Boolean                    @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                   @default(now())
+  rules            UsbControlRule[]
+  assignments      UsbControlPolicyAssignment[]
+  events           UsbControlEvent[]
+}
+
+model UsbControlRule {
+  id        String           @id @default(uuid())
+  policyId  String
+  policy    UsbControlPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String           @db.NVarChar(30)
+  value     String           @db.NVarChar(100)
+  label     String?          @db.NVarChar(200)
+  createdAt DateTime         @default(now())
+}
+
+model UsbControlPolicyAssignment {
+  id             String           @id @default(uuid())
+  policyId       String
+  policy         UsbControlPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId        String?
+  agent          Agent?           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          AssetGroup?      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?          @db.NVarChar(20)
+  lastSyncError  String?          @db.NVarChar(1000)
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+model UsbControlEvent {
+  id             String            @id @default(uuid())
+  agentId        String
+  agent          Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId       String?
+  policy         UsbControlPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  serialNumber   String            @db.NVarChar(100)
+  deviceDescription String?        @db.NVarChar(300)
+  action         String            @db.NVarChar(20) // DISABLED
+  occurredAt     DateTime          @default(now())
+
+  @@index([agentId])
+}
+
+// Time-bound, admin-approved carve-out from an EPM/DLP policy's enforcement for one agent.
+// Spans multiple unrelated policy tables (App Control, Web Block, Command Block, IP Block,
+// USB Control, DLP), so policyId is a plain string, not a live FK — same reasoning already
+// used elsewhere in this schema for a cross-table reference (see NetworkScanRun.agentId).
+// Deliberately no stored EXPIRED status: "is this exception currently active" is always
+// computed at read time as status=="APPROVED" && expiresAt > now(), the same
+// computed-not-stored idiom already used for Zero Trust's "trusted" verdict and Security
+// Configuration's compliance percentage, so nothing needs a background job to revert it.
+model PolicyAccessException {
+  id                 String    @id @default(uuid())
+  policyType         String    @db.NVarChar(30) // APP_CONTROL | WEB_BLOCK | COMMAND_BLOCK | IP_BLOCK | USB_CONTROL | DLP
+  policyId           String
+  agentId            String
+  agent              Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  reason             String    @db.NVarChar(1000)
+  durationMinutes    Int
+  status             String    @default("PENDING") @db.NVarChar(20) // PENDING | APPROVED | REJECTED
+  requestedByAdminId String
+  approvedByAdminId  String?
+  resolvedAt         DateTime?
+  resolutionNote     String?   @db.NVarChar(1000)
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([agentId])
+  @@index([policyType, policyId])
+}
+
+// Singleton — deployment-wide agent tamper-protection setting. uninstallPasswordHash is
+// null (protection off) until an admin sets one — matches the "off by default until
+// configured" convention already used for LICENSE_ENFORCEMENT_ENABLED. bcrypt-hashed, same
+// as AdminUser.passwordHash, since it's checked the same way (compare, never re-displayed).
+model AgentSecuritySettings {
+  id                    String   @id @default("singleton")
+  uninstallPasswordHash String?  @db.NVarChar(200)
+  updatedAt             DateTime @updatedAt
+}
+
+// Singleton — which central License Server this deployment talks to. Deliberately a
+// runtime, admin-configured DB setting, not a deploy-time env var: the entity admin
+// enters this (Console -> Licensing -> Licence API) *after* their own first login, tests
+// connectivity, and only then proceeds to activate a license key — see
+// licenseServerConfig.service.ts.
+model LicenseServerConfig {
+  id                    String    @id @default("singleton")
+  serverUrl             String    @db.NVarChar(500)
+  lastConnectionCheckAt DateTime?
+  lastConnectionOk      Boolean?
+  updatedAt             DateTime  @updatedAt
+}
+
+// Singleton — this deployment has exactly one license, so the app always reads/writes
+// the row with id "singleton" rather than looking one up by any other key. keyString and
+// bindingToken are stored encrypted (not hashed) because, unlike the License Server side,
+// this deployment must send both back verbatim on every /revalidate and /unlock-request
+// call — see utils/fieldEncryption.ts (the same AES-256-GCM layer already used for
+// SoftwareLicense.licenseKey and CommandJob/CommandTemplate.script).
+model LicenseActivation {
+  id                    String    @id @default("singleton")
+  deploymentId          String    @unique @db.NVarChar(100)
+  entityName            String    @db.NVarChar(200)
+  maxAgents             Int
+  // Denormalized JSON array of LicenseModule keys (@license/shared's LICENSE_MODULES) -
+  // which top-level console modules this activation unlocks. Defaults to every module
+  // for rows that predate this column, same backward-compat reasoning as License
+  // Server's LicenseKey.modules: an already-activated deployment must not suddenly lose
+  // access to everything the moment this ships, before its next revalidate() confirms
+  // the real value from the License Server.
+  modules               String    @default("[\"ENDPOINT_MANAGER\",\"NETWORK_MANAGER\",\"SOFTWARE_MANAGER\",\"SECURITY_MANAGER\",\"DATA_MANAGER\",\"USER_MANAGER\"]") @db.NVarChar(1000)
+  validityType          String    @db.NVarChar(20) // ONE_YEAR | TWO_YEAR | THREE_YEAR | PERPETUAL
+  validUntil            DateTime?
+  keyStringEncrypted    String    @db.NVarChar(500)
+  bindingTokenEncrypted String    @db.NVarChar(500)
+  status                String    @default("ACTIVATED") @db.NVarChar(20) // ACTIVATED | REVOKED
+  activatedAt           DateTime
+  lastRevalidatedAt     DateTime?
+  lastRevalidationError String?   @db.NVarChar(1000)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
