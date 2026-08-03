@@ -2,6 +2,7 @@ import type {
   CreateSoftwareLicenseRequest,
   InstalledSoftwareEntry,
   SoftwareLicenseBillingCycle,
+  SoftwareLicenseDeploymentType,
   UpdateSoftwareLicenseRequest,
 } from "@em/shared";
 import { SOFTWARE_LICENSE_CYCLES_PER_YEAR } from "@em/shared";
@@ -162,7 +163,7 @@ function serializeLicense(l: LicenseRow, seatsInUse: number) {
     // cost/billingCycle currently say rather than a separately-maintained value that
     // could drift out of sync.
     annualCost: l.cost != null ? l.cost * SOFTWARE_LICENSE_CYCLES_PER_YEAR[billingCycle] : null,
-    deploymentType: l.deploymentType,
+    deploymentType: l.deploymentType as SoftwareLicenseDeploymentType | null,
     userDepartment: l.userDepartment,
     notes: l.notes,
     createdByAdminId: l.createdByAdminId,

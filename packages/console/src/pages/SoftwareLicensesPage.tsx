@@ -1,5 +1,10 @@
 import { useState, type FormEvent } from "react";
-import type { LicenseType, SoftwareLicenseBillingCycle, SoftwareLicenseView } from "../api/types";
+import type {
+  LicenseType,
+  SoftwareLicenseBillingCycle,
+  SoftwareLicenseDeploymentType,
+  SoftwareLicenseView,
+} from "../api/types";
 import {
   useCreateSoftwareLicense,
   useDeleteSoftwareLicense,
@@ -14,6 +19,13 @@ const BILLING_CYCLE_LABELS: Record<SoftwareLicenseBillingCycle, string> = {
   QUARTERLY: "Quarterly",
   HALF_YEARLY: "Half-yearly",
   YEARLY: "Yearly",
+};
+const DEPLOYMENT_TYPES: SoftwareLicenseDeploymentType[] = ["ON_PREMISE", "VENDOR_CLOUD", "SYSTEMATIX_CLOUD", "HYBRID"];
+const DEPLOYMENT_TYPE_LABELS: Record<SoftwareLicenseDeploymentType, string> = {
+  ON_PREMISE: "On-Premise",
+  VENDOR_CLOUD: "Vendor Cloud",
+  SYSTEMATIX_CLOUD: "Systematix Cloud",
+  HYBRID: "Hybrid",
 };
 
 function formatCost(cost: number | null): string {
@@ -35,7 +47,7 @@ export default function SoftwareLicensesPage() {
   const [expiryDate, setExpiryDate] = useState("");
   const [cost, setCost] = useState("");
   const [billingCycle, setBillingCycle] = useState<SoftwareLicenseBillingCycle>("YEARLY");
-  const [deploymentType, setDeploymentType] = useState("");
+  const [deploymentType, setDeploymentType] = useState<SoftwareLicenseDeploymentType | "">("");
   const [userDepartment, setUserDepartment] = useState("");
 
   const isEditing = editingId !== null;
@@ -81,7 +93,7 @@ export default function SoftwareLicensesPage() {
       expiryDate: expiryDate || null,
       cost: cost ? Number(cost) : null,
       billingCycle,
-      deploymentType: deploymentType.trim() || null,
+      deploymentType: deploymentType || null,
       userDepartment: userDepartment.trim() || null,
     };
     if (editingId) {
@@ -126,7 +138,7 @@ export default function SoftwareLicensesPage() {
                 {l.cost != null && ` / ${BILLING_CYCLE_LABELS[l.billingCycle]}`}
               </td>
               <td>{formatCost(l.annualCost)}</td>
-              <td>{l.deploymentType ?? "—"}</td>
+              <td>{l.deploymentType ? DEPLOYMENT_TYPE_LABELS[l.deploymentType] : "—"}</td>
               <td>{l.userDepartment ?? "—"}</td>
               <td>
                 <button type="button" onClick={() => startEdit(l)}>
@@ -206,12 +218,17 @@ export default function SoftwareLicensesPage() {
         </p>
         <label>
           Deployment type
-          <input
-            type="text"
+          <select
             value={deploymentType}
-            onChange={(e) => setDeploymentType(e.target.value)}
-            placeholder="e.g. On-Premise, Cloud, Hybrid"
-          />
+            onChange={(e) => setDeploymentType(e.target.value as SoftwareLicenseDeploymentType | "")}
+          >
+            <option value="">—</option>
+            {DEPLOYMENT_TYPES.map((d) => (
+              <option key={d} value={d}>
+                {DEPLOYMENT_TYPE_LABELS[d]}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           User department

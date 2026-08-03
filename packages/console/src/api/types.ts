@@ -1105,6 +1105,7 @@ export interface AgentCommandBlockEventView {
 }
 
 export type SoftwareLicenseBillingCycle = "MONTHLY" | "QUARTERLY" | "HALF_YEARLY" | "YEARLY";
+export type SoftwareLicenseDeploymentType = "ON_PREMISE" | "VENDOR_CLOUD" | "SYSTEMATIX_CLOUD" | "HYBRID";
 
 export interface SoftwareLicenseView {
   id: string;
@@ -1120,7 +1121,7 @@ export interface SoftwareLicenseView {
   cost: number | null;
   billingCycle: SoftwareLicenseBillingCycle;
   annualCost: number | null;
-  deploymentType: string | null;
+  deploymentType: SoftwareLicenseDeploymentType | null;
   userDepartment: string | null;
   notes: string | null;
   createdByAdminId: string;

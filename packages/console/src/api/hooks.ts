@@ -95,6 +95,7 @@ import type {
   SecurityBenchmarkDetail,
   SecurityBenchmarkSummary,
   SoftwareLicenseBillingCycle,
+  SoftwareLicenseDeploymentType,
   SoftwareLicenseView,
   VulnerabilityDetail,
   VulnerabilityRemediationResult,
@@ -692,7 +693,7 @@ export interface SoftwareLicenseInput {
   expiryDate?: string | null;
   cost?: number | null;
   billingCycle?: SoftwareLicenseBillingCycle;
-  deploymentType?: string | null;
+  deploymentType?: SoftwareLicenseDeploymentType | null;
   userDepartment?: string | null;
   notes?: string | null;
 }

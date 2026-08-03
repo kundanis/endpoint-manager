@@ -19,6 +19,9 @@ export const SOFTWARE_LICENSE_CYCLES_PER_YEAR: Record<SoftwareLicenseBillingCycl
   YEARLY: 1,
 };
 
+export const SOFTWARE_LICENSE_DEPLOYMENT_TYPES = ["ON_PREMISE", "VENDOR_CLOUD", "SYSTEMATIX_CLOUD", "HYBRID"] as const;
+export type SoftwareLicenseDeploymentType = (typeof SOFTWARE_LICENSE_DEPLOYMENT_TYPES)[number];
+
 export const createSoftwareLicenseRequestSchema = z.object({
   softwareName: z.string().min(1).max(300),
   vendor: z.string().max(200).nullable().optional(),
@@ -29,7 +32,7 @@ export const createSoftwareLicenseRequestSchema = z.object({
   expiryDate: z.coerce.date().nullable().optional(),
   cost: z.number().min(0).nullable().optional(),
   billingCycle: z.enum(SOFTWARE_LICENSE_BILLING_CYCLES).default("YEARLY"),
-  deploymentType: z.string().max(100).nullable().optional(),
+  deploymentType: z.enum(SOFTWARE_LICENSE_DEPLOYMENT_TYPES).nullable().optional(),
   userDepartment: z.string().max(200).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
 });
