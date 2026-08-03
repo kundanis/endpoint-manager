@@ -692,6 +692,8 @@ export interface SoftwareLicenseInput {
   expiryDate?: string | null;
   cost?: number | null;
   billingCycle?: SoftwareLicenseBillingCycle;
+  deploymentType?: string | null;
+  userDepartment?: string | null;
   notes?: string | null;
 }
 

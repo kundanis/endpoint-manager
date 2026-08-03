@@ -1120,6 +1120,8 @@ export interface SoftwareLicenseView {
   cost: number | null;
   billingCycle: SoftwareLicenseBillingCycle;
   annualCost: number | null;
+  deploymentType: string | null;
+  userDepartment: string | null;
   notes: string | null;
   createdByAdminId: string;
   createdAt: string;

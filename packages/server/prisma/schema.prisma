@@ -484,6 +484,8 @@ model SoftwareLicense {
   // existing rows, so a pre-existing cost value's displayed yearly total is unchanged
   // until an admin deliberately picks a different cycle.
   billingCycle     String    @default("YEARLY") @db.NVarChar(20)
+  deploymentType   String?   @db.NVarChar(100)
+  userDepartment   String?   @db.NVarChar(200)
   notes            String?   @db.NVarChar(2000)
   createdByAdminId String
   createdAt        DateTime  @default(now())

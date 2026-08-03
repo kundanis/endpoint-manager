@@ -72,6 +72,8 @@ export async function createLicense(params: CreateSoftwareLicenseRequest, create
       expiryDate: params.expiryDate ?? null,
       cost: params.cost ?? null,
       billingCycle: params.billingCycle,
+      deploymentType: params.deploymentType ?? null,
+      userDepartment: params.userDepartment ?? null,
       notes: params.notes ?? null,
       createdByAdminId,
     },
@@ -105,6 +107,8 @@ export async function updateLicense(id: string, params: UpdateSoftwareLicenseReq
       expiryDate: params.expiryDate,
       cost: params.cost,
       billingCycle: params.billingCycle,
+      deploymentType: params.deploymentType,
+      userDepartment: params.userDepartment,
       notes: params.notes,
     },
   });
@@ -131,6 +135,8 @@ interface LicenseRow {
   expiryDate: Date | null;
   cost: number | null;
   billingCycle: string;
+  deploymentType: string | null;
+  userDepartment: string | null;
   notes: string | null;
   createdByAdminId: string;
   createdAt: Date;
@@ -156,6 +162,8 @@ function serializeLicense(l: LicenseRow, seatsInUse: number) {
     // cost/billingCycle currently say rather than a separately-maintained value that
     // could drift out of sync.
     annualCost: l.cost != null ? l.cost * SOFTWARE_LICENSE_CYCLES_PER_YEAR[billingCycle] : null,
+    deploymentType: l.deploymentType,
+    userDepartment: l.userDepartment,
     notes: l.notes,
     createdByAdminId: l.createdByAdminId,
     createdAt: l.createdAt.toISOString(),

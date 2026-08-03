@@ -29,6 +29,8 @@ export const createSoftwareLicenseRequestSchema = z.object({
   expiryDate: z.coerce.date().nullable().optional(),
   cost: z.number().min(0).nullable().optional(),
   billingCycle: z.enum(SOFTWARE_LICENSE_BILLING_CYCLES).default("YEARLY"),
+  deploymentType: z.string().max(100).nullable().optional(),
+  userDepartment: z.string().max(200).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
 });
 export type CreateSoftwareLicenseRequest = z.infer<typeof createSoftwareLicenseRequestSchema>;
