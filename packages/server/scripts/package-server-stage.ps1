@@ -76,6 +76,13 @@ if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install failed while resolvi
 Pop-Location
 
 Copy-Item -Path (Join-Path $depsStagingDir "node_modules\*") -Destination $appNodeModules -Recurse -Force
+# Prisma's own engine-binary download cache (a nested node_modules\.cache\prisma\... -
+# e.g. under @prisma\engines\node_modules\.cache, not just the top level) and any stray
+# *.tmp<pid> leftover from an interrupted engine download both get swept in by the
+# wildcard copy above - neither is needed at runtime, just dead weight (tens of MB).
+Get-ChildItem $appNodeModules -Recurse -Directory -Filter ".cache" -Force -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem $appNodeModules -Recurse -Filter "*.tmp*" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 Remove-Item $depsStagingDir -Recurse -Force
 
 function Install-LocalWorkspacePackage($sourceDir, $packageName) {
