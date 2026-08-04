@@ -244,21 +244,31 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
       const { data } = await client.post<CheckinResponse>("/api/agent/checkin", body);
       pollIntervalSec = data.pollIntervalSec;
 
+      // Deliberately NOT awaited: the server already flips each task from PENDING to
+      // DISPATCHED the moment it's included in this checkin response, so it can never be
+      // redelivered on a later checkin regardless of how long it takes to finish here -
+      // that's what makes fire-and-forget safe. Awaiting these used to block this whole
+      // checkin() call (and therefore the setTimeout(checkin, ...) reschedule in the
+      // finally block below) until every dispatched task finished - a command/deployment/
+      // patch running anywhere near or past AGENT_OFFLINE_AFTER_MISSED_POLLS worth of poll
+      // intervals made the endpoint show OFFLINE on the dashboard for the entire duration
+      // it was legitimately busy, not actually down. Each task still reports its own result
+      // independently once it completes.
       if (data.commandTasks.length > 0) {
-        console.log(`Check-in ok — executing ${data.commandTasks.length} command task(s)`);
-        await runCommandTasks(client, data.commandTasks);
+        console.log(`Check-in ok — executing ${data.commandTasks.length} command task(s) in the background`);
+        runCommandTasks(client, data.commandTasks).catch((err) => console.error("Command task execution failed", err));
       } else {
         console.log("Check-in ok, no pending tasks");
       }
 
       if (data.deploymentTasks.length > 0) {
-        console.log(`Check-in received ${data.deploymentTasks.length} deployment task(s) — installing`);
-        await runDeploymentTasks(client, data.deploymentTasks);
+        console.log(`Check-in received ${data.deploymentTasks.length} deployment task(s) — installing in the background`);
+        runDeploymentTasks(client, data.deploymentTasks).catch((err) => console.error("Deployment task execution failed", err));
       }
 
       if (data.patchTasks.length > 0) {
-        console.log(`Check-in received ${data.patchTasks.length} patch task(s) — installing`);
-        await runPatchTasks(client, data.patchTasks);
+        console.log(`Check-in received ${data.patchTasks.length} patch task(s) — installing in the background`);
+        runPatchTasks(client, data.patchTasks).catch((err) => console.error("Patch task execution failed", err));
       }
 
       if (data.networkScanTasks.length > 0) {
