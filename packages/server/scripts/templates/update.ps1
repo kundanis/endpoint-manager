@@ -113,7 +113,19 @@ New-Item -ItemType Directory -Force -Path $agentInstallerDir | Out-Null
 Copy-Item -Path (Join-Path $root "app\agent-installer\EndpointProAgentSetup.exe") -Destination (Join-Path $agentInstallerDir "EndpointProAgentSetup.exe") -Force
 
 Copy-Item -Path (Join-Path $root "node\node.exe") -Destination (Join-Path $TargetDir "node\node.exe") -Force
-Copy-Item -Path (Join-Path $root "Start-Server.bat") -Destination (Join-Path $TargetDir "Start-Server.bat") -Force
+
+# Start-Server.bat is a manual/foreground troubleshooting convenience only - the real
+# service runs via the Scheduled Task and never touches this file. Non-fatal if missing
+# from this extracted copy (seen in practice: some antivirus/extraction tools strip lone
+# .bat files) - the target already has its own working copy from the original setup
+# regardless, so there is nothing to roll back or retry here.
+$sourceStartServerBat = Join-Path $root "Start-Server.bat"
+if (Test-Path $sourceStartServerBat) {
+    Copy-Item -Path $sourceStartServerBat -Destination (Join-Path $TargetDir "Start-Server.bat") -Force
+}
+else {
+    Write-Host "Note: Start-Server.bat not found in this extracted copy - skipping (not required; the target's existing copy, if any, is untouched)." -ForegroundColor Yellow
+}
 
 # 4. Regenerate the Prisma Client against the new schema, then apply any new migrations
 # to the EXISTING database - additive only, never resets or drops existing data. Same
