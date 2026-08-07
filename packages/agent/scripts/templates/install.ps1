@@ -51,8 +51,14 @@ if ($taskExists) {
 
     # The install folder may already be locked down (tamper protection) from a prior
     # install - reset its permissions first so this update can actually write to it, then
-    # re-apply the lockdown once the new files are in place (below).
+    # re-apply the lockdown once the new files are in place (below). icacls /reset alone
+    # is not enough here and fails with "Access is denied" - same lesson uninstall.ps1
+    # already learned: the lockdown leaves the Administrators group with only read+execute
+    # and strips the installing admin's own per-user grant, so even an elevated admin
+    # lacks WRITE_DAC on this folder unless they take ownership of it first (which their
+    # own SeTakeOwnershipPrivilege allows regardless of the current ACL).
     if (Test-Path $installDir) {
+        takeown /F $installDir /R /D Y 2>$null | Out-Null
         icacls $installDir /reset /T /Q 2>$null | Out-Null
     }
 }
