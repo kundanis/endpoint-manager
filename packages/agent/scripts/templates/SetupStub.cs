@@ -27,9 +27,14 @@ internal static class SetupStub
             {
                 Process.Start(relaunch);
             }
-            catch (System.ComponentModel.Win32Exception)
+            catch (System.ComponentModel.Win32Exception ex)
             {
-                // User declined the UAC prompt - nothing more to do.
+                // Covers both "user clicked No" and elevation being blocked outright (e.g. a
+                // Group Policy disabling the UAC consent prompt) - previously silent either
+                // way, which is indistinguishable from "nothing happened" to whoever ran this.
+                MessageBox.Show(
+                    "Could not get administrator privileges, so setup did not run.\n\n" + ex.Message,
+                    "Endpoint Pro Agent Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             return 0;
         }
@@ -140,6 +145,16 @@ internal static class SetupStub
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
+        }
+        catch (Exception ex)
+        {
+            // Anything unexpected here (corrupted/blocked zip extraction, powershell.exe not
+            // found, a permissions error writing to %TEMP%, antivirus interference, etc.)
+            // previously propagated straight out of Main() with no dialog shown at all -
+            // indistinguishable from the tool doing nothing. Whatever actually goes wrong,
+            // this guarantees the person running it sees SOME message rather than silence.
+            MessageBox.Show(failureLabel + "\n\n" + ex, failureTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
         }
         finally
         {
