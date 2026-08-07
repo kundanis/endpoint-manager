@@ -26,6 +26,7 @@ import {
   useSetAgentGroups,
   useSetAgentLifecycle,
   useSetAssetDetails,
+  useUninstallAgent,
   useUninstallSoftware,
 } from "../api/hooks";
 
@@ -1112,6 +1113,45 @@ function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
   );
 }
 
+function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
+  const uninstall = useUninstallAgent();
+
+  function handleUninstall() {
+    const confirmed = window.confirm(
+      `Uninstall the Endpoint Pro agent from ${agent.hostname}?\n\nThis removes management of this endpoint entirely - ` +
+        `it will stop checking in and disappear from monitoring. This cannot be undone from here; re-enrolling requires ` +
+        `running the installer on the endpoint again. The endpoint must be online to pick up the command.`,
+    );
+    if (!confirmed) return;
+
+    const password = window.prompt(
+      "Enter the uninstall password for this deployment (leave blank if none is configured):",
+    );
+    if (password === null) return; // cancelled
+
+    uninstall.mutate(
+      { agentId: agent.id, password },
+      {
+        onSuccess: () => window.alert("Uninstall scheduled - the agent will be removed within about 30 seconds."),
+      },
+    );
+  }
+
+  return (
+    <Collapsible title="Uninstall agent">
+      <p>
+        Remotely removes the Endpoint Pro agent (and its watchdog task) from this endpoint. Requires the endpoint to
+        be online to pick up the command, and the deployment's uninstall password if one is configured (Asset
+        Settings → Tamper Protection).
+      </p>
+      <button type="button" onClick={handleUninstall} disabled={uninstall.isPending}>
+        {uninstall.isPending ? "Dispatching…" : "Uninstall agent"}
+      </button>
+      {uninstall.isError && <p className="error-text">{(uninstall.error as Error).message}</p>}
+    </Collapsible>
+  );
+}
+
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: agent, isLoading, error } = useAgent(id);
@@ -1133,6 +1173,7 @@ export default function AgentDetailPage() {
 
       <AssetDetailsForm agent={agent} />
       <RemoteAccessPanel agent={agent} />
+      <UninstallAgentPanel agent={agent} />
       <StoragePanel agent={agent} />
       <CustomFieldsForm agentId={agent.id} values={agent.customFieldValues} />
       <GroupMembershipEditor agentId={agent.id} currentGroupIds={agent.groups.map((g) => g.id)} />

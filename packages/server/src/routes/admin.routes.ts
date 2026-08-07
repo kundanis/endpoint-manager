@@ -10,6 +10,7 @@ import {
   uninstallSoftwareRequestSchema,
   updateAssetDetailsRequestSchema,
   updateLifecycleStatusRequestSchema,
+  verifyUninstallPasswordRequestSchema,
 } from "@em/shared";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
@@ -19,10 +20,12 @@ import { annotateWithLicenseStatus } from "../services/softwareLicense.service";
 import {
   createAgentNote,
   getAgentCustomFieldValues,
+  IncorrectUninstallPasswordError,
   listAgentNotes,
   setAgentCustomFieldValues,
   setAgentGroups,
   setAgentLifecycle,
+  uninstallAgentRemotely,
   uninstallSoftwareOnAgent,
   updateAssetDetails,
 } from "../services/agent.service";
@@ -282,6 +285,23 @@ adminRouter.post("/agents/:id/uninstall-software", async (req, res, next) => {
     const result = await uninstallSoftwareOnAgent(req.params.id, payload.softwareName, req.adminId!);
     res.status(201).json(result);
   } catch (err) {
+    next(err);
+  }
+});
+
+// Same password this deployment's Tamper Protection uninstall check uses (Console ->
+// Asset Settings) — required here too even though dispatching already needs an
+// authenticated admin session, as a deliberate extra confirmation before an action that
+// removes the agent from an endpoint entirely.
+adminRouter.post("/agents/:id/uninstall-agent", async (req, res, next) => {
+  try {
+    const payload = verifyUninstallPasswordRequestSchema.parse(req.body);
+    const result = await uninstallAgentRemotely(req.params.id, payload.password, req.adminId!);
+    res.status(201).json(result);
+  } catch (err) {
+    if (err instanceof IncorrectUninstallPasswordError) {
+      return res.status(401).json({ error: err.message });
+    }
     next(err);
   }
 });

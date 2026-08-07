@@ -613,6 +613,13 @@ export function useUninstallSoftware() {
   });
 }
 
+export function useUninstallAgent() {
+  return useMutation({
+    mutationFn: ({ agentId, password }: { agentId: string; password: string }) =>
+      api.post<{ jobId: string }>(`/admin/agents/${agentId}/uninstall-agent`, { password }),
+  });
+}
+
 export function useSetAgentGroups() {
   const qc = useQueryClient();
   return useMutation({
