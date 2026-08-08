@@ -117,6 +117,10 @@ function AssetDetailsForm({ agent }: { agent: AgentDetail }) {
           <div>{agent.lastCheckinAt ? new Date(agent.lastCheckinAt).toLocaleString() : "never"}</div>
         </div>
         <div>
+          <strong>Last patch installed</strong>
+          <div>{agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleString() : "never"}</div>
+        </div>
+        <div>
           <strong>Processor</strong>
           <div>
             {inv?.cpuModel ?? "—"}

@@ -29,6 +29,7 @@ import {
   uninstallSoftwareOnAgent,
   updateAssetDetails,
 } from "../services/agent.service";
+import { getLastPatchInstalledAtByAgent } from "../services/patch.service";
 import { quarantineAgents, releaseAgents } from "../services/quarantine.service";
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
 import {
@@ -80,11 +81,12 @@ adminRouter.get("/agents", async (_req, res, next) => {
 
     // Per-agent counts for the endpoint list's summary row — computed once for the
     // whole list rather than N+1 queries per row.
-    const [openVulnFindings, nonCompliantZtFindings] = await Promise.all([
+    const [openVulnFindings, nonCompliantZtFindings, lastPatchInstalledByAgent] = await Promise.all([
       prisma.vulnerabilityFinding.findMany({ where: { status: "OPEN" }, select: { agentId: true } }),
       // Only enabled conditions count — matches the same filter used everywhere else
       // a Zero Trust compliance figure is computed.
       prisma.zeroTrustFinding.findMany({ where: { status: "FAIL", condition: { enabled: true } }, select: { agentId: true } }),
+      getLastPatchInstalledAtByAgent(),
     ]);
     const vulnCountByAgent = new Map<string, number>();
     for (const f of openVulnFindings) vulnCountByAgent.set(f.agentId, (vulnCountByAgent.get(f.agentId) ?? 0) + 1);
@@ -117,6 +119,7 @@ adminRouter.get("/agents", async (_req, res, next) => {
         quarantined: a.quarantined,
         zeroTrustNonCompliantCount: ztCountByAgent.get(a.id) ?? 0,
         openVulnerabilityCount: vulnCountByAgent.get(a.id) ?? 0,
+        lastPatchInstalledAt: lastPatchInstalledByAgent.get(a.id)?.toISOString() ?? null,
         inventory: a.inventory
           ? {
               cpuModel: a.inventory.cpuModel,
@@ -151,9 +154,10 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
     });
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     const customFieldValues = await getAgentCustomFieldValues(agent.id);
-    const [openVulnerabilityCount, zeroTrustNonCompliantCount] = await Promise.all([
+    const [openVulnerabilityCount, zeroTrustNonCompliantCount, lastPatchInstalledByAgent] = await Promise.all([
       prisma.vulnerabilityFinding.count({ where: { agentId: agent.id, status: "OPEN" } }),
       prisma.zeroTrustFinding.count({ where: { agentId: agent.id, status: "FAIL", condition: { enabled: true } } }),
+      getLastPatchInstalledAtByAgent(agent.id),
     ]);
 
     res.json({
@@ -185,6 +189,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       remoteAccessAllowedIp: agent.remoteAccessAllowedIp,
       zeroTrustNonCompliantCount,
       openVulnerabilityCount,
+      lastPatchInstalledAt: lastPatchInstalledByAgent.get(agent.id)?.toISOString() ?? null,
       lastCheckinAt: agent.lastCheckinAt?.toISOString() ?? null,
       status: computeStatus(agent.lastCheckinAt),
       createdAt: agent.createdAt.toISOString(),

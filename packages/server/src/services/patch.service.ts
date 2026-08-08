@@ -201,3 +201,18 @@ export async function recordPatchTaskResult(
     });
   }
 }
+
+// One grouped query for every agent at once (same "compute fleet-wide in one pass, not
+// N+1 per-agent queries" convention already used for zeroTrustNonCompliantCount/
+// openVulnerabilityCount in the agents list route) - pass agentId to scope it to just one
+// agent instead for the single-agent detail route. No denormalized field on Agent itself;
+// PatchFinding.installedAt (set whenever a scan stops seeing an update as missing, or a
+// direct install task succeeds) is already the real source of truth per (agent, patch).
+export async function getLastPatchInstalledAtByAgent(agentId?: string): Promise<Map<string, Date>> {
+  const rows = await prisma.patchFinding.groupBy({
+    by: ["agentId"],
+    where: { installedAt: { not: null }, ...(agentId ? { agentId } : {}) },
+    _max: { installedAt: true },
+  });
+  return new Map(rows.filter((r) => r._max.installedAt).map((r) => [r.agentId, r._max.installedAt as Date]));
+}

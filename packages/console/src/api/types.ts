@@ -138,6 +138,7 @@ export interface AgentListItem {
   quarantined: boolean;
   zeroTrustNonCompliantCount: number;
   openVulnerabilityCount: number;
+  lastPatchInstalledAt: string | null;
   inventory: AgentListInventoryView | null;
   lastCheckinAt: string | null;
   status: "ONLINE" | "OFFLINE";

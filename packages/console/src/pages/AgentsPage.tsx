@@ -10,6 +10,78 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Quote every cell and double up any internal quotes - the only escaping CSV actually
+// needs, and safe even for fields without commas/quotes (Excel doesn't care either way).
+function csvCell(value: string | number | null | undefined): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function buildAgentsCsv(agents: AgentListItem[]): string {
+  const headers = [
+    "Hostname", "Device Type", "Last Logged On User", "Status", "Last Check-in",
+    "IP Address", "MAC Address", "Location", "OS Platform", "OS Version", "OS Architecture",
+    "OS Edition", "OS License Status", "OS End of Support", "OS EOL", "Processor",
+    "Physical Cores", "Logical Cores", "Memory (GB)", "Storage (GB)", "Disk Types",
+    "Serial Number", "Vendor", "Purchase Date", "Warranty Expiry", "Warranty Status",
+    "Lifecycle Status", "Groups", "Zero Trust Non-Compliant", "Open Vulnerabilities",
+    "Last Patch Installed", "Quarantined", "Agent Version", "Enrolled At",
+  ];
+
+  const rows = agents.map((agent) => {
+    const inv = agent.inventory;
+    const isWarrantyExpired = agent.warrantyExpiryDate ? new Date(agent.warrantyExpiryDate) < new Date() : false;
+    return [
+      agent.hostname,
+      DEVICE_TYPE_LABEL[agent.deviceType],
+      inv?.lastLoggedOnUser ?? "",
+      agent.status,
+      agent.lastCheckinAt ? new Date(agent.lastCheckinAt).toLocaleString() : "never",
+      agent.ipAddress ?? "",
+      agent.macAddress ?? "",
+      agent.location ?? (agent.ipGeoHint ? [agent.ipGeoHint.city, agent.ipGeoHint.country].filter(Boolean).join(", ") : ""),
+      agent.osPlatform,
+      agent.osVersion,
+      agent.osArch,
+      agent.osEditionLabel ?? "",
+      inv?.osLicenseStatus ?? "",
+      agent.osEol ? new Date(agent.osEol.eolDate).toLocaleDateString() : "",
+      agent.osEol ? (agent.osEol.isEol ? "EOL" : "Supported") : "",
+      inv?.cpuModel ?? "",
+      inv?.cpuPhysicalCores ?? "",
+      inv?.cpuCores ?? "",
+      inv?.totalMemBytes ? (Number(inv.totalMemBytes) / 1024 ** 3).toFixed(1) : "",
+      inv?.totalDiskBytes ? (Number(inv.totalDiskBytes) / 1024 ** 3).toFixed(1) : "",
+      inv?.diskTypes.join(" + ") ?? "",
+      agent.serialNumber ?? "",
+      agent.vendor ?? "",
+      agent.purchaseDate ? new Date(agent.purchaseDate).toLocaleDateString() : "",
+      agent.warrantyExpiryDate ? new Date(agent.warrantyExpiryDate).toLocaleDateString() : "",
+      agent.warrantyExpiryDate ? (isWarrantyExpired ? "Expired" : "Active") : "",
+      agent.lifecycleStatus,
+      agent.groups.map((g) => g.name).join(" | "),
+      agent.zeroTrustNonCompliantCount,
+      agent.openVulnerabilityCount,
+      agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleString() : "never",
+      agent.quarantined ? "Yes" : "No",
+      agent.agentVersion,
+      new Date(agent.createdAt).toLocaleString(),
+    ];
+  });
+
+  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
 const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
   LAPTOP: "Laptop",
   DESKTOP: "Desktop",
@@ -136,7 +208,7 @@ export default function AgentsPage() {
         </label>
       )}
 
-      <label style={{ display: "inline-block", marginBottom: "1rem" }}>
+      <label style={{ display: "inline-block", marginBottom: "1rem", marginRight: "1rem" }}>
         Filter by device type
         <select value={deviceTypeFilter} onChange={(e) => setDeviceTypeFilter(e.target.value as DeviceType | "")}>
           <option value="">All types</option>
@@ -145,6 +217,15 @@ export default function AgentsPage() {
           <option value="SERVER">Server</option>
         </select>
       </label>
+
+      <button
+        type="button"
+        onClick={() => downloadTextFile("endpoints.csv", buildAgentsCsv(filteredAgents ?? []))}
+        disabled={!filteredAgents || filteredAgents.length === 0}
+        style={{ verticalAlign: "top" }}
+      >
+        Export to CSV
+      </button>
 
       <div style={{ overflowX: "auto" }}>
         <table className="data-table">
@@ -164,6 +245,7 @@ export default function AgentsPage() {
               <th>Memory</th>
               <th>Storage</th>
               <th>Warranty expiry</th>
+              <th>Last patch installed</th>
               <th>Groups</th>
             </tr>
           </thead>
@@ -240,10 +322,13 @@ export default function AgentsPage() {
                       "—"
                     )}
                   </td>
+                  <td>
+                    {agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleDateString() : "—"}
+                  </td>
                   <td>{agent.groups.map((g) => g.name).join(", ") || "—"}</td>
                 </tr>
                 <tr key={`${agent.id}-summary`} className="agent-summary-row">
-                  <td colSpan={15}>
+                  <td colSpan={16}>
                     <div className="agent-summary-row-content">
                       <StatusBadge
                         kind={agent.zeroTrustNonCompliantCount > 0 ? "fail" : "pass"}
@@ -274,7 +359,7 @@ export default function AgentsPage() {
             })}
             {filteredAgents?.length === 0 && (
               <tr>
-                <td colSpan={15}>No endpoints match this filter.</td>
+                <td colSpan={16}>No endpoints match this filter.</td>
               </tr>
             )}
           </tbody>
