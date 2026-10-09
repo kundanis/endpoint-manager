@@ -24,9 +24,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "https://SSSIL-LAP-92:4000",
+        // Plain HTTP for now — TLS_PFX_PATH is unset in packages/server/.env, see
+        // docs/tls-setup.md for how to switch both the server and this proxy back to HTTPS.
+        target: "http://localhost:4000",
         changeOrigin: true,
-        agent: devServerAgent(),
       },
     },
   },

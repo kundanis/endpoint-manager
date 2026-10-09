@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   useRemediateBySeverity,
   useRemediateVulnerability,
@@ -9,6 +9,7 @@ import {
   useVulnerabilitySyncRuns,
 } from "../api/hooks";
 import type { VulnerabilityRemediationResult } from "../api/types";
+import EndpointLabel from "../components/EndpointLabel";
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
@@ -46,12 +47,38 @@ export default function VulnerabilitiesPage() {
   const [severityResult, setSeverityResult] = useState<VulnerabilityRemediationResult | null>(null);
   const [cveResult, setCveResult] = useState<VulnerabilityRemediationResult | null>(null);
   const [findingsSeverityFilter, setFindingsSeverityFilter] = useState("ALL");
+  const [showAllSyncRuns, setShowAllSyncRuns] = useState(false);
+
+  // Runs arrive newest first (the server caps the list at the latest 50).
+  const visibleSyncRuns = showAllSyncRuns ? syncRuns : syncRuns?.slice(0, 1);
 
   const filteredSummary = summary?.filter(
     (item) => findingsSeverityFilter === "ALL" || (item.cvssSeverity ?? "UNKNOWN").toUpperCase() === findingsSeverityFilter,
   );
 
   const { data: detail } = useVulnerabilityDetail(selectedDefId);
+  const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
+  const detailPanelRef = useRef<HTMLDivElement>(null);
+
+  // Fresh selection per CVE, and bring its endpoint list into view once it has loaded.
+  const loadedDetailId = detail?.vulnerabilityDefinitionId;
+  useEffect(() => {
+    setSelectedFindingIds([]);
+    if (loadedDetailId) detailPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loadedDetailId]);
+
+  // "Select all" ticks every row, name-only matches included — the confirm dialog in
+  // handleRemediateVulnerability spells out how many of the selection are name-only.
+  const allFindingIds = detail?.findings.map((f) => f.id) ?? [];
+  const allSelected = allFindingIds.length > 0 && allFindingIds.every((id) => selectedFindingIds.includes(id));
+
+  function toggleFinding(id: string) {
+    setSelectedFindingIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function toggleAll() {
+    setSelectedFindingIds(allSelected ? [] : allFindingIds);
+  }
 
   function handleSync(e: FormEvent) {
     e.preventDefault();
@@ -74,15 +101,28 @@ export default function VulnerabilitiesPage() {
   }
 
   function handleRemediateVulnerability() {
-    if (!detail) return;
-    const agentCount = new Set(detail.findings.map((f) => f.agentId)).size;
+    if (!detail || selectedFindingIds.length === 0) return;
+    const selected = detail.findings.filter((f) => selectedFindingIds.includes(f.id));
+    const agentCount = new Set(selected.map((f) => f.agentId)).size;
+    const nameOnlyCount = selected.filter((f) => f.matchConfidence !== "PRODUCT_AND_VERSION").length;
     const confirmed = window.confirm(
-      `Uninstall the software matched to ${detail.cveId} on ${agentCount} endpoint(s)?\n\n` +
-        `This dispatches a real uninstall command to every affected endpoint. Lower-confidence (name-only) matches are skipped automatically.`,
+      `Uninstall the software matched to ${detail.cveId} on ${agentCount} selected endpoint(s)?\n\n` +
+        `This dispatches a real uninstall command to each selected endpoint.` +
+        (nameOnlyCount > 0
+          ? `\n\n${nameOnlyCount} of the selected match(es) are name-only (version not confirmed) — they will be uninstalled too, because you ticked them.`
+          : ""),
     );
     if (!confirmed) return;
     setCveResult(null);
-    remediateVuln.mutate(detail.vulnerabilityDefinitionId, { onSuccess: (result) => setCveResult(result) });
+    remediateVuln.mutate(
+      { vulnerabilityDefinitionId: detail.vulnerabilityDefinitionId, findingIds: selectedFindingIds },
+      {
+        onSuccess: (result) => {
+          setCveResult(result);
+          setSelectedFindingIds([]);
+        },
+      },
+    );
   }
 
   return (
@@ -148,7 +188,7 @@ export default function VulnerabilitiesPage() {
           </tr>
         </thead>
         <tbody>
-          {syncRuns?.map((run) => (
+          {visibleSyncRuns?.map((run) => (
             <tr key={run.id}>
               <td>{run.mode}</td>
               <td>
@@ -169,6 +209,11 @@ export default function VulnerabilitiesPage() {
           )}
         </tbody>
       </table>
+      {syncRuns && syncRuns.length > 1 && (
+        <button type="button" onClick={() => setShowAllSyncRuns((v) => !v)}>
+          {showAllSyncRuns ? "Show latest only" : `Show all records (${syncRuns.length})`}
+        </button>
+      )}
 
       <h2>Fleet findings (possible matches)</h2>
       <label>
@@ -199,6 +244,10 @@ export default function VulnerabilitiesPage() {
               key={item.vulnerabilityDefinitionId}
               className="clickable-row"
               onClick={() => {
+                // Same CVE again: the effect above won't re-fire, so scroll directly.
+                if (item.vulnerabilityDefinitionId === loadedDetailId) {
+                  detailPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
                 setSelectedDefId(item.vulnerabilityDefinitionId);
                 setCveResult(null);
               }}
@@ -238,7 +287,7 @@ export default function VulnerabilitiesPage() {
       </table>
 
       {detail && (
-        <div className="panel">
+        <div className="panel" ref={detailPanelRef}>
           <h2>
             <a href={`https://nvd.nist.gov/vuln/detail/${detail.cveId}`} target="_blank" rel="noreferrer">
               {detail.cveId}
@@ -247,15 +296,37 @@ export default function VulnerabilitiesPage() {
           </h2>
           <p>{detail.description}</p>
           {remediateVuln.isError && <p className="error-text">{(remediateVuln.error as Error).message}</p>}
-          <button type="button" onClick={handleRemediateVulnerability} disabled={remediateVuln.isPending}>
+          <p className="hint">
+            Tick the endpoints to remediate, or use the header checkbox to select all. Name-only matches (version not
+            confirmed) are uninstalled too if selected — check them before remediating.
+          </p>
+          <button
+            type="button"
+            onClick={handleRemediateVulnerability}
+            disabled={remediateVuln.isPending || selectedFindingIds.length === 0}
+          >
             {remediateVuln.isPending
               ? "Dispatching…"
-              : `Remediate — uninstall on ${new Set(detail.findings.map((f) => f.agentId)).size} endpoint(s)`}
+              : selectedFindingIds.length === 0
+                ? "Remediate — select endpoints below"
+                : `Remediate — uninstall on ${
+                    new Set(detail.findings.filter((f) => selectedFindingIds.includes(f.id)).map((f) => f.agentId)).size
+                  } selected endpoint(s)`}
           </button>
           {cveResult && <p>{remediationSummaryText(cveResult)}</p>}
           <table className="data-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all endpoints"
+                    title="Select all endpoints"
+                    checked={allSelected}
+                    disabled={allFindingIds.length === 0}
+                    onChange={toggleAll}
+                  />
+                </th>
                 <th>Endpoint</th>
                 <th>Matched software</th>
                 <th>Version</th>
@@ -265,8 +336,19 @@ export default function VulnerabilitiesPage() {
             </thead>
             <tbody>
               {detail.findings.map((f) => (
-                <tr key={f.id}>
-                  <td>{f.hostname}</td>
+                <tr key={f.id} className="clickable-row" onClick={() => toggleFinding(f.id)}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${f.hostname}`}
+                      checked={selectedFindingIds.includes(f.id)}
+                      onChange={() => toggleFinding(f.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td>
+                    <EndpointLabel hostname={f.hostname} agentId={f.agentId} />
+                  </td>
                   <td>{f.matchedSoftwareName}</td>
                   <td>{f.matchedSoftwareVersion ?? "—"}</td>
                   <td>{f.matchConfidence === "PRODUCT_AND_VERSION" ? "Name + version" : "Name only"}</td>

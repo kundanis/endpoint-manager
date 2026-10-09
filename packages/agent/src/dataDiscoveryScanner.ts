@@ -15,6 +15,13 @@ import {
   DATA_DISCOVERY_MAX_SCAN_DEPTH,
   getPatternsForRegulation,
 } from "@em/shared";
+import { extractOoxmlText, OOXML_EXTENSIONS } from "./ooxmlText";
+import { listUserProfiles, resolveTargetPath } from "./userPaths";
+
+// The server's scan-result schema accepts at most 1000 findings per report (and its
+// stale-finding cleanup sends every reported path as a query parameter, under SQL
+// Server's 2100 cap) — over that, the whole report would be rejected, so trim instead.
+const MAX_FINDINGS_PER_REPORT = 1000;
 
 // Masks a matched value down to a preview — enough to confirm a real match (and spot
 // an obvious false positive) without the full sensitive value ever leaving the
@@ -42,10 +49,6 @@ function maskGeneric(raw: string): string {
   return raw.slice(0, cut).replace(/[^\s-]/g, "•") + raw.slice(cut);
 }
 
-function expandEnvVars(rawPath: string): string {
-  return rawPath.replace(/%([^%]+)%/g, (match, name: string) => process.env[name] ?? match);
-}
-
 // Standard Luhn checksum — narrows the loose 13-16 digit CREDIT_CARD regex match down
 // to numbers that are actually valid card numbers, not just any similarly-shaped digit run.
 function luhnValid(digitsOnly: string): boolean {
@@ -63,8 +66,30 @@ function luhnValid(digitsOnly: string): boolean {
   return sum % 10 === 0;
 }
 
+// Verhoeff checksum — every real Aadhaar number's last digit is one. Without it the
+// 12-digit Aadhaar regex also fires on the first 12 digits of any card number, and on
+// arbitrary 12-digit IDs, so nearly every card-holding file was also "Aadhaar".
+const VERHOEFF_D = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7], [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3], [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+];
+const VERHOEFF_P = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7], [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+];
+function verhoeffValid(digitsOnly: string): boolean {
+  let c = 0;
+  const reversed = digitsOnly.split("").reverse();
+  for (let i = 0; i < reversed.length; i++) c = VERHOEFF_D[c][VERHOEFF_P[i % 8][Number(reversed[i])]];
+  return c === 0;
+}
+
 function filterValidMatches(patternKey: string, matches: string[]): string[] {
   if (patternKey === "CREDIT_CARD") return matches.filter((m) => luhnValid(m.replace(/[ -]/g, "")));
+  if (patternKey === "AADHAAR") return matches.filter((m) => verhoeffValid(m.replace(/[ -]/g, "")));
   if (patternKey === "IP_ADDRESS") return matches.filter((m) => m.split(".").every((octet) => Number(octet) <= 255));
   return matches;
 }
@@ -109,9 +134,16 @@ async function scanFile(filePath: string, patterns: PiiPatternDefinition[]): Pro
 
   let content: string;
   try {
-    content = await fs.readFile(filePath, "utf8");
+    if (OOXML_EXTENSIONS.includes(path.extname(filePath).toLowerCase())) {
+      // .docx/.xlsx/.pptx are ZIP containers — scan the text inside, not the raw bytes.
+      const text = extractOoxmlText(await fs.readFile(filePath));
+      if (text === null) return null;
+      content = text;
+    } else {
+      content = await fs.readFile(filePath, "utf8");
+    }
   } catch {
-    return null; // unreadable/locked/binary garbage that isn't valid utf8
+    return null; // unreadable/locked (e.g. open in Office with an exclusive lock)
   }
 
   const matchCounts: Record<string, number> = {};
@@ -148,29 +180,52 @@ export async function runDataDiscoveryScan(client: AxiosInstance): Promise<void>
   if (process.platform !== "win32") return;
 
   const { data: assigned } = await client.get<AssignedDataDiscoveryPolicyWire[]>("/api/agent/data-discovery/assigned");
+  if (assigned.length === 0) return;
+
+  // Read once per cycle — %USERPROFILE%-style policy paths fan out across every real user
+  // on the machine (see userPaths.ts for why the agent's own environment is wrong here).
+  const profiles = await listUserProfiles();
 
   for (const policy of assigned) {
     try {
       const patterns = getPatternsForRegulation(policy.regulation);
       const findings: DataDiscoveryFileFinding[] = [];
       let filesScanned = 0;
+      const unresolvedPaths: string[] = [];
 
       for (const rawPath of policy.targetPaths) {
         if (filesScanned >= DATA_DISCOVERY_MAX_FILES_PER_SCAN) break;
-        const root = expandEnvVars(rawPath);
-        const files = await collectFiles(root, DATA_DISCOVERY_MAX_FILES_PER_SCAN - filesScanned);
-        for (const file of files) {
-          filesScanned++;
-          const finding = await scanFile(file, patterns);
-          if (finding) findings.push(finding);
+        const roots = await resolveTargetPath(rawPath, profiles);
+        if (roots.length === 0) unresolvedPaths.push(rawPath);
+        for (const root of roots) {
+          if (filesScanned >= DATA_DISCOVERY_MAX_FILES_PER_SCAN) break;
+          const files = await collectFiles(root, DATA_DISCOVERY_MAX_FILES_PER_SCAN - filesScanned);
+          for (const file of files) {
+            filesScanned++;
+            const finding = await scanFile(file, patterns);
+            if (finding) findings.push(finding);
+          }
         }
       }
+      // Previously a wrong path silently produced "scanned, 0 files" — at least leave a
+      // trace in the agent log for whichever target paths matched no folder at all.
+      if (unresolvedPaths.length > 0) {
+        console.warn(
+          `Data discovery policy ${policy.policyId}: no existing folder for ${unresolvedPaths.join(", ")} ` +
+            `(${profiles.length} user profile(s) found)`,
+        );
+      }
 
+      if (findings.length > MAX_FINDINGS_PER_REPORT) {
+        console.warn(
+          `Data discovery policy ${policy.policyId}: ${findings.length} matching files, reporting the first ${MAX_FINDINGS_PER_REPORT}`,
+        );
+      }
       const payload: DataDiscoveryScanResultPayload = {
         scannedAt: new Date().toISOString(),
         policyId: policy.policyId,
         filesScanned,
-        findings,
+        findings: findings.slice(0, MAX_FINDINGS_PER_REPORT),
       };
       await client.post("/api/agent/data-discovery/scan-result", payload);
     } catch (err) {

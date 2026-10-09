@@ -1,6 +1,7 @@
 import type { AssignedUsbControlResponse, UsbControlEventBatchPayload, UsbControlSyncResultPayload } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
+import { isAgentPaused } from "./pause.service";
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
@@ -9,7 +10,12 @@ async function groupIdsForAgent(agentId: string): Promise<string[]> {
 
 // Flat, deduped serial whitelist across every enabled, non-excepted policy assigned to this
 // agent (directly or via a group) — a device is allowed if its serial is in ANY of them.
+// NOTE: gating this on paused only stops NEW devices from being blocked - it cannot
+// un-block a device already disabled before the agent was paused (Disable-PnpDevice has
+// no scriptable undo here, see usbControlEnforcer.ts's own comment on this).
 export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedUsbControlResponse> {
+  if (await isAgentPaused(agentId)) return { policyIds: [], allowedSerials: [] };
+
   const groupIds = await groupIdsForAgent(agentId);
 
   const assignments = await prisma.usbControlPolicyAssignment.findMany({

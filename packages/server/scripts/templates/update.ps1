@@ -93,47 +93,78 @@ $backupDir = Join-Path $TargetDir "_update-backups\$timestamp"
 Write-Host "Backing up current app code to $backupDir ..."
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 
-foreach ($item in @("dist", "console-dist", "prisma", "node_modules")) {
-    $src = Join-Path $targetAppDir $item
-    if (Test-Path $src) {
-        Move-Item -Path $src -Destination (Join-Path $backupDir $item) -Force
-    }
-}
-
-# 3. Copy in the new app code. app\.env and app\uploads are never referenced below, so
-# existing secrets/DB connection/license activation/uploaded packages all survive untouched.
-Write-Host "Copying updated app files..."
-Copy-Item -Path (Join-Path $root "app\dist") -Destination (Join-Path $targetAppDir "dist") -Recurse -Force
-Copy-Item -Path (Join-Path $root "app\console-dist") -Destination (Join-Path $targetAppDir "console-dist") -Recurse -Force
-Copy-Item -Path (Join-Path $root "app\prisma") -Destination (Join-Path $targetAppDir "prisma") -Recurse -Force
-Copy-Item -Path (Join-Path $root "app\node_modules") -Destination (Join-Path $targetAppDir "node_modules") -Recurse -Force
-
-$agentInstallerDir = Join-Path $targetAppDir "agent-installer"
-New-Item -ItemType Directory -Force -Path $agentInstallerDir | Out-Null
-Copy-Item -Path (Join-Path $root "app\agent-installer\EndpointProAgentSetup.exe") -Destination (Join-Path $agentInstallerDir "EndpointProAgentSetup.exe") -Force
-
-Copy-Item -Path (Join-Path $root "node\node.exe") -Destination (Join-Path $TargetDir "node\node.exe") -Force
-
-# Start-Server.bat is a manual/foreground troubleshooting convenience only - the real
-# service runs via the Scheduled Task and never touches this file. Non-fatal if missing
-# from this extracted copy (seen in practice: some antivirus/extraction tools strip lone
-# .bat files) - the target already has its own working copy from the original setup
-# regardless, so there is nothing to roll back or retry here.
-$sourceStartServerBat = Join-Path $root "Start-Server.bat"
-if (Test-Path $sourceStartServerBat) {
-    Copy-Item -Path $sourceStartServerBat -Destination (Join-Path $TargetDir "Start-Server.bat") -Force
-}
-else {
-    Write-Host "Note: Start-Server.bat not found in this extracted copy - skipping (not required; the target's existing copy, if any, is untouched)." -ForegroundColor Yellow
-}
-
-# 4. Regenerate the Prisma Client against the new schema, then apply any new migrations
-# to the EXISTING database - additive only, never resets or drops existing data. Same
-# corporate-proxy fix setup.ps1 itself needs for Prisma's engine-binary fetch.
-$env:NODE_OPTIONS = "--use-system-ca"
-Push-Location $targetAppDir
-$prismaCli = Join-Path $targetAppDir "node_modules\prisma\build\index.js"
+# Everything from here through the migration is wrapped in one try/catch so ANY failure -
+# a permissions error moving/copying files, a bad migration, whatever - lands on the same
+# clear "here's where your old code is, here's how to roll back" message instead of a raw
+# PowerShell crash. Caught for real on a live customer machine: an unhandled Move-Item/
+# Copy-Item failure here used to terminate the whole script uncaught, leaving app\prisma/
+# node_modules half-migrated (some already moved to backup, new copy never completed) with
+# no guidance at all.
 try {
+    # $targetAppDir's ownership/ACLs were set by whatever process/account originally ran
+    # setup.ps1 on this machine - on a CIS-hardened server (or one where a different admin
+    # account did the original install), the account running THIS update may not own these
+    # files even when running elevated, and Move-Item/Copy-Item -Force still refuses to
+    # touch them. Same fix already proven for the agent installer's install.ps1 - take
+    # ownership, then reset ACLs, before ever attempting to write here (BEFORE the backup
+    # move too, not just the copy-in - confirmed live that the exact same permission wall
+    # can just as easily block the move-out step). Harmless no-op on a machine that didn't
+    # need it.
+    takeown /F $targetAppDir /R /D Y 2>$null | Out-Null
+    icacls $targetAppDir /reset /T /Q 2>$null | Out-Null
+
+    foreach ($item in @("dist", "console-dist", "prisma", "node_modules")) {
+        $src = Join-Path $targetAppDir $item
+        if (Test-Path $src) {
+            Move-Item -Path $src -Destination (Join-Path $backupDir $item) -Force
+        }
+    }
+
+    # Copy in the new app code. app\.env and app\uploads are never referenced below, so
+    # existing secrets/DB connection/license activation/uploaded packages all survive untouched.
+    Write-Host "Copying updated app files..."
+    Copy-Item -Path (Join-Path $root "app\dist") -Destination (Join-Path $targetAppDir "dist") -Recurse -Force
+    Copy-Item -Path (Join-Path $root "app\console-dist") -Destination (Join-Path $targetAppDir "console-dist") -Recurse -Force
+    Copy-Item -Path (Join-Path $root "app\prisma") -Destination (Join-Path $targetAppDir "prisma") -Recurse -Force
+    Copy-Item -Path (Join-Path $root "app\node_modules") -Destination (Join-Path $targetAppDir "node_modules") -Recurse -Force
+
+    $agentInstallerDir = Join-Path $targetAppDir "agent-installer"
+    New-Item -ItemType Directory -Force -Path $agentInstallerDir | Out-Null
+    Copy-Item -Path (Join-Path $root "app\agent-installer\EndpointProAgentSetup.exe") -Destination (Join-Path $agentInstallerDir "EndpointProAgentSetup.exe") -Force
+    # The zip is the actual self-update payload agents download (see agentBuild.service.ts) -
+    # the manifest is what makes a new agent build show up as "available" in the console's
+    # Agent Updates page. Both must land together so they always describe the same build.
+    Copy-Item -Path (Join-Path $root "app\agent-installer\EndpointProAgentInstaller.zip") -Destination (Join-Path $agentInstallerDir "EndpointProAgentInstaller.zip") -Force
+    Copy-Item -Path (Join-Path $root "app\agent-installer\agent-manifest.json") -Destination (Join-Path $agentInstallerDir "agent-manifest.json") -Force
+
+    # Same idea, one directory down, for the Linux agent - see config.agentInstallerTarballPathLinux.
+    $agentInstallerDirLinux = Join-Path $agentInstallerDir "linux"
+    New-Item -ItemType Directory -Force -Path $agentInstallerDirLinux | Out-Null
+    Copy-Item -Path (Join-Path $root "app\agent-installer\linux\EndpointProAgentLinux.tar.gz") -Destination (Join-Path $agentInstallerDirLinux "EndpointProAgentLinux.tar.gz") -Force
+    Copy-Item -Path (Join-Path $root "app\agent-installer\linux\agent-manifest.json") -Destination (Join-Path $agentInstallerDirLinux "agent-manifest.json") -Force
+
+    Copy-Item -Path (Join-Path $root "node\node.exe") -Destination (Join-Path $TargetDir "node\node.exe") -Force
+
+    # Start-Server.bat is a manual/foreground troubleshooting convenience only - the real
+    # service runs via the Scheduled Task and never touches this file. Non-fatal if missing
+    # from this extracted copy (seen in practice: some antivirus/extraction tools strip lone
+    # .bat files) - the target already has its own working copy from the original setup
+    # regardless, so there is nothing to roll back or retry here.
+    $sourceStartServerBat = Join-Path $root "Start-Server.bat"
+    if (Test-Path $sourceStartServerBat) {
+        Copy-Item -Path $sourceStartServerBat -Destination (Join-Path $TargetDir "Start-Server.bat") -Force
+    }
+    else {
+        Write-Host "Note: Start-Server.bat not found in this extracted copy - skipping (not required; the target's existing copy, if any, is untouched)." -ForegroundColor Yellow
+    }
+
+    # Regenerate the Prisma Client against the new schema, then apply any new migrations
+    # to the EXISTING database - additive only, never resets or drops existing data. Same
+    # corporate-proxy fix setup.ps1 itself needs for Prisma's engine-binary fetch.
+    $env:NODE_OPTIONS = "--use-system-ca"
+    Push-Location $targetAppDir
+    $prismaCli = Join-Path $targetAppDir "node_modules\prisma\build\index.js"
+
     Write-Host "Regenerating Prisma Client..."
     & $nodeExe $prismaCli generate --schema (Join-Path $targetAppDir "prisma\schema.prisma")
     if ($LASTEXITCODE -ne 0) { throw "prisma generate failed (exit $LASTEXITCODE)" }
@@ -141,9 +172,11 @@ try {
     Write-Host "Applying any new database migrations..."
     & $nodeExe $prismaCli migrate deploy --schema (Join-Path $targetAppDir "prisma\schema.prisma")
     if ($LASTEXITCODE -ne 0) { throw "prisma migrate deploy failed (exit $LASTEXITCODE)" }
+
+    Pop-Location
 }
 catch {
-    Pop-Location
+    if ((Get-Location).Path -eq $targetAppDir) { Pop-Location }
     Write-Host ""
     Write-Host "UPDATE FAILED: $_" -ForegroundColor Red
     Write-Host "The previous app\dist / console-dist / prisma / node_modules are safely backed up at:"
@@ -155,7 +188,6 @@ catch {
     Write-Host "  schtasks /run /tn $TaskName"
     throw
 }
-Pop-Location
 
 # 5. Restart the service.
 if ($taskExists) {

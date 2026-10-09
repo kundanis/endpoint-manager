@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { encryptField } from "../src/utils/fieldEncryption";
 
 const prisma = new PrismaClient();
 
@@ -663,28 +664,103 @@ const ZERO_TRUST_CONDITIONS: ZeroTrustSeedCondition[] = [
     operator: "EQUALS",
     expectedValue: "0",
   },
+  // The five conditions below mirror the Windows Security app's own top-level category
+  // names exactly (Settings -> Privacy & security -> Windows Security) rather than being
+  // vendor-specific like antivirus-registered/management-agent-installed above — each
+  // checks a native OS signal (WSC, Defender's own cmdlet, or a built-in hardware/policy
+  // check) so they work unmodified regardless of which AV/EDR product is actually
+  // installed. All five report a plain "COMPLIANT"/"NONCOMPLIANT" string so they share one
+  // operator/expectedValue convention.
+  {
+    conditionKey: "win-security-virus-threat-protection",
+    title: "Virus & threat protection",
+    description:
+      "Windows Defender (or whichever product WSC has delegated to) reports antivirus enabled, real-time protection on, and signatures no more than 7 days old. Requires the Defender PowerShell module — reports NONCOMPLIANT rather than erroring if that module itself isn't present.",
+    checkPowerShell:
+      "$s = Get-MpComputerStatus -ErrorAction SilentlyContinue; if ($s -and $s.AntivirusEnabled -and $s.RealTimeProtectionEnabled -and $s.AntivirusSignatureAge -le 7) { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+    operator: "EQUALS",
+    expectedValue: "COMPLIANT",
+  },
+  {
+    conditionKey: "win-security-account-protection",
+    title: "Account protection",
+    description:
+      "Best-effort presence check for Windows Hello enrollment (PIN/biometric) via the per-machine NGC container folder Windows itself stores enrolled credentials in — not a live Microsoft Graph/MDM query.",
+    checkPowerShell:
+      "$ngc = \"$env:ProgramData\\Microsoft\\Ngc\"; if ((Test-Path $ngc) -and (Get-ChildItem $ngc -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0) { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+    operator: "EQUALS",
+    expectedValue: "COMPLIANT",
+  },
+  {
+    conditionKey: "win-security-firewall-network-protection",
+    title: "Firewall & network protection",
+    description:
+      "All three Windows Firewall profiles (Domain/Private/Public) are enabled. Conceptually the same fact as firewall-all-profiles-enabled above, kept as a separate condition so it can be assigned/overridden under this Windows-Security-style name independently of that org-specific policy's own copy.",
+    checkPowerShell:
+      "$profiles = Get-NetFirewallProfile -ErrorAction SilentlyContinue; if ($profiles -and (@($profiles | Where-Object { -not $_.Enabled })).Count -eq 0) { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+    operator: "EQUALS",
+    expectedValue: "COMPLIANT",
+  },
+  {
+    conditionKey: "win-security-app-browser-control",
+    title: "App & browser control",
+    description: "SmartScreen for apps and files (Explorer\\SmartScreenEnabled) is turned on, not 'Off'.",
+    checkPowerShell:
+      "$v = (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' -Name SmartScreenEnabled -ErrorAction SilentlyContinue).SmartScreenEnabled; if ($v -and $v -ne 'Off') { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+    operator: "EQUALS",
+    expectedValue: "COMPLIANT",
+  },
+  {
+    conditionKey: "win-security-device-security",
+    title: "Device security",
+    description:
+      "Core hardware-security floor: a present-and-ready TPM plus UEFI Secure Boot enabled. Confirm-SecureBootUEFI throws outright on legacy BIOS machines — caught and treated as 'no', which is the correct read (legacy BIOS can't have Secure Boot at all).",
+    checkPowerShell:
+      "$tpm = Get-Tpm -ErrorAction SilentlyContinue; $sb = $false; try { $sb = Confirm-SecureBootUEFI } catch {}; if ($tpm -and $tpm.TpmPresent -and $tpm.TpmReady -and $sb) { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+    operator: "EQUALS",
+    expectedValue: "COMPLIANT",
+  },
 ];
 
+// Self-healing, not just create-once: if the policy already exists (a re-run, or an
+// existing customer deployment from before some of ZERO_TRUST_CONDITIONS existed), this
+// tops up only whichever conditionKeys are actually missing rather than skipping entirely —
+// same "don't just skip forever" fix already applied to the SUPER_ADMIN bootstrap seed
+// earlier in this project's life. Concretely what this was needed for: the five
+// win-security-* conditions were added to ZERO_TRUST_CONDITIONS after "Baseline Device
+// Trust" had already been seeded on real installs — without this, those installs would
+// never have received them.
 async function seedZeroTrustPolicy() {
   const name = "Baseline Device Trust";
-  const existing = await prisma.zeroTrustPolicy.findFirst({ where: { name } });
-  if (existing) {
-    console.log(`ZeroTrustPolicy "${name}" already exists, skipping seed.`);
+  let policy = await prisma.zeroTrustPolicy.findFirst({ where: { name } });
+
+  if (!policy) {
+    policy = await prisma.zeroTrustPolicy.create({
+      data: {
+        name,
+        description:
+          "Device-trust conditions distilled from a prior posture-based NAC project (OS currency, firewall, disk encryption, required AV/management agent, patch currency, blacklisted processes), plus the Windows Security app's own top-level categories (virus & threat protection, account protection, firewall & network protection, app & browser control, device security). The AV/management-agent checks are hardcoded to Kaspersky to match this environment — clone and adjust for a different vendor.",
+        createdByAdminId: null,
+      },
+    });
+    console.log(`Seeded ZeroTrustPolicy "${name}"`);
+  }
+
+  const existingConditions = await prisma.zeroTrustCondition.findMany({
+    where: { policyId: policy.id },
+    select: { conditionKey: true },
+  });
+  const existingKeys = new Set(existingConditions.map((c) => c.conditionKey));
+  const missing = ZERO_TRUST_CONDITIONS.filter((c) => !existingKeys.has(c.conditionKey));
+
+  if (missing.length === 0) {
+    console.log(`ZeroTrustPolicy "${name}" already has all ${ZERO_TRUST_CONDITIONS.length} seed conditions, skipping.`);
     return;
   }
 
-  const policy = await prisma.zeroTrustPolicy.create({
-    data: {
-      name,
-      description:
-        "Device-trust conditions distilled from a prior posture-based NAC project (OS currency, firewall, disk encryption, required AV/management agent, patch currency, blacklisted processes). The AV/management-agent checks are hardcoded to Kaspersky to match this environment — clone and adjust for a different vendor.",
-      createdByAdminId: null,
-    },
-  });
-
   await prisma.zeroTrustCondition.createMany({
-    data: ZERO_TRUST_CONDITIONS.map((c) => ({
-      policyId: policy.id,
+    data: missing.map((c) => ({
+      policyId: policy!.id,
       conditionKey: c.conditionKey,
       title: c.title,
       description: c.description,
@@ -694,7 +770,7 @@ async function seedZeroTrustPolicy() {
     })),
   });
 
-  console.log(`Seeded ZeroTrustPolicy "${name}" with ${ZERO_TRUST_CONDITIONS.length} conditions`);
+  console.log(`Added ${missing.length} new condition(s) to ZeroTrustPolicy "${name}": ${missing.map((c) => c.conditionKey).join(", ")}`);
 }
 
 interface SeedDlpRule {
@@ -861,7 +937,7 @@ async function seedCommandTemplates(createdByAdminId: string) {
       continue;
     }
     await prisma.commandTemplate.create({
-      data: { name: t.name, description: t.description, shell: t.shell, script: t.script, createdByAdminId },
+      data: { name: t.name, description: t.description, shell: t.shell, script: encryptField(t.script), createdByAdminId },
     });
     console.log(`Seeded CommandTemplate "${t.name}"`);
   }
@@ -876,10 +952,22 @@ async function main() {
   if (existingAdmin) {
     console.log(`AdminUser ${email} already exists, skipping seed.`);
     adminId = existingAdmin.id;
+    // Guards against a permanent lockout: an admin row created before role-based access
+    // existed (or by an earlier setup attempt on this same machine) defaults to plain
+    // ADMIN, and nothing else in the app can ever promote the first account - only
+    // promote here when there is truly no super admin anywhere yet, so a deliberate
+    // demotion on an already-bootstrapped system is never silently undone.
+    const superAdminCount = await prisma.adminUser.count({ where: { role: "SUPER_ADMIN" } });
+    if (superAdminCount === 0) {
+      await prisma.adminUser.update({ where: { id: existingAdmin.id }, data: { role: "SUPER_ADMIN" } });
+      console.log(`Promoted ${email} to SUPER_ADMIN (no super admin existed yet).`);
+    }
   } else {
     const passwordHash = await bcrypt.hash(password, 10);
-    const created = await prisma.adminUser.create({ data: { email, passwordHash } });
-    console.log(`Seeded AdminUser ${email}`);
+    // The bootstrap admin must be a super admin - otherwise no account could ever create
+    // the first super admin (or any other admin at all) post-install.
+    const created = await prisma.adminUser.create({ data: { email, passwordHash, role: "SUPER_ADMIN" } });
+    console.log(`Seeded AdminUser ${email} (SUPER_ADMIN)`);
     adminId = created.id;
   }
 

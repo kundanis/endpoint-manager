@@ -1,5 +1,7 @@
 import os from "node:os";
 import type {
+  AgentUpdateStatusPayload,
+  AgentUpdateTaskWire,
   CheckinRequest,
   CheckinResponse,
   CommandTaskWire,
@@ -9,10 +11,11 @@ import type {
   PatchTaskWire,
 } from "@em/shared";
 import { DEFAULT_POLL_INTERVAL_SEC } from "@em/shared";
-import { agentClient } from "./httpClient";
+import { agentClient, setServerUrls } from "./httpClient";
 import { collectInventory } from "./inventory";
 import { executeCommand } from "./commandExecutor";
 import { processDeployment } from "./packageInstaller";
+import { processAgentUpdate } from "./selfUpdater";
 import { scanForMissingPatches } from "./patchScanner";
 import { installPatches } from "./patchInstaller";
 import { runVlanNetworkScan } from "./networkScanner";
@@ -238,11 +241,46 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
     }
   }
 
+  // In practice this array is always a singleton — createAgentUpdateJob refuses to create a
+  // second in-flight task for an agent that already has one (see agentUpdate.service.ts) —
+  // but iterate defensively rather than assume it. A self-update that succeeds tears down
+  // and restarts this very process partway through the loop below; any task after it in the
+  // array simply never gets its own iteration, which is harmless since there is normally
+  // only ever one.
+  async function runAgentUpdateTasks(client: AxiosInstance, tasks: AgentUpdateTaskWire[]) {
+    for (const task of tasks) {
+      console.log(`Processing agent update task ${task.id} (target version ${task.targetVersion})`);
+      await processAgentUpdate(client, task, async (payload: AgentUpdateStatusPayload) => {
+        // Retried (unlike other task-result reports in this file) because a lost report
+        // here — especially a FAILED from a bail-out guard in processAgentUpdate — leaves
+        // the task stuck at DISPATCHED with no other signal until the server's own 15-minute
+        // reconcileStaleAgentUpdateTasks sweep force-fails it (see agentUpdate.service.ts).
+        // A few retries against a transient blip is cheap insurance against that.
+        const ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+          try {
+            await client.post(`/api/agent/self-update/tasks/${task.id}/status`, payload);
+            console.log(`Agent update task ${task.id} status: ${payload.status}`);
+            return;
+          } catch (err) {
+            const isLast = attempt === ATTEMPTS;
+            console.error(
+              `Failed to report agent update status for task ${task.id} (attempt ${attempt}/${ATTEMPTS})`,
+              err,
+            );
+            if (!isLast) await new Promise((resolve) => setTimeout(resolve, 5_000));
+          }
+        }
+      });
+    }
+  }
+
   async function checkin() {
     try {
-      const body: CheckinRequest = getLocalNetworkInfo();
+      const body: CheckinRequest = { ...getLocalNetworkInfo(), agentVersion: agentConfig.agentVersion };
       const { data } = await client.post<CheckinResponse>("/api/agent/checkin", body);
       pollIntervalSec = data.pollIntervalSec;
+      if (data.serverUrls) setServerUrls(data.serverUrls);
 
       // Deliberately NOT awaited: the server already flips each task from PENDING to
       // DISPATCHED the moment it's included in this checkin response, so it can never be
@@ -279,6 +317,11 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
       if (data.runDataDiscoveryScanNow) {
         console.log("Check-in requested an immediate data discovery scan");
         void sendDataDiscoveryScan();
+      }
+
+      if (data.agentUpdateTasks.length > 0) {
+        console.log(`Check-in received ${data.agentUpdateTasks.length} agent update task(s)`);
+        runAgentUpdateTasks(client, data.agentUpdateTasks).catch((err) => console.error("Agent update task execution failed", err));
       }
     } catch (err) {
       console.error("Check-in failed", err);

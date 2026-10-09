@@ -1,4 +1,4 @@
-import type { CommandTaskResultPayload } from "@em/shared";
+import type { CommandTaskResultPayload, Shell } from "@em/shared";
 import { prisma } from "../db";
 import { decryptField, decryptFieldOrNull, encryptField, encryptFieldOrNull } from "../utils/fieldEncryption";
 
@@ -7,10 +7,13 @@ export class CommandTaskNotOwnedError extends Error {}
 interface CreateCommandJobParams {
   agentIds: string[]; // already resolved (groups expanded, deduped) by the caller
   groupIds: string[]; // kept for display/audit only — task fan-out uses agentIds
-  shell: "powershell" | "cmd";
+  shell: Shell;
   script: string;
   timeoutSec: number;
   createdByAdminId: string;
+  // See CommandJob.bypassesPause in schema.prisma - only quarantine/remote-access/
+  // uninstall dispatch should ever set this true.
+  bypassesPause?: boolean;
 }
 
 export async function createCommandJob(params: CreateCommandJobParams): Promise<{ jobId: string }> {
@@ -21,6 +24,7 @@ export async function createCommandJob(params: CreateCommandJobParams): Promise<
       timeoutSec: params.timeoutSec,
       createdByAdminId: params.createdByAdminId,
       targetGroupIds: JSON.stringify(params.groupIds),
+      bypassesPause: params.bypassesPause ?? false,
       tasks: {
         create: params.agentIds.map((agentId) => ({ agentId })),
       },
@@ -37,10 +41,15 @@ async function resolveGroupNames(groupIdsJson: string): Promise<string[]> {
   return groupIds.map((id) => byId.get(id) ?? "(deleted group)");
 }
 
+// The console's "Recent jobs" list is a one-day window. Older jobs stay in the database and
+// are still reachable by id; the cap only guards against an unusually busy day.
+const RECENT_JOBS_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export async function listCommandJobs() {
   const jobs = await prisma.commandJob.findMany({
+    where: { createdAt: { gte: new Date(Date.now() - RECENT_JOBS_WINDOW_MS) } },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 200,
     include: { tasks: true },
   });
 

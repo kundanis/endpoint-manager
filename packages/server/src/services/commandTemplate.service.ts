@@ -1,4 +1,4 @@
-import type { CreateCommandTemplateRequest, UpdateCommandTemplateRequest } from "@em/shared";
+import type { CreateCommandTemplateRequest, Shell, UpdateCommandTemplateRequest } from "@em/shared";
 import { DEFAULT_COMMAND_TIMEOUT_SEC } from "@em/shared";
 import { prisma } from "../db";
 import { decryptField, encryptField } from "../utils/fieldEncryption";
@@ -70,7 +70,7 @@ export async function dispatchTemplate(
   return createCommandJob({
     agentIds: resolvedAgentIds,
     groupIds,
-    shell: template.shell as "powershell" | "cmd",
+    shell: template.shell as Shell,
     script: decryptField(template.script),
     timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
     createdByAdminId,

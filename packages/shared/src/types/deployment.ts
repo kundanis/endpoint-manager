@@ -1,4 +1,7 @@
-export type InstallerType = "EXE" | "MSI";
+// EXE/MSI target Windows agents; DEB/RPM/SH target Linux agents (dpkg -i / rpm -i / a
+// generic self-installing shell script, respectively — see packageInstaller.ts in
+// @em/agent-linux).
+export type InstallerType = "EXE" | "MSI" | "DEB" | "RPM" | "SH";
 
 export type DeploymentTaskStatus =
   | "PENDING"

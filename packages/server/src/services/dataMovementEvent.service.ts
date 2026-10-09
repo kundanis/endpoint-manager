@@ -1,7 +1,10 @@
 import type { AssignedDataMovementPolicyWire, DataMovementScanResultPayload } from "@em/shared";
 import { prisma } from "../db";
+import { isAgentPaused } from "./pause.service";
 
 export async function resolveAssignedPoliciesForAgent(agentId: string): Promise<AssignedDataMovementPolicyWire[]> {
+  if (await isAgentPaused(agentId)) return [];
+
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
   const groupIds = memberships.map((m) => m.groupId);
 

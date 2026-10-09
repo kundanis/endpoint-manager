@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAgentUserProductivityDailyLog, useAgentUserSessions, useUserProductivitySummary } from "../api/hooks";
 import StatusBadge from "../components/StatusBadge";
+import EndpointLabel from "../components/EndpointLabel";
 
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds <= 0) return "0m";
@@ -66,7 +67,9 @@ export default function UserProductivityPage() {
               className={`clickable-row${a.agentId === selectedAgentId ? " selected-row" : ""}`}
               onClick={() => selectAgent(a.agentId)}
             >
-              <td>{a.hostname}</td>
+              <td>
+                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+              </td>
               <td>
                 {a.activeUsernames.length > 0 ? (
                   <StatusBadge kind="pass" label={a.activeUsernames.join(", ")} />

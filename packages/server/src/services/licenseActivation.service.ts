@@ -39,6 +39,7 @@ export interface LicenseStatus {
   lastRevalidatedAt?: Date | null;
   lastRevalidationError?: string | null;
   currentAgentCount?: number;
+  totalAgentsUninstalled?: number;
 }
 
 function parseModules(raw: string): LicenseModule[] {
@@ -70,6 +71,12 @@ export async function getStatus(): Promise<LicenseStatus> {
   const existing = await prisma.licenseActivation.findUnique({ where: { id: SINGLETON_ID } });
   if (!existing) return { activated: false, enforcementEnabled: config.licenseEnforcementEnabled };
 
+  // Paused agents still count against the seat cap - pausing only holds back new work
+  // and releases active policy enforcement (see pause.service.ts), it doesn't relinquish
+  // the seat. Only a real uninstall (confirmAgentUninstalled / the admin's manual delete)
+  // frees a seat, since that's the only event that actually removes management of the
+  // endpoint. Both places this deployment counts agents must stay identical - see the
+  // "single source of truth" note on getEffectiveLicense above.
   const currentAgentCount = await prisma.agent.count();
   return {
     activated: true,
@@ -85,6 +92,7 @@ export async function getStatus(): Promise<LicenseStatus> {
     lastRevalidatedAt: existing.lastRevalidatedAt,
     lastRevalidationError: existing.lastRevalidationError,
     currentAgentCount,
+    totalAgentsUninstalled: existing.totalAgentsUninstalled,
   };
 }
 
@@ -225,8 +233,27 @@ export async function assertCanEnroll(): Promise<void> {
   const license = await getEffectiveLicense();
   if (!license) throw new NotLicensedError();
 
+  // Paused agents still count against the seat cap - pausing only holds back new work
+  // and releases active policy enforcement (see pause.service.ts), it doesn't relinquish
+  // the seat. Only a real uninstall (confirmAgentUninstalled / the admin's manual delete)
+  // frees a seat, since that's the only event that actually removes management of the
+  // endpoint. Both places this deployment counts agents must stay identical - see the
+  // "single source of truth" note on getEffectiveLicense above.
   const currentAgentCount = await prisma.agent.count();
   if (currentAgentCount >= license.maxAgents) throw new AgentCapExceededError();
+}
+
+// Called from both agent-deletion paths (the self-report uninstall confirmation and the
+// admin's manual delete) - a no-op if this deployment has never activated a license at
+// all, since there's nothing to track yet. Deliberately NOT gated behind
+// config.licenseEnforcementEnabled: this is a historical record of usage, not an
+// enforcement decision, so it should stay accurate even in an unenforced/trial setup.
+export async function incrementTotalAgentsUninstalled(count = 1): Promise<void> {
+  if (count <= 0) return;
+  await prisma.licenseActivation.updateMany({
+    where: { id: SINGLETON_ID },
+    data: { totalAgentsUninstalled: { increment: count } },
+  });
 }
 
 // Gate for admin-console API access to a specific top-level module (see requireModule

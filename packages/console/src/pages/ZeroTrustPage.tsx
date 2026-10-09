@@ -1,5 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { SecurityRuleOperator } from "@em/shared";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
+import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
 import {
   useAddZeroTrustCondition,
   useAgents,
@@ -8,15 +11,18 @@ import {
   useCreateZeroTrustPolicy,
   useDeleteZeroTrustCondition,
   useDeleteZeroTrustPolicy,
+  useForceComplyZeroTrust,
+  useRevokeZeroTrustOverride,
   useUnassignZeroTrustPolicy,
   useUpdateZeroTrustCondition,
   useUpdateZeroTrustPolicy,
-  useZeroTrustAgentBreakdown,
+  useZeroTrustAgentBreakdowns,
   useZeroTrustAssignments,
+  useZeroTrustOverridableConditionKeys,
   useZeroTrustPolicies,
   useZeroTrustPolicy,
 } from "../api/hooks";
-import type { ZeroTrustPolicyDetail } from "../api/types";
+import type { ZeroTrustPolicyDetail, ZeroTrustPolicySummary } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
 
 const OPERATORS: SecurityRuleOperator[] = ["EQUALS", "NOT_EQUALS", "GTE", "LTE", "CONTAINS", "REGEX_MATCH"];
@@ -246,7 +252,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       <ul>
         {assignments?.map((a) => (
           <li key={a.id}>
-            {a.hostname ?? `Group: ${a.groupName}`}{" "}
+            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
             <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
               Remove
             </button>
@@ -256,17 +262,6 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       </ul>
 
       <h3>Assign to</h3>
-      <fieldset>
-        <legend>Endpoints</legend>
-        {agents?.map((agent) => (
-          <label key={agent.id} className="checkbox-row">
-            <input type="checkbox" checked={selectedAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-            {agent.hostname} {agent.osEditionLabel && <span style={{ color: "var(--text-muted)" }}>({agent.osEditionLabel})</span>}
-          </label>
-        ))}
-        {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-      </fieldset>
-
       {groups && groups.length > 0 && (
         <fieldset>
           <legend>Groups</legend>
@@ -278,6 +273,14 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
           ))}
         </fieldset>
       )}
+
+      <EndpointCheckboxList
+        agents={agents}
+        selectedAgentIds={selectedAgentIds}
+        onToggle={toggleAgent}
+        selectedGroupIds={selectedGroupIds}
+        renderExtra={(agent) => agent.osEditionLabel && <span style={{ color: "var(--text-muted)" }}>({agent.osEditionLabel})</span>}
+      />
 
       {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
       <button
@@ -291,70 +294,163 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   );
 }
 
-type TrustFilter = "all" | "trusted" | "not-trusted";
+type FleetTrustFilter = { policyId: string; conditionId?: string } | null;
 
-function TrustPanel({ policyId }: { policyId: string }) {
-  const { data: breakdown } = useZeroTrustAgentBreakdown(policyId);
-  const [filter, setFilter] = useState<TrustFilter>("all");
+// Fleet-wide view across every enabled policy: a tile per policy with how many of its
+// endpoints are NOT compliant, and under it a tile per condition with how many endpoints
+// fail that condition. Clicking a tile narrows the table to exactly those endpoints;
+// clearing the filter shows every endpoint/policy pair again.
+function FleetTrustPanel({
+  policies,
+  initialFilter = null,
+}: {
+  policies: ZeroTrustPolicySummary[];
+  initialFilter?: FleetTrustFilter;
+}) {
+  const results = useZeroTrustAgentBreakdowns(policies.map((p) => p.id));
+  const [filter, setFilter] = useState<FleetTrustFilter>(initialFilter);
 
-  const agents = breakdown?.agents ?? [];
-  const trustedCount = agents.filter((a) => a.trusted).length;
-  const notTrustedCount = agents.filter((a) => !a.trusted).length;
-  const filtered = agents.filter((a) => {
-    if (filter === "trusted") return a.trusted;
-    if (filter === "not-trusted") return !a.trusted;
-    return true;
-  });
+  const conditionTitleById = new Map(
+    results.flatMap((r) => (r.data?.conditions ?? []).map((c) => [c.id, c.title] as const)),
+  );
+  const rows = policies.flatMap((p, i) =>
+    (results[i]?.data?.agents ?? []).map((a) => ({ ...a, policyId: p.id, policyName: p.name })),
+  );
+  const visibleRows = !filter
+    ? rows
+    : rows.filter(
+        (r) =>
+          r.policyId === filter.policyId &&
+          (filter.conditionId ? r.nonCompliantConditionIds.includes(filter.conditionId) : !r.trusted),
+      );
+  const filterLabel = !filter
+    ? null
+    : filter.conditionId
+      ? `Fails condition: ${conditionTitleById.get(filter.conditionId) ?? "…"}`
+      : `Not compliant with: ${policies.find((p) => p.id === filter.policyId)?.name ?? "…"}`;
+  const loading = results.some((r) => r.isLoading);
+
+  if (policies.length === 0) return null;
+
+  const isActive = (f: FleetTrustFilter) =>
+    filter?.policyId === f?.policyId && filter?.conditionId === f?.conditionId && !!filter === !!f;
 
   return (
     <div className="panel">
-      <h2>Device trust</h2>
+      <h2>Device trust — all enabled policies</h2>
+      <p className="hint">
+        Each policy tile shows how many assigned endpoints are not compliant. Click a policy to list those endpoints
+        and see its conditions below; click a condition to list only the endpoints failing it.
+      </p>
 
       <div className="tiles">
-        <div className={`tile ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
-          <div className="tile-label">Total devices</div>
-          <div className="tile-value">{agents.length}</div>
+        <div className={`tile ${filter === null ? "active" : ""}`} onClick={() => setFilter(null)}>
+          <div className="tile-label">All endpoints</div>
+          <div className="tile-value">{new Set(rows.map((r) => r.agentId)).size}</div>
         </div>
-        <div className={`tile accent-good ${filter === "trusted" ? "active" : ""}`} onClick={() => setFilter("trusted")}>
-          <div className="tile-label">Trusted</div>
-          <div className="tile-value">{trustedCount}</div>
-        </div>
-        <div
-          className={`tile accent-critical ${filter === "not-trusted" ? "active" : ""}`}
-          onClick={() => setFilter("not-trusted")}
-        >
-          <div className="tile-label">Not trusted</div>
-          <div className="tile-value">{notTrustedCount}</div>
-        </div>
+        {policies.map((p, i) => {
+          const agents = results[i]?.data?.agents ?? [];
+          const notCompliant = agents.filter((a) => !a.trusted).length;
+          return (
+            <div
+              key={p.id}
+              className={`tile ${notCompliant > 0 ? "accent-critical" : "accent-good"} ${isActive({ policyId: p.id }) ? "active" : ""}`}
+              onClick={() => setFilter({ policyId: p.id })}
+              title={`Show the endpoints not compliant with "${p.name}"`}
+            >
+              <div className="tile-label">Policy: {p.name} — not compliant</div>
+              <div className="tile-value">{results[i]?.data ? notCompliant : "…"}</div>
+              <div className="tile-label">of {agents.length} assigned</div>
+            </div>
+          );
+        })}
       </div>
+
+      {policies.map((p, i) => {
+        const data = results[i]?.data;
+        // Only the clicked policy's conditions, shown once a policy (or one of its
+        // conditions) is selected — "All endpoints" collapses them again.
+        if (filter?.policyId !== p.id || !data || data.conditions.length === 0) return null;
+        return (
+          <div key={p.id}>
+            <h3>Conditions — {p.name}</h3>
+            <div className="tiles">
+              {data.conditions.map((c) => {
+                const failing = data.agents.filter((a) => a.nonCompliantConditionIds.includes(c.id)).length;
+                return (
+                  <div
+                    key={c.id}
+                    className={`tile ${failing > 0 ? "accent-critical" : "accent-good"} ${isActive({ policyId: p.id, conditionId: c.id }) ? "active" : ""}`}
+                    onClick={() => setFilter({ policyId: p.id, conditionId: c.id })}
+                    title={`Show the endpoints failing "${c.title}"`}
+                  >
+                    <div className="tile-label">{c.title} — not compliant</div>
+                    <div className="tile-value">{failing}</div>
+                    <div className="tile-label">of {data.agents.length} assigned</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {filterLabel && (
+        <p>
+          <span className="filter-chip">
+            {filterLabel}{" "}
+            <button type="button" aria-label="Clear filter" onClick={() => setFilter(null)}>
+              ×
+            </button>
+          </span>
+        </p>
+      )}
 
       <table className="data-table">
         <thead>
           <tr>
             <th>Endpoint</th>
+            <th>Policy</th>
             <th>Scanned</th>
             <th>Compliant</th>
             <th>Non-compliant</th>
             <th>Error</th>
+            <th>Failing conditions</th>
             <th>Trust status</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((a) => (
-            <tr key={a.agentId}>
-              <td>{a.hostname}</td>
-              <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
-              <td>{a.passCount}</td>
-              <td>{a.failCount}</td>
-              <td>{a.errorCount}</td>
+          {visibleRows.map((r) => (
+            <tr key={`${r.policyId}-${r.agentId}`}>
               <td>
-                <StatusBadge kind={a.trusted ? "pass" : "fail"} label={a.trusted ? "Trusted" : "Not trusted"} />
+                <EndpointLabel hostname={r.hostname} agentId={r.agentId} />
+              </td>
+              <td>{r.policyName}</td>
+              <td>{r.scanned ? "Yes" : "Pending first scan"}</td>
+              <td>{r.passCount}</td>
+              <td>{r.failCount}</td>
+              <td>{r.errorCount}</td>
+              <td>
+                {r.nonCompliantConditionIds.length > 0
+                  ? r.nonCompliantConditionIds.map((id) => conditionTitleById.get(id) ?? "…").join(", ")
+                  : "—"}
+              </td>
+              <td>
+                <StatusBadge kind={r.trusted ? "pass" : "fail"} label={r.trusted ? "Trusted" : "Not trusted"} />
               </td>
             </tr>
           ))}
-          {filtered.length === 0 && (
+          {visibleRows.length === 0 && (
             <tr>
-              <td colSpan={6}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>
+              <td colSpan={8}>
+                {loading
+                  ? "Loading…"
+                  : filter?.conditionId
+                    ? "Every endpoint assigned to this policy passes this condition."
+                    : filter
+                      ? "Every endpoint assigned to this policy is compliant."
+                      : "No enabled policy is assigned to any endpoint yet."}
+              </td>
             </tr>
           )}
         </tbody>
@@ -400,6 +496,136 @@ function PolicySettingsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
   );
 }
 
+function OverridePanel() {
+  const { data: agents } = useAgents();
+  const { data: conditionKeys } = useZeroTrustOverridableConditionKeys();
+  const forceComply = useForceComplyZeroTrust();
+  const revoke = useRevokeZeroTrustOverride();
+
+  const [hostnameFilter, setHostnameFilter] = useState("");
+  const [userFilter, setUserFilter] = useState("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [selectedConditionKeys, setSelectedConditionKeys] = useState<string[]>([]);
+  const [lastResult, setLastResult] = useState<string | null>(null);
+
+  const filteredAgents = useMemo(() => {
+    const hostQ = hostnameFilter.trim().toLowerCase();
+    const userQ = userFilter.trim().toLowerCase();
+    return (agents ?? [])
+      .filter((a) => !hostQ || a.hostname.toLowerCase().includes(hostQ))
+      .filter((a) => !userQ || (a.inventory?.lastLoggedOnUser ?? "").toLowerCase().includes(userQ));
+  }, [agents, hostnameFilter, userFilter]);
+
+  function toggleConditionKey(key: string) {
+    setSelectedConditionKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  function handleForceComply() {
+    forceComply.mutate(
+      { agentIds: selectedAgentIds, conditionKeys: selectedConditionKeys },
+      {
+        onSuccess: (result) =>
+          setLastResult(
+            result.appliedCount > 0
+              ? `Applied to ${result.appliedCount} device/check combination(s) currently failing.`
+              : "Nothing applied — none of the selected devices are currently failing the selected checks.",
+          ),
+      },
+    );
+  }
+
+  function handleRevoke() {
+    revoke.mutate(
+      { agentIds: selectedAgentIds, conditionKeys: selectedConditionKeys },
+      {
+        onSuccess: (result) =>
+          setLastResult(
+            result.revokedCount > 0
+              ? `Revoked ${result.revokedCount} active override(s).`
+              : "Nothing to revoke — none of the selected devices had an active override for the selected checks.",
+          ),
+      },
+    );
+  }
+
+  const canSubmit = selectedAgentIds.length > 0 && selectedConditionKeys.length > 0;
+
+  return (
+    <div className="card accent-purple">
+      <h2>Policy check override (bulk)</h2>
+      <p>
+        Force specific policy checks to stop counting against selected devices' compliance verdict, regardless of
+        real posture — e.g. a known false positive while a fix rolls out. Applied "Force comply" only actually
+        touches devices currently failing the checked category; "Revoke override" is safe to run on all selected
+        devices even where nothing is active. Deliberately invisible everywhere else in the tool — no badge, no API
+        field, no CSV column — this is the only place to apply or revoke it.
+      </p>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
+        <label>
+          Filter by host
+          <input
+            type="text"
+            placeholder="Filter by hostname…"
+            value={hostnameFilter}
+            onChange={(e) => setHostnameFilter(e.target.value)}
+          />
+        </label>
+        <label>
+          Filter by user
+          <input
+            type="text"
+            placeholder="Filter by logged-on user…"
+            value={userFilter}
+            onChange={(e) => setUserFilter(e.target.value)}
+          />
+        </label>
+      </div>
+      <select
+        multiple
+        size={10}
+        style={{ width: "100%" }}
+        value={selectedAgentIds}
+        onChange={(e) => setSelectedAgentIds(Array.from(e.target.selectedOptions).map((o) => o.value))}
+      >
+        {filteredAgents.map((a) => (
+          <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
+        ))}
+      </select>
+      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Ctrl/Cmd-click or shift-click to select more than one.</p>
+
+      <fieldset>
+        <legend>Checks</legend>
+        {conditionKeys?.map((c) => (
+          <label key={c.conditionKey} className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={selectedConditionKeys.includes(c.conditionKey)}
+              onChange={() => toggleConditionKey(c.conditionKey)}
+            />
+            {c.title}
+          </label>
+        ))}
+        {conditionKeys?.length === 0 && <p>No conditions defined yet across any policy.</p>}
+      </fieldset>
+
+      {(forceComply.isError || revoke.isError) && (
+        <p className="error-text">{((forceComply.error ?? revoke.error) as Error).message}</p>
+      )}
+      {lastResult && <p>{lastResult}</p>}
+
+      <div style={{ display: "flex", gap: "0.5rem" }}>
+        <button type="button" onClick={handleForceComply} disabled={!canSubmit || forceComply.isPending}>
+          {forceComply.isPending ? "Applying…" : "Force comply"}
+        </button>
+        <button type="button" onClick={handleRevoke} disabled={!canSubmit || revoke.isPending}>
+          {revoke.isPending ? "Revoking…" : "Revoke override"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ZeroTrustPage() {
   const { data: policies } = useZeroTrustPolicies();
   const createPolicy = useCreateZeroTrustPolicy();
@@ -409,6 +635,15 @@ export default function ZeroTrustPage() {
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+
+  // Dashboard deep link ?trust=not-trusted: with a single enabled policy, open the Device
+  // trust panel already filtered to that policy's non-compliant endpoints.
+  const [searchParams] = useSearchParams();
+  const enabledPolicies = policies?.filter((p) => p.enabled) ?? [];
+  const initialFleetFilter: FleetTrustFilter =
+    searchParams.get("trust") === "not-trusted" && enabledPolicies.length === 1
+      ? { policyId: enabledPolicies[0].id }
+      : null;
 
   const { data: policy } = useZeroTrustPolicy(selectedId);
 
@@ -495,6 +730,9 @@ export default function ZeroTrustPage() {
         </tbody>
       </table>
 
+      {/* Mounted once policies have loaded, so the deep-link initial filter is computed from real data. */}
+      {policies && <FleetTrustPanel policies={enabledPolicies} initialFilter={initialFleetFilter} />}
+
       <form className="panel" onSubmit={handleCreate}>
         <h2>New policy</h2>
         <label>
@@ -516,9 +754,10 @@ export default function ZeroTrustPage() {
           <PolicySettingsPanel policy={policy} />
           <ConditionsPanel policy={policy} />
           <AssignmentPanel policyId={policy.id} />
-          <TrustPanel policyId={policy.id} />
         </>
       )}
+
+      <OverridePanel />
     </div>
   );
 }

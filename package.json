@@ -18,8 +18,16 @@
     "dev:server": "cross-env NODE_OPTIONS=--use-system-ca npm run dev -w @em/server",
     "dev:console": "npm run dev -w @em/console",
     "dev:agent": "cross-env UEM_SERVER_URL=https://SSSIL-LAP-92:4000 npm run dev -w @em/agent",
-    "build": "npm run build -w @em/shared && npm run build -w @em/server && npm run build -w @em/console && npm run build -w @em/agent",
+    "dev:agent-linux": "cross-env UEM_SERVER_URL=https://SSSIL-LAP-92:4000 npm run dev -w @em/agent-linux",
+    "build": "npm run build -w @em/shared && npm run build -w @em/server && npm run build -w @em/console && npm run build -w @em/agent && npm run build -w @em/agent-linux",
     "db:migrate": "npm run db:migrate -w @em/server",
     "db:seed": "npm run db:seed -w @em/server"
+  },
+  "allowScripts": {
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true,
+    "prisma@5.22.0": true
   }
 }

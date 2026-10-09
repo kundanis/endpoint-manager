@@ -16,6 +16,9 @@ export interface NavModule {
   // license includes. Every other module maps 1:1 to a LicenseModuleKey (see
   // requireModule.ts on the server side, which enforces the exact same mapping).
   licenseModule?: LicenseModuleKey;
+  // Administrators only — a role gate, not a license/module gate, so it's a separate flag
+  // rather than another licenseModule value (see requireSuperAdmin.ts on the server).
+  superAdminOnly?: boolean;
 }
 
 export const NAV_MODULES: NavModule[] = [
@@ -33,6 +36,7 @@ export const NAV_MODULES: NavModule[] = [
       { path: "/enrollment-tokens", label: "Enrollment Tokens" },
       { path: "/commands", label: "Commands" },
       { path: "/packages", label: "Packages" },
+      { path: "/agent-updates", label: "Agent Updates" },
       { path: "/asset-settings", label: "Asset Settings" },
     ],
   },
@@ -57,7 +61,9 @@ export const NAV_MODULES: NavModule[] = [
       { path: "/patches", label: "Patches" },
       { path: "/security-config", label: "Security Configuration" },
       { path: "/zero-trust", label: "Zero Trust" },
-      { path: "/edr", label: "EDR (Lite)" },
+      // EDR (Lite) hidden from the menu — every agent had it disabled first (see
+      // edrEnabled on the Agent model), so no endpoint is actively scanning even though
+      // the route/page still exists for direct navigation if it's ever re-enabled.
     ],
   },
   {
@@ -82,5 +88,11 @@ export const NAV_MODULES: NavModule[] = [
     key: "licensing",
     label: "Licensing",
     path: "/licensing",
+  },
+  {
+    key: "admin-users",
+    label: "Administrators",
+    path: "/admin-users",
+    superAdminOnly: true,
   },
 ];

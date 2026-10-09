@@ -22,8 +22,19 @@ import {
 // Written once by Install.bat/install.ps1 at the install root (a sibling of dist/ and
 // .state/, same as stateDir's own default below) — env vars still win when set, so the
 // local `npm run dev` workflow is completely unaffected by this.
-function readInstallConfig(): { serverUrl?: string; enrollmentToken?: string } {
-  const configPath = process.env.UEM_CONFIG_FILE ?? path.join(__dirname, "..", "config.json");
+interface InstallConfig {
+  serverUrl?: string;
+  // Every address the server can be reached on, in failover order (see httpClient.ts).
+  // Written by install.ps1 and refreshed from the server on check-in; serverUrl above is
+  // kept pointed at whichever of these last worked, for the PowerShell scripts that only
+  // read a single URL (uninstall.ps1, the server-pushed uninstall script).
+  serverUrls?: string[] | string;
+  enrollmentToken?: string;
+}
+
+const configPath = process.env.UEM_CONFIG_FILE ?? path.join(__dirname, "..", "config.json");
+
+function readInstallConfig(): InstallConfig {
   try {
     // Windows PowerShell 5.1's `Set-Content -Encoding UTF8` (used by install.ps1) writes
     // a leading BOM, which JSON.parse rejects — strip it defensively rather than rely on
@@ -37,6 +48,44 @@ function readInstallConfig(): { serverUrl?: string; enrollmentToken?: string } {
 }
 
 const installConfig = readInstallConfig();
+
+// Merges into config.json on disk, keeping the enrollment token and anything else already
+// there. Skipped when the server URL comes from the environment (local `npm run dev`) or
+// there's no config.json at all - nothing to keep in sync in either case.
+export function updateInstallConfig(patch: Partial<InstallConfig>): void {
+  if (process.env.UEM_SERVER_URL || !fs.existsSync(configPath)) return;
+  try {
+    const next = { ...readInstallConfig(), ...patch };
+    // No BOM - JSON.parse in readInstallConfig would otherwise need to strip it again.
+    fs.writeFileSync(configPath, JSON.stringify(next, null, 2), "utf8");
+  } catch (err) {
+    console.error("Failed to update config.json", err);
+  }
+}
+
+function normalizeUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+export function parseServerUrls(value: string[] | string | undefined): string[] {
+  const list = Array.isArray(value) ? value : (value ?? "").split(",");
+  return Array.from(new Set(list.map(normalizeUrl).filter(Boolean)));
+}
+
+// UEM_SERVER_URL (dev) pins a single address with no failover. Otherwise the installed list,
+// falling back to the single serverUrl that pre-failover installs wrote.
+function resolveServerUrls(): string[] {
+  if (process.env.UEM_SERVER_URL) return [normalizeUrl(process.env.UEM_SERVER_URL)];
+  const urls = parseServerUrls(installConfig.serverUrls);
+  if (urls.length > 0) return urls;
+  return [normalizeUrl(installConfig.serverUrl ?? "http://localhost:4000")];
+}
+
+const serverUrls = resolveServerUrls();
+// Start on whichever address worked last time, if it's still in the list.
+const lastWorkingUrl = installConfig.serverUrl ? normalizeUrl(installConfig.serverUrl) : undefined;
+const initialServerUrl =
+  !process.env.UEM_SERVER_URL && lastWorkingUrl && serverUrls.includes(lastWorkingUrl) ? lastWorkingUrl : serverUrls[0];
 
 // A self-signed dev/test certificate the agent should trust in addition to the OS's
 // public CA store — narrower than disabling TLS verification entirely, since only THIS
@@ -61,12 +110,34 @@ function requireEnrollmentToken(): string {
   return token;
 }
 
+// Single source of truth for "what version am I" — package.json, not a second hardcoded
+// string here, so a version bump can never drift between the two. Resolves to the real
+// packages/agent/package.json in dev (__dirname is src/, so "../package.json" is this
+// package's own file) and to the minimal package.json package-installer.ps1 stages
+// alongside dist/ in a packaged install (same relative-path trick config.json/certs-trust
+// already use above). Falls back rather than throwing — an agent that can't determine its
+// own version should still run, just reporting itself as unknown instead of refusing to start.
+function readAgentVersion(): string {
+  const pkgJsonPath = path.join(__dirname, "..", "package.json");
+  try {
+    const raw = fs.readFileSync(pkgJsonPath, "utf8");
+    const version = JSON.parse(raw).version;
+    if (typeof version === "string" && version.length > 0) return version;
+  } catch {
+    // fall through
+  }
+  return "0.0.0-unknown";
+}
+
 export const agentConfig = {
-  serverUrl: (process.env.UEM_SERVER_URL ?? installConfig.serverUrl ?? "http://localhost:4000").replace(/\/$/, ""),
+  // Startup values only - the address in use changes at runtime as the agent fails over;
+  // read it via getServerUrl() in httpClient.ts.
+  serverUrls,
+  initialServerUrl,
   serverCaPem: readServerCaPem(),
   getEnrollmentToken: requireEnrollmentToken,
   stateDir: process.env.UEM_STATE_DIR ?? path.join(__dirname, "..", ".state"),
-  agentVersion: "0.1.0",
+  agentVersion: readAgentVersion(),
   hostname: os.hostname(),
   inventoryRefreshMs: 10 * 60 * 1000,
   patchScanIntervalMs: DEFAULT_PATCH_SCAN_INTERVAL_MS,

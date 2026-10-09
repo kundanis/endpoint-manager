@@ -1,11 +1,14 @@
 import type { AppControlRuleType, AppControlRuleWire, AppControlScanResultPayload } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
+import { isAgentPaused } from "./pause.service";
 
 // Flat, deduped by (ruleType, value) across every enabled, non-excepted policy assigned to
 // this agent — two different policies both blocking "utorrent.exe" should still only
 // produce ONE SRP registry entry, not two colliding writes.
 export async function resolveAssignedRulesForAgent(agentId: string): Promise<AppControlRuleWire[]> {
+  if (await isAgentPaused(agentId)) return [];
+
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
   const groupIds = memberships.map((m) => m.groupId);
 

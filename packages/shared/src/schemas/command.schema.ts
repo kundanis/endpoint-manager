@@ -5,7 +5,11 @@ export const dispatchCommandRequestSchema = z
   .object({
     agentIds: z.array(z.string().min(1)).default([]),
     groupIds: z.array(z.string().min(1)).default([]),
-    shell: z.enum(["powershell", "cmd"]),
+    // bash/sh target Linux agents, powershell/cmd target Windows agents — dispatch itself
+    // doesn't filter by the target's osPlatform (same as every other task type), so picking
+    // the wrong shell for a mixed-OS group just fails that subset's tasks with a clear
+    // "spawn ENOENT" rather than silently no-oping.
+    shell: z.enum(["powershell", "cmd", "bash", "sh"]),
     script: z.string().min(1),
     timeoutSec: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_SEC),
   })

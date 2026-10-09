@@ -1,12 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   useActivateLicense,
   useLicenseServerConfig,
   useLicenseStatus,
+  useMe,
+  useModuleVisibility,
   useRequestLicenseUnlock,
   useSetLicenseServerConfig,
+  useSetModuleVisibility,
   useTestLicenseServerConnection,
 } from "../api/hooks";
+import { NAV_MODULES } from "../navConfig";
 
 const VALIDITY_LABELS: Record<string, string> = {
   ONE_YEAR: "1 year",
@@ -100,6 +104,97 @@ function LicenseApiPanel() {
   );
 }
 
+// Org-wide "hide this for everyone" panel — a third, most-authoritative layer on top of
+// what the license includes (above) and per-admin grants (Administrators page). Editable
+// by SUPER_ADMIN only (server-enforced on the PUT regardless of this UI check), read-only
+// note shown to a plain ADMIN instead since they could otherwise hide something out from
+// under other admins including super admins.
+function ModuleVisibilityPanel() {
+  const { data: me } = useMe();
+  const { data: visibility, isLoading } = useModuleVisibility();
+  const setVisibility = useSetModuleVisibility();
+
+  const [hiddenModuleKeys, setHiddenModuleKeys] = useState<string[]>([]);
+  const [hiddenItemPaths, setHiddenItemPaths] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (visibility) {
+      setHiddenModuleKeys(visibility.hiddenModuleKeys);
+      setHiddenItemPaths(visibility.hiddenItemPaths);
+    }
+  }, [visibility]);
+
+  const hideableModules = NAV_MODULES.filter((m) => m.licenseModule && m.items);
+
+  function toggleModule(key: string) {
+    setHiddenModuleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  function toggleItem(path: string) {
+    setHiddenItemPaths((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]));
+  }
+
+  function handleSave() {
+    setVisibility.mutate({ hiddenModuleKeys, hiddenItemPaths });
+  }
+
+  if (isLoading) return null;
+
+  if (me?.role !== "SUPER_ADMIN") {
+    return (
+      <div className="panel">
+        <h2>Module visibility</h2>
+        <p className="hint">Only a super admin can hide/unhide modules. Ask one to change this if needed.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel">
+      <h2>Module visibility</h2>
+      <p>
+        Hide a main module or an individual item within it for <strong>every</strong> admin on this deployment —
+        this is stronger than license modules or per-admin access above/in Administrators: a hidden module or item
+        disappears from the menu and its page for everyone, including super admins, and (for a whole main module)
+        its underlying API is blocked too, not just the menu.
+      </p>
+
+      {hideableModules.map((module) => {
+        const moduleHidden = hiddenModuleKeys.includes(module.licenseModule!);
+        return (
+          <fieldset key={module.key} style={{ marginBottom: "0.75rem" }}>
+            <legend>
+              <label style={{ fontWeight: "bold" }}>
+                <input type="checkbox" checked={moduleHidden} onChange={() => toggleModule(module.licenseModule!)} />{" "}
+                Hide {module.label} entirely
+              </label>
+            </legend>
+            {!moduleHidden &&
+              module.items!.map((item) => (
+                <label key={item.path} style={{ display: "block", fontWeight: "normal" }}>
+                  <input
+                    type="checkbox"
+                    checked={hiddenItemPaths.includes(item.path)}
+                    onChange={() => toggleItem(item.path)}
+                  />{" "}
+                  Hide {item.label}
+                </label>
+              ))}
+          </fieldset>
+        );
+      })}
+
+      {setVisibility.isError && <p className="error-text">{(setVisibility.error as Error).message}</p>}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <button type="button" onClick={handleSave} disabled={setVisibility.isPending}>
+          {setVisibility.isPending ? "Saving…" : "Save changes"}
+        </button>
+        {setVisibility.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function LicenseActivationPage() {
   const { data: serverConfig } = useLicenseServerConfig();
   const { data: status, isLoading } = useLicenseStatus();
@@ -142,6 +237,7 @@ export default function LicenseActivationPage() {
       </p>
 
       <LicenseApiPanel />
+      <ModuleVisibilityPanel />
 
       {status?.activated ? (
         <div className="detail-grid">
@@ -159,6 +255,16 @@ export default function LicenseActivationPage() {
             <strong>Agents</strong>
             {status.currentAgentCount} / {status.maxAgents}
             {atCap && <span className="status-badge danger" style={{ marginLeft: "0.5rem" }}>At cap</span>}
+            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
+              Paused endpoints still count here — pausing releases policy enforcement, not the seat.
+            </div>
+          </div>
+          <div>
+            <strong>Total ever uninstalled</strong>
+            {status.totalAgentsUninstalled ?? 0}
+            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
+              Lifetime count of seats released back by uninstalling — not currently-active usage.
+            </div>
           </div>
           <div>
             <strong>Validity</strong>

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { Router } from "express";
 import {
+  agentUpdateStatusPayloadSchema,
   appControlScanResultPayloadSchema,
   checkinRequestSchema,
   commandBlockEventBatchPayloadSchema,
@@ -15,6 +16,7 @@ import {
   networkScanTaskResultPayloadSchema,
   patchInstallResultPayloadSchema,
   patchScanResultPayloadSchema,
+  piiBlockSyncResultPayloadSchema,
   securityConfigScanResultPayloadSchema,
   usbControlEventBatchPayloadSchema,
   usbControlSyncResultPayloadSchema,
@@ -23,6 +25,9 @@ import {
   webBlockSyncResultPayloadSchema,
   zeroTrustScanResultPayloadSchema,
 } from "@em/shared";
+import { config } from "../config";
+import { prisma } from "../db";
+import { AgentUpdateTaskNotOwnedError, recordAgentUpdateStatus } from "../services/agentUpdate.service";
 import { handleCheckin, recordInventory } from "../services/checkin.service";
 import { CommandTaskNotOwnedError, recordCommandResult } from "../services/command.service";
 import { DeploymentTaskNotOwnedError, recordDeploymentStatus } from "../services/deployment.service";
@@ -55,6 +60,10 @@ import {
   resolveAssignedRulesForAgent as resolveAssignedWebBlockRulesForAgent,
 } from "../services/webBlockScan.service";
 import {
+  recordSyncResult as recordPiiBlockSyncResult,
+  resolveAssignedRulesForAgent as resolveAssignedPiiBlockRulesForAgent,
+} from "../services/piiBlockScan.service";
+import {
   recordEvents as recordCommandBlockEvents,
   resolveAssignedRulesForAgent as resolveAssignedCommandBlockRulesForAgent,
 } from "../services/commandBlockScan.service";
@@ -70,6 +79,7 @@ import {
 import { recordScanResult as recordUserProductivityScanResult } from "../services/userProductivity.service";
 import { isEnabledForAgent as isEdrEnabledForAgent, recordScanResult as recordEdrScanResult } from "../services/edr.service";
 import { verifyUninstallPassword } from "../services/agentSecurity.service";
+import { confirmAgentUninstalled } from "../services/agent.service";
 
 export const agentRouter = Router();
 
@@ -80,7 +90,12 @@ agentRouter.post("/checkin", async (req, res, next) => {
     // view of the connecting socket) covers that case, even though it's frequently wrong
     // (NAT, proxies, or the agent sharing this host) whenever a self-reported IP exists.
     const payload = checkinRequestSchema.parse(req.body ?? {});
-    const response = await handleCheckin(req.agentId!, payload.ipAddress ?? req.ip ?? null, payload.macAddress ?? null);
+    const response = await handleCheckin(
+      req.agentId!,
+      payload.ipAddress ?? req.ip ?? null,
+      payload.macAddress ?? null,
+      payload.agentVersion ?? null,
+    );
     res.json(response);
   } catch (err) {
     next(err);
@@ -149,6 +164,53 @@ agentRouter.post("/deployments/:taskId/status", async (req, res, next) => {
     res.status(200).json({ ok: true });
   } catch (err) {
     if (err instanceof DeploymentTaskNotOwnedError) {
+      return res.status(404).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+// Same streaming shape as /packages/:packageId/download - the payload is always whatever
+// is currently staged for THIS agent's own osPlatform (see agentBuild.service.ts), not a
+// per-task file, since there's only ever one build live per platform on a given server at a
+// time. Which file that is depends on the calling agent, not a query param - a Linux agent
+// asking for this always gets the Linux tarball, regardless of what a Windows agent would
+// get from the exact same URL.
+agentRouter.get("/self-update/package", async (req, res, next) => {
+  try {
+    const agent = await prisma.agent.findUnique({ where: { id: req.agentId! }, select: { osPlatform: true } });
+    const isLinux = agent?.osPlatform === "linux";
+    const filePath = isLinux ? config.agentInstallerTarballPathLinux : config.agentInstallerZipPath;
+    const filename = isLinux ? "EndpointProAgentLinux.tar.gz" : "EndpointProAgentInstaller.zip";
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "No agent build is currently staged on this server for this platform" });
+    }
+
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", next);
+    stream.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Called twice per self-update: once by the still-running original process (a best-effort
+// DOWNLOADING/APPLYING progress ping, sent just before it tears itself down) and once more
+// by the detached helper task with the real terminal SUCCESS/FAILED, after the file swap
+// has actually happened - see buildSelfUpdateScript. Both calls carry the same agent
+// credentials (state.json survives the swap untouched), so this route can't and doesn't
+// need to tell them apart.
+agentRouter.post("/self-update/tasks/:taskId/status", async (req, res, next) => {
+  try {
+    const payload = agentUpdateStatusPayloadSchema.parse(req.body);
+    await recordAgentUpdateStatus(req.params.taskId, req.agentId!, payload);
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    if (err instanceof AgentUpdateTaskNotOwnedError) {
       return res.status(404).json({ error: err.message });
     }
     next(err);
@@ -304,6 +366,24 @@ agentRouter.post("/web-block/sync-result", async (req, res, next) => {
   }
 });
 
+agentRouter.get("/pii-block/assigned", async (req, res, next) => {
+  try {
+    res.json(await resolveAssignedPiiBlockRulesForAgent(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/pii-block/sync-result", async (req, res, next) => {
+  try {
+    const payload = piiBlockSyncResultPayloadSchema.parse(req.body);
+    await recordPiiBlockSyncResult(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 agentRouter.get("/ip-block/assigned", async (req, res, next) => {
   try {
     res.json(await resolveAssignedIpBlockRulesForAgent(req.agentId!));
@@ -359,6 +439,19 @@ agentRouter.post("/verify-uninstall-password", async (req, res, next) => {
     const payload = verifyUninstallPasswordRequestSchema.parse(req.body);
     const valid = await verifyUninstallPassword(payload.password);
     res.json({ valid });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Same trust model as /verify-uninstall-password above - the detached uninstall helper
+// task calls this using the agent's own state.json credentials right before deleting the
+// install folder, so the Agent row (and its license seat) is freed immediately rather
+// than lingering forever as an unreachable "offline" row.
+agentRouter.post("/uninstalled", async (req, res, next) => {
+  try {
+    await confirmAgentUninstalled(req.agentId!);
+    res.status(204).send();
   } catch (err) {
     next(err);
   }

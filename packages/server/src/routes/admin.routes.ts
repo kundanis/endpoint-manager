@@ -4,10 +4,13 @@ import {
   createEnrollmentTokenRequestSchema,
   createNoteRequestSchema,
   dispatchTargetRequestSchema,
+  downloadAgentSetupRequestSchema,
   getWindowsEolInfo,
   setAgentGroupsRequestSchema,
   setCustomFieldValuesRequestSchema,
+  startRemoteInstallRequestSchema,
   uninstallSoftwareRequestSchema,
+  updateAgentConnectionSettingsRequestSchema,
   updateAssetDetailsRequestSchema,
   updateLifecycleStatusRequestSchema,
   verifyUninstallPasswordRequestSchema,
@@ -16,9 +19,19 @@ import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
 import { config } from "../config";
 import { createEnrollmentToken } from "../services/enrollment.service";
+import {
+  AgentInstallerMissingError,
+  buildConfiguredSetupExe,
+  getAgentConnectionSettings,
+  setAgentConnectionSettings,
+} from "../services/agentConnection.service";
+import { hashToken } from "../utils/tokens";
+import { getRemoteInstallJob, startRemoteInstall } from "../services/remoteInstall.service";
 import { annotateWithLicenseStatus } from "../services/softwareLicense.service";
 import {
   createAgentNote,
+  deleteAgentsBulk,
+  findDuplicateAgents,
   getAgentCustomFieldValues,
   IncorrectUninstallPasswordError,
   listAgentNotes,
@@ -29,9 +42,13 @@ import {
   uninstallSoftwareOnAgent,
   updateAssetDetails,
 } from "../services/agent.service";
-import { getLastPatchInstalledAtByAgent } from "../services/patch.service";
+import { getLatestAgentUpdateTaskByAgent } from "../services/agentUpdate.service";
+import { getLastPatchInstalledAtByAgent, getLatestMissingPatchByAgent } from "../services/patch.service";
+import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "../services/zeroTrustOverride.service";
 import { quarantineAgents, releaseAgents } from "../services/quarantine.service";
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
+import { pauseAgent, resumeAgent, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
+import { incrementTotalAgentsUninstalled } from "../services/licenseActivation.service";
 import {
   buildBatteryView,
   buildIpGeoHint,
@@ -81,15 +98,26 @@ adminRouter.get("/agents", async (_req, res, next) => {
 
     // Per-agent counts for the endpoint list's summary row — computed once for the
     // whole list rather than N+1 queries per row.
-    const [openVulnFindings, nonCompliantZtFindings, lastPatchInstalledByAgent] = await Promise.all([
-      prisma.vulnerabilityFinding.findMany({ where: { status: "OPEN" }, select: { agentId: true } }),
+    const [openVulnGroups, nonCompliantZtFindingsRaw, lastPatchInstalledByAgent, latestUpdateTaskByAgent] = await Promise.all([
+      // Count open findings per agent in SQL (one row per agent) instead of pulling every
+      // open finding into Node - the finding table can hold hundreds of thousands of rows.
+      prisma.vulnerabilityFinding.groupBy({ by: ["agentId"], where: { status: "OPEN" }, _count: { _all: true } }),
       // Only enabled conditions count — matches the same filter used everywhere else
       // a Zero Trust compliance figure is computed.
-      prisma.zeroTrustFinding.findMany({ where: { status: "FAIL", condition: { enabled: true } }, select: { agentId: true } }),
+      prisma.zeroTrustFinding.findMany({
+        where: { status: "FAIL", condition: { enabled: true } },
+        select: { agentId: true, status: true, condition: { select: { conditionKey: true } } },
+      }),
       getLastPatchInstalledAtByAgent(),
+      getLatestAgentUpdateTaskByAgent(agents.map((a) => a.id)),
     ]);
+    const overriddenByAgent = await getOverriddenKeysByAgent([...new Set(nonCompliantZtFindingsRaw.map((f) => f.agentId))]);
+    const nonCompliantZtFindings = excludeOverriddenFailures(
+      nonCompliantZtFindingsRaw.map((f) => ({ agentId: f.agentId, status: f.status, conditionKey: f.condition.conditionKey })),
+      overriddenByAgent,
+    );
     const vulnCountByAgent = new Map<string, number>();
-    for (const f of openVulnFindings) vulnCountByAgent.set(f.agentId, (vulnCountByAgent.get(f.agentId) ?? 0) + 1);
+    for (const g of openVulnGroups) vulnCountByAgent.set(g.agentId, g._count._all);
     const ztCountByAgent = new Map<string, number>();
     for (const f of nonCompliantZtFindings) ztCountByAgent.set(f.agentId, (ztCountByAgent.get(f.agentId) ?? 0) + 1);
 
@@ -117,9 +145,12 @@ adminRouter.get("/agents", async (_req, res, next) => {
         deviceTypeOverride: a.deviceTypeOverride,
         deviceType: a.deviceTypeOverride ?? deriveDeviceType(a.inventory?.pcSystemType ?? null, extractOsEditionLabel(a.inventory?.osInfo)),
         quarantined: a.quarantined,
+        paused: a.paused,
+        pausedAt: a.pausedAt?.toISOString() ?? null,
         zeroTrustNonCompliantCount: ztCountByAgent.get(a.id) ?? 0,
         openVulnerabilityCount: vulnCountByAgent.get(a.id) ?? 0,
         lastPatchInstalledAt: lastPatchInstalledByAgent.get(a.id)?.toISOString() ?? null,
+        latestUpdateTask: latestUpdateTaskByAgent.get(a.id) ?? null,
         inventory: a.inventory
           ? {
               cpuModel: a.inventory.cpuModel,
@@ -154,11 +185,22 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
     });
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     const customFieldValues = await getAgentCustomFieldValues(agent.id);
-    const [openVulnerabilityCount, zeroTrustNonCompliantCount, lastPatchInstalledByAgent] = await Promise.all([
-      prisma.vulnerabilityFinding.count({ where: { agentId: agent.id, status: "OPEN" } }),
-      prisma.zeroTrustFinding.count({ where: { agentId: agent.id, status: "FAIL", condition: { enabled: true } } }),
-      getLastPatchInstalledAtByAgent(agent.id),
-    ]);
+    const [openVulnerabilityCount, nonCompliantZtFindingsRaw, lastPatchInstalledByAgent, latestUpdateTaskByAgent, latestAvailablePatch] =
+      await Promise.all([
+        prisma.vulnerabilityFinding.count({ where: { agentId: agent.id, status: "OPEN" } }),
+        prisma.zeroTrustFinding.findMany({
+          where: { agentId: agent.id, status: "FAIL", condition: { enabled: true } },
+          select: { agentId: true, status: true, condition: { select: { conditionKey: true } } },
+        }),
+        getLastPatchInstalledAtByAgent(agent.id),
+        getLatestAgentUpdateTaskByAgent([agent.id]),
+        getLatestMissingPatchByAgent(agent.id),
+      ]);
+    const overriddenForThisAgent = await getOverriddenKeysByAgent([agent.id]);
+    const zeroTrustNonCompliantCount = excludeOverriddenFailures(
+      nonCompliantZtFindingsRaw.map((f) => ({ agentId: f.agentId, status: f.status, conditionKey: f.condition.conditionKey })),
+      overriddenForThisAgent,
+    ).length;
 
     res.json({
       id: agent.id,
@@ -184,12 +226,16 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       deviceTypeOverride: agent.deviceTypeOverride,
       deviceType: agent.deviceTypeOverride ?? deriveDeviceType(agent.inventory?.pcSystemType ?? null, extractOsEditionLabel(agent.inventory?.osInfo)),
       quarantined: agent.quarantined,
+      paused: agent.paused,
+      pausedAt: agent.pausedAt?.toISOString() ?? null,
       remoteAccessEnabled: agent.remoteAccessEnabled,
       remoteAccessEnabledAt: agent.remoteAccessEnabledAt?.toISOString() ?? null,
       remoteAccessAllowedIp: agent.remoteAccessAllowedIp,
       zeroTrustNonCompliantCount,
       openVulnerabilityCount,
       lastPatchInstalledAt: lastPatchInstalledByAgent.get(agent.id)?.toISOString() ?? null,
+      latestUpdateTask: latestUpdateTaskByAgent.get(agent.id) ?? null,
+      latestAvailablePatch,
       lastCheckinAt: agent.lastCheckinAt?.toISOString() ?? null,
       status: computeStatus(agent.lastCheckinAt),
       createdAt: agent.createdAt.toISOString(),
@@ -280,6 +326,26 @@ adminRouter.post("/agents/:id/remote-access/disable", async (req, res, next) => 
     res.status(201).json(result);
   } catch (err) {
     if (err instanceof AgentNotFoundError) return res.status(404).json({ error: "Agent not found" });
+    next(err);
+  }
+});
+
+adminRouter.post("/agents/:id/pause", async (req, res, next) => {
+  try {
+    await pauseAgent(req.params.id, req.adminId!);
+    res.status(204).send();
+  } catch (err) {
+    if (err instanceof PauseAgentNotFoundError) return res.status(404).json({ error: "Agent not found" });
+    next(err);
+  }
+});
+
+adminRouter.post("/agents/:id/resume", async (req, res, next) => {
+  try {
+    await resumeAgent(req.params.id, req.adminId!);
+    res.status(204).send();
+  } catch (err) {
+    if (err instanceof PauseAgentNotFoundError) return res.status(404).json({ error: "Agent not found" });
     next(err);
   }
 });
@@ -377,7 +443,28 @@ adminRouter.post("/agents/:id/notes", async (req, res, next) => {
 adminRouter.delete("/agents/:id", async (req, res, next) => {
   try {
     await prisma.agent.delete({ where: { id: req.params.id } });
+    await incrementTotalAgentsUninstalled();
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Surfaced from the Agent Updates page's "Duplicate Entries" panel - see
+// findDuplicateAgents's own comment for exactly what counts as a duplicate here.
+adminRouter.get("/agents/duplicates", async (_req, res, next) => {
+  try {
+    res.json(await findDuplicateAgents());
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post("/agents/duplicates/delete", async (req, res, next) => {
+  try {
+    const agentIds = Array.isArray(req.body?.agentIds) ? (req.body.agentIds as string[]) : [];
+    const deletedCount = await deleteAgentsBulk(agentIds);
+    res.json({ deletedCount });
   } catch (err) {
     next(err);
   }
@@ -416,23 +503,59 @@ adminRouter.get("/enrollment-tokens", async (_req, res, next) => {
   }
 });
 
+// Carries this server's addresses (Server connection details) but no token, so running it
+// only asks for an enrollment token - see buildConfiguredSetupExe.
 adminRouter.get("/agent-installer", async (_req, res, next) => {
   try {
-    if (!fs.existsSync(config.agentInstallerPath)) {
-      return res.status(404).json({
-        error:
-          "No agent installer has been published on this server yet. Build one with " +
-          "'npm run package -w @em/agent' and place EndpointProAgentSetup.exe in the " +
-          "configured AGENT_INSTALLER_DIR.",
-      });
-    }
-
+    const exe = await buildConfiguredSetupExe();
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Disposition", 'attachment; filename="EndpointProAgentSetup.exe"');
-    const stream = fs.createReadStream(config.agentInstallerPath);
-    stream.on("error", next);
-    stream.pipe(res);
+    res.send(exe);
   } catch (err) {
+    if (err instanceof AgentInstallerMissingError) return res.status(404).json({ error: err.message });
+    next(err);
+  }
+});
+
+adminRouter.get("/agent-connection", async (_req, res, next) => {
+  try {
+    res.json(await getAgentConnectionSettings());
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.put("/agent-connection", async (req, res, next) => {
+  try {
+    const payload = updateAgentConnectionSettingsRequestSchema.parse(req.body);
+    res.json(await setAgentConnectionSettings(payload));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The same EndpointProAgentSetup.exe as GET /agent-installer, with this server's addresses and
+// the given token appended (see buildConfiguredSetupExe) - double-click installs with no
+// prompts. POST because the plaintext token only exists in the browser right after creating
+// it (only its hash is stored); it must match this token id and still be usable.
+adminRouter.post("/enrollment-tokens/:id/setup-exe", async (req, res, next) => {
+  try {
+    const { enrollmentToken } = downloadAgentSetupRequestSchema.parse(req.body);
+    const token = await prisma.enrollmentToken.findUnique({ where: { id: req.params.id } });
+    if (!token || token.tokenHash !== hashToken(enrollmentToken)) {
+      return res.status(404).json({ error: "Enrollment token not found" });
+    }
+    if (token.revoked || token.expiresAt < new Date() || token.usesRemaining <= 0) {
+      return res.status(400).json({ error: "This enrollment token is revoked, expired or used up" });
+    }
+
+    const exe = await buildConfiguredSetupExe(enrollmentToken);
+    const safeLabel = token.label.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "") || "agent";
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="EndpointProAgentSetup-${safeLabel}.exe"`);
+    res.send(exe);
+  } catch (err) {
+    if (err instanceof AgentInstallerMissingError) return res.status(404).json({ error: err.message });
     next(err);
   }
 });
@@ -441,6 +564,32 @@ adminRouter.delete("/enrollment-tokens/:id", async (req, res, next) => {
   try {
     await prisma.enrollmentToken.update({ where: { id: req.params.id }, data: { revoked: true } });
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// "Install on endpoint" (Enrollment Tokens page, step 2 right after creating a token - the
+// plaintext token value only ever exists in the response of the create call above, never
+// persisted, so this only works against a token created in the same browser session).
+// Fire-and-forget on the service side - responds with a jobId immediately, console polls
+// the GET below for progress. See remoteInstall.service.ts for why username/password never
+// touch the database.
+adminRouter.post("/remote-install", async (req, res, next) => {
+  try {
+    const payload = startRemoteInstallRequestSchema.parse(req.body);
+    const result = await startRemoteInstall(payload, req.adminId!);
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.get("/remote-install/:jobId", async (req, res, next) => {
+  try {
+    const job = await getRemoteInstallJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "Remote install job not found" });
+    res.json(job);
   } catch (err) {
     next(err);
   }

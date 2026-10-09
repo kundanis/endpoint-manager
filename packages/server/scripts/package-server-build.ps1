@@ -25,4 +25,11 @@ if ($LASTEXITCODE -ne 0) { throw "@em/console build failed" }
 Write-Host "Building the standalone agent installer (EndpointProAgentSetup.exe)..."
 npm run package -w @em/agent
 if ($LASTEXITCODE -ne 0) { throw "@em/agent package failed" }
+
+# Requires bash on PATH (Git Bash, present on this project's build machines) - the Linux
+# agent's own packaging script is plain POSIX shell so it can also run unmodified on a real
+# Linux/WSL/macOS build host, not just here.
+Write-Host "Building the Linux agent installer tarball (EndpointProAgentLinux.tar.gz)..."
+npm run package -w @em/agent-linux
+if ($LASTEXITCODE -ne 0) { throw "@em/agent-linux package failed" }
 Pop-Location

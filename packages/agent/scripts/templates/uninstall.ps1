@@ -68,6 +68,61 @@ if ((Test-Path $configPath) -and (Test-Path $statePath)) {
 
 $ErrorActionPreference = "SilentlyContinue"
 
+# Release any active policy enforcement before removing anything else, so a
+# quarantined/RDP-enabled/web-blocked/IP-blocked/app-blocked machine doesn't stay locked
+# down forever with no agent left to reverse it. Each removal only touches this tool's own
+# named/marked artifacts (mirrors quarantine.service.ts, remoteAccess.service.ts,
+# webBlockEnforcer.ts, ipBlockEnforcer.ts, appControlEnforcer.ts exactly) - nothing an
+# admin configured through any other means is touched. USB Control is deliberately NOT
+# included here: a device it already disabled has no scriptable re-enable (see
+# usbControlEnforcer.ts) - it would need to be physically unplugged and reinserted.
+Write-Host "Releasing any active policy enforcement..."
+
+netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound 2>$null | Out-Null
+netsh advfirewall firewall delete rule name="EM-Quarantine-DNS" 2>$null | Out-Null
+netsh advfirewall firewall delete rule name="EM-Quarantine-Server" 2>$null | Out-Null
+
+netsh advfirewall firewall delete rule name="EM-RemoteAccess-RDP" 2>$null | Out-Null
+Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 1 -ErrorAction SilentlyContinue
+
+Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Outbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Inbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+
+$hostsPath = "C:\Windows\System32\drivers\etc\hosts"
+if (Test-Path $hostsPath) {
+    $hostsContent = Get-Content $hostsPath -Raw
+    $startIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-START")
+    $endIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-END")
+    if ($startIdx -ge 0 -and $endIdx -ge 0) {
+        $before = $hostsContent.Substring(0, $startIdx).TrimEnd()
+        Set-Content -Path $hostsPath -Value "$before`r`n" -NoNewline -Encoding ASCII
+    }
+}
+Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
+
+$srpDisallowedPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths'
+if (Test-Path $srpDisallowedPath) {
+    Get-ChildItem -Path $srpDisallowedPath -ErrorAction SilentlyContinue | ForEach-Object {
+        $desc = (Get-ItemProperty -Path $_.PSPath -Name Description -ErrorAction SilentlyContinue).Description
+        if ($desc -and $desc.StartsWith('EM-managed:')) {
+            Remove-Item -Path $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers' -Name DefaultLevel -Value 262144 -Type DWord -ErrorAction SilentlyContinue
+
+# Best-effort self-report to the server so the Agent row - and its license seat - is freed
+# immediately instead of lingering forever as an unreachable "offline" row. $config/$state
+# are already loaded above if this install ever finished enrolling; any failure here
+# (offline, server down) is swallowed since local removal must proceed regardless.
+if ($config -and $state) {
+    try {
+        Invoke-RestMethod -Uri "$($config.serverUrl.TrimEnd('/'))/api/agent/uninstalled" -Method Post -TimeoutSec 10 `
+            -Headers @{ "X-Agent-Id" = $state.agentId; "X-Agent-Key" = $state.apiKey } | Out-Null
+    } catch {}
+}
+
 Write-Host "Stopping and removing the Endpoint Pro agent..."
 schtasks /change /tn $TaskName /disable 2>$null | Out-Null
 schtasks /end /tn $TaskName 2>$null | Out-Null

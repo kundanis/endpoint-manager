@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAgents,
   useAssetGroups,
@@ -14,6 +15,7 @@ import {
 } from "../api/hooks";
 import type { DataMovementPolicyDetail } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
+import EndpointLabel from "../components/EndpointLabel";
 
 function pathsToText(paths: string[]): string {
   return paths.join("\n");
@@ -169,7 +171,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       <ul>
         {assignments?.map((a) => (
           <li key={a.id}>
-            {a.hostname ?? `Group: ${a.groupName}`}{" "}
+            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
             <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
               Remove
             </button>
@@ -179,17 +181,6 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       </ul>
 
       <h3>Assign to</h3>
-      <fieldset>
-        <legend>Endpoints</legend>
-        {agents?.map((agent) => (
-          <label key={agent.id} className="checkbox-row">
-            <input type="checkbox" checked={selectedAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-            {agent.hostname}
-          </label>
-        ))}
-        {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-      </fieldset>
-
       {groups && groups.length > 0 && (
         <fieldset>
           <legend>Groups</legend>
@@ -201,6 +192,13 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
           ))}
         </fieldset>
       )}
+
+      <EndpointCheckboxList
+        agents={agents}
+        selectedAgentIds={selectedAgentIds}
+        onToggle={toggleAgent}
+        selectedGroupIds={selectedGroupIds}
+      />
 
       {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
       <button
@@ -267,7 +265,9 @@ function ActivityPanel({ policyId }: { policyId: string }) {
         <tbody>
           {filtered.map((a) => (
             <tr key={a.agentId}>
-              <td>{a.hostname}</td>
+              <td>
+                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+              </td>
               <td>{a.usbCount > 0 ? <StatusBadge kind="warn" label={String(a.usbCount)} /> : "—"}</td>
               <td>{a.cloudSyncCount > 0 ? <StatusBadge kind="warn" label={String(a.cloudSyncCount)} /> : "—"}</td>
               <td>{a.networkShareCount > 0 ? <StatusBadge kind="warn" label={String(a.networkShareCount)} /> : "—"}</td>

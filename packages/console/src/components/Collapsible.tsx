@@ -8,13 +8,18 @@ export default function Collapsible({
   title,
   children,
   defaultOpen = true,
+  id,
 }: {
   title: string;
   children: ReactNode;
   defaultOpen?: boolean;
+  // Optional DOM id — lets a click elsewhere on the page (e.g. a summary tile) force
+  // this panel open and scroll to it via document.getElementById, without having to
+  // thread open-state through props (see AgentsPage's "Unmanaged" tile).
+  id?: string;
 }) {
   return (
-    <details className="panel" open={defaultOpen}>
+    <details className="panel" open={defaultOpen} id={id}>
       <summary>{title}</summary>
       {children}
     </details>

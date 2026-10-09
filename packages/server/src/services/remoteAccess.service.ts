@@ -45,6 +45,7 @@ export async function enableRemoteAccess(agentId: string, adminIp: string, creat
     script: buildEnableScript(adminIp),
     timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
     createdByAdminId,
+    bypassesPause: true,
   });
   await prisma.agent.update({
     where: { id: agentId },
@@ -64,6 +65,7 @@ export async function disableRemoteAccess(agentId: string, createdByAdminId: str
     script: buildDisableScript(),
     timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
     createdByAdminId,
+    bypassesPause: true,
   });
   await prisma.agent.update({
     where: { id: agentId },

@@ -6,11 +6,14 @@ import type {
 } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
+import { isAgentPaused } from "./pause.service";
 
 // Flat, deduped across every enabled, non-excepted policy assigned to this agent (directly
 // or via a group) — each match is independently attributable to the rule that fired, so
 // unlike webBlock's merged domain list, no per-policy nesting is needed here either.
 export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedCommandBlockResponse> {
+  if (await isAgentPaused(agentId)) return { rules: [] };
+
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
   const groupIds = memberships.map((m) => m.groupId);
 

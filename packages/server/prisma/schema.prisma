@@ -9,12 +9,34 @@ generator client {
 }
 
 model AdminUser {
-  id           String    @id @default(uuid())
-  email        String    @unique @db.NVarChar(255)
-  passwordHash String    @db.NVarChar(100)
-  createdAt    DateTime  @default(now())
-  lastLoginAt  DateTime?
-  assetNotes   AssetNote[]
+  id               String    @id @default(uuid())
+  email            String    @unique @db.NVarChar(255)
+  passwordHash     String    @db.NVarChar(100)
+  // SUPER_ADMIN | ADMIN - a super admin implicitly has every module (moduleGrants is
+  // irrelevant for them) and can manage other admin accounts; a plain ADMIN's access is
+  // exactly the set of AdminModuleGrant rows below, further narrowed by whatever the
+  // deployment's own license includes (see requireModule.ts vs requireModuleAccess.ts -
+  // two independent gates, both must pass).
+  role             String    @default("ADMIN") @db.NVarChar(20)
+  createdByAdminId String?   @db.NVarChar(64)
+  createdAt        DateTime  @default(now())
+  lastLoginAt      DateTime?
+  assetNotes       AssetNote[]
+  moduleGrants     AdminModuleGrant[]
+}
+
+model AdminModuleGrant {
+  id          String    @id @default(uuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  // One of the 6 product module keys (ENDPOINT_MANAGER, NETWORK_MANAGER, ...) - mirrors
+  // the License Server's module keys by convention, not by import (same "no runtime
+  // import across the licensing wire boundary" rule already used for every MODULE_LABELS
+  // map in this codebase).
+  moduleKey   String    @db.NVarChar(30)
+  createdAt   DateTime  @default(now())
+
+  @@unique([adminUserId, moduleKey])
 }
 
 model EnrollmentToken {
@@ -31,6 +53,36 @@ model EnrollmentToken {
   // still-valid token, it just stops implying a group going forward.
   groupId       String?
   group         AssetGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  remoteInstallJobs RemoteInstallJob[]
+}
+
+// Console-triggered "install the agent on this endpoint for me" (Enrollment Tokens page) -
+// the server reaches out to a not-yet-enrolled Windows machine over WinRM/PowerShell
+// Remoting and runs the installer there, instead of an admin manually copying the exe and
+// double-clicking it. See remoteInstall.service.ts. Deliberately does NOT store the admin
+// credential used to reach each target anywhere (not on this row, not logged) - it only
+// ever lives in process memory for the lifetime of the job.
+model RemoteInstallJob {
+  id               String              @id @default(uuid())
+  tokenId          String?
+  token            EnrollmentToken?    @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  serverUrl        String
+  createdByAdminId String
+  createdAt        DateTime            @default(now())
+  tasks            RemoteInstallTask[]
+}
+
+model RemoteInstallTask {
+  id           String           @id @default(uuid())
+  jobId        String
+  job          RemoteInstallJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  // Hostname or IP the admin typed in - whatever WinRM/Invoke-Command was pointed at.
+  target       String           @db.NVarChar(255)
+  status       String           @default("PENDING") @db.NVarChar(20) // PENDING | RUNNING | SUCCESS | FAILED
+  output       String?          @db.NVarChar(Max)
+  errorMessage String?          @db.NVarChar(Max)
+  startedAt    DateTime?
+  completedAt  DateTime?
 }
 
 model Agent {
@@ -55,6 +107,15 @@ model Agent {
   remoteAccessEnabled  Boolean        @default(false)
   remoteAccessEnabledAt DateTime?
   remoteAccessAllowedIp String?       @db.NVarChar(45)
+  paused          Boolean             @default(false)
+  pausedAt        DateTime?
+  // Snapshot of enforcement that was actively released when this agent was paused (see
+  // pause.service.ts), so resume can restore exactly what was in effect before - rather
+  // than e.g. leaving a previously-quarantined machine unquarantined forever just because
+  // it went through a pause/resume cycle.
+  pausedFromQuarantined            Boolean @default(false)
+  pausedFromRemoteAccessEnabled    Boolean @default(false)
+  pausedFromRemoteAccessAllowedIp  String? @db.NVarChar(45)
   location        String?             @db.NVarChar(200)
   ipGeoCity       String?             @db.NVarChar(100)
   ipGeoRegion     String?             @db.NVarChar(100)
@@ -68,6 +129,7 @@ model Agent {
   inventory       InventorySnapshot?
   commandTasks    CommandTask[]
   deployTasks     DeploymentTask[]
+  agentUpdateTasks      AgentUpdateTask[]
   patchFindings         PatchFinding[]
   patchTasks            PatchTask[]
   vulnerabilityFindings VulnerabilityFinding[]
@@ -79,6 +141,7 @@ model Agent {
   securityBenchmarkAssignments SecurityBenchmarkAssignment[]
   zeroTrustFindings    ZeroTrustFinding[]
   zeroTrustAssignments ZeroTrustPolicyAssignment[]
+  zeroTrustCheckOverrides ZeroTrustCheckOverride[]
   dataDiscoveryFindings    DataDiscoveryFinding[]
   dataDiscoveryAssignments DataDiscoveryPolicyAssignment[]
   dataDiscoveryScanStates  DataDiscoveryScanState[]
@@ -89,6 +152,7 @@ model Agent {
   appControlEvents      AppControlEvent[]
   appControlAssignments AppControlPolicyAssignment[]
   webBlockAssignments   WebBlockPolicyAssignment[]
+  piiBlockAssignments   PiiBlockPolicyAssignment[]
   commandBlockEvents      CommandBlockEvent[]
   commandBlockAssignments CommandBlockPolicyAssignment[]
   ipBlockAssignments IpBlockPolicyAssignment[]
@@ -149,6 +213,12 @@ model CommandJob {
   timeoutSec       Int           @default(120)
   createdByAdminId String
   targetGroupIds   String        @default("[]") @db.NVarChar(1000)
+  // Lets checkin.service.ts still deliver this job's tasks to a PAUSED agent - reserved
+  // for security-lifecycle actions (quarantine apply/release, remote access enable/disable,
+  // remote uninstall) that must reach the endpoint regardless of pause, since pause has no
+  // other way to actually be enforced/reversed on it. Never set true for routine
+  // admin-dispatched commands/deployments/patches - those are exactly what pause holds back.
+  bypassesPause    Boolean       @default(false)
   createdAt        DateTime      @default(now())
   tasks            CommandTask[]
 }
@@ -165,6 +235,10 @@ model CommandTask {
   stderr       String?    @db.NVarChar(Max)
   dispatchedAt DateTime?
   completedAt  DateTime?
+
+  // Every agent checkin looks up its own PENDING tasks (checkin.service.ts) - without this
+  // that is a full table scan of all command history, per agent, every poll.
+  @@index([agentId, status])
 }
 
 model Package {
@@ -203,6 +277,54 @@ model DeploymentTask {
   message      String?       @db.NVarChar(Max)
   dispatchedAt DateTime?
   completedAt  DateTime?
+
+  // Looked up per agent on every checkin - see CommandTask's index note.
+  @@index([agentId, status])
+}
+
+// Admin-initiated push of a new agent build to specific endpoints/groups - mirrors
+// DeploymentJob/DeploymentTask exactly, except there's no Package row to point at: the
+// payload is always whatever is currently staged at config.agentInstallerZipPath (one
+// version live on this server at a time, matching how AGENT_INSTALLER_DIR already only
+// ever holds one EndpointProAgentSetup.exe). targetVersion is stamped at dispatch time so
+// a job's own record stays meaningful even after a later build replaces the staged files.
+model AgentUpdateJob {
+  id               String            @id @default(uuid())
+  // "win32" or "linux" (matches Agent.osPlatform verbatim) - a job is always homogeneous:
+  // createAgentUpdateJob groups the admin's selected agents by osPlatform and creates one
+  // job per platform actually present in the selection, each carrying that platform's own
+  // build. A mixed-OS selection therefore silently fans out into multiple jobs from one
+  // admin click rather than requiring the admin to think about OS at all.
+  platform         String            @db.NVarChar(20)
+  targetVersion    String            @db.NVarChar(50)
+  // Frozen at dispatch time from whatever agentBuild.service.ts reported then - not
+  // re-read live at checkin time, so a job's own contract can't shift out from under an
+  // in-flight rollout if a newer build happens to get staged on this server mid-rollout.
+  sha256           String            @db.NVarChar(64)
+  createdByAdminId String
+  targetGroupIds   String            @default("[]") @db.NVarChar(1000)
+  createdAt        DateTime          @default(now())
+  tasks            AgentUpdateTask[]
+}
+
+model AgentUpdateTask {
+  id           String         @id @default(uuid())
+  jobId        String
+  job          AgentUpdateJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  agentId      String
+  agent        Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  // PENDING -> DISPATCHED (agent picked it up) -> DOWNLOADING -> APPLYING (detached helper
+  // task registered, original process about to be torn down) -> SUCCESS/FAILED. Unlike a
+  // software deployment, APPLYING can't resolve synchronously - the reporting process is
+  // gone by the time the swap actually happens - so the detached helper itself reports the
+  // final state, same self-report pattern already proven for remote uninstall.
+  status       String    @default("PENDING")
+  message      String?   @db.NVarChar(Max)
+  dispatchedAt DateTime?
+  completedAt  DateTime?
+
+  // Looked up per agent on every checkin - see CommandTask's index note.
+  @@index([agentId, status])
 }
 
 model PatchDefinition {
@@ -238,8 +360,27 @@ model PatchJob {
   updateIds        String      @db.NVarChar(Max)
   createdByAdminId String
   targetGroupIds   String      @default("[]") @db.NVarChar(1000)
+  // Null = dispatch immediately (existing behavior, tasks created as PENDING). A future
+  // timestamp creates tasks as SCHEDULED instead - see promoteScheduledPatchTasks(), which
+  // flips them to PENDING once this time arrives, at which point the existing
+  // checkin.service.ts PENDING-task query picks them up completely unchanged.
+  scheduledAt      DateTime?
   createdAt        DateTime    @default(now())
   tasks            PatchTask[]
+}
+
+// A standing "Automatic Mode" policy - see createAutoPatchPolicyRequestSchema. Evaluated by
+// a periodic sweep (runAutoPatchPolicies) rather than triggered per-scan, matching this
+// codebase's existing preference for polling over event-driven triggers (e.g. license
+// revalidation in index.ts).
+model AutoPatchPolicy {
+  id               String    @id @default(uuid())
+  enabled          Boolean   @default(true)
+  minSeverity      String    @db.NVarChar(20)
+  targetGroupIds   String    @default("[]") @db.NVarChar(1000)
+  createdByAdminId String
+  createdAt        DateTime  @default(now())
+  lastRunAt        DateTime?
 }
 
 model PatchTask {
@@ -254,6 +395,9 @@ model PatchTask {
   message        String?   @db.NVarChar(Max)
   dispatchedAt   DateTime?
   completedAt    DateTime?
+
+  // Looked up per agent on every checkin - see CommandTask's index note.
+  @@index([agentId, status])
 }
 
 model VulnerabilityDefinition {
@@ -292,6 +436,9 @@ model VulnerabilityCpeMatch {
 
   @@index([productCompact])
   @@index([productNormalized])
+  // SQL Server doesn't index FK columns on its own. Without this, sync's per-CVE
+  // deleteMany scans (and locks) the whole table and deadlocks with checkin-driven matching.
+  @@index([vulnerabilityDefinitionId])
 }
 
 model VulnerabilityFinding {
@@ -311,6 +458,12 @@ model VulnerabilityFinding {
 
   @@unique([agentId, vulnerabilityDefinitionId, matchedSoftwareName])
   @@index([agentId, status])
+  // Per-agent / distinct-agent OPEN counts (dashboard summary + agents list, polled every few
+  // seconds): WHERE status=OPEN GROUP BY agentId - seek on status, grouped by agentId.
+  @@index([status, agentId])
+  // Fleet vulnerability summary: WHERE status=OPEN GROUP BY definition, COUNT(DISTINCT agent)
+  // - this covers it fully (no row lookups).
+  @@index([status, vulnerabilityDefinitionId, agentId])
 }
 
 model VulnerabilitySyncRun {
@@ -339,6 +492,7 @@ model AssetGroup {
   dlpAssignments DlpPolicyAssignment[]
   appControlAssignments AppControlPolicyAssignment[]
   webBlockAssignments   WebBlockPolicyAssignment[]
+  piiBlockAssignments   PiiBlockPolicyAssignment[]
   commandBlockAssignments CommandBlockPolicyAssignment[]
   dataMovementAssignments DataMovementPolicyAssignment[]
   ipBlockAssignments IpBlockPolicyAssignment[]
@@ -472,10 +626,15 @@ model DiscoveredHost {
 model SoftwareLicense {
   id               String    @id @default(uuid())
   softwareName     String    @db.NVarChar(300)
+  version          String?   @db.NVarChar(50)
   vendor           String?   @db.NVarChar(200)
   licenseKey       String?   @db.NVarChar(500)
   licenseType      String    @db.NVarChar(30)
   seatsPurchased   Int
+  // Manual override for "seats in use" - null means keep using the automatic estimate
+  // (name-matched against agent inventory, see countAgentsWithMatchingSoftware in
+  // softwareLicense.service.ts). Set this when that heuristic doesn't fit.
+  seatsInUseOverride Int?
   purchaseDate     DateTime?
   expiryDate       DateTime?
   cost             Float?
@@ -485,6 +644,7 @@ model SoftwareLicense {
   // until an admin deliberately picks a different cycle.
   billingCycle     String    @default("YEARLY") @db.NVarChar(20)
   deploymentType   String?   @db.NVarChar(100)
+  accessType       String?   @db.NVarChar(20)
   userDepartment   String?   @db.NVarChar(200)
   notes            String?   @db.NVarChar(2000)
   createdByAdminId String
@@ -622,6 +782,28 @@ model ZeroTrustFinding {
 
   @@unique([agentId, conditionId])
   @@index([agentId, status])
+  // Fleet-wide "all FAIL findings" scan (agents list) filters on status alone.
+  @@index([status])
+}
+
+// Scoped to conditionKey (a stable string reused across whichever policy/condition row
+// actually carries it - see ZeroTrustCondition.conditionKey), not a specific
+// ZeroTrustCondition id - so one override still applies if a condition gets deleted and
+// re-added, or exists identically in more than one policy. Row presence = override active;
+// there is no "disabled" override row, just delete it (see zeroTrustOverride.service.ts).
+// Deliberately has no effect anywhere except the compliance-verdict aggregations it's
+// explicitly wired into (zeroTrustNonCompliantCount, compliancePercent, per-agent
+// pass/fail/trusted) - the underlying ZeroTrustFinding.status a device actually earned is
+// never rewritten, so raw per-condition findings views keep showing real posture.
+model ZeroTrustCheckOverride {
+  id               String   @id @default(uuid())
+  agentId          String
+  agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  conditionKey     String   @db.NVarChar(50)
+  appliedByAdminId String
+  appliedAt        DateTime @default(now())
+
+  @@unique([agentId, conditionKey])
 }
 
 // Unlike SecurityBenchmark/ZeroTrust, there's no per-policy child table for the
@@ -1046,6 +1228,110 @@ model WebBlockPolicyAssignment {
   @@index([groupId])
 }
 
+// EPM — PII Data Blocking. Same re-assert-declarative-state shape as Web Block (no event
+// log, just a sync-health snapshot per assignment) — a rule's `value` is a PII_PATTERN_KEYS
+// key (packages/shared/src/data/piiPatterns.ts), the same catalog Data Discovery and DLP's
+// CONTENT_PATTERN rule type already use, so "credit card number" means the same thing
+// everywhere in this product. Note: agent-side content inspection/enforcement for this
+// module isn't wired up yet (same "policy layer ships ahead of the enforcement sidecar"
+// situation as DLP's BLOCK mode) — policies can be authored and assigned now regardless.
+model PiiBlockPolicy {
+  id               String                     @id @default(uuid())
+  name             String                     @db.NVarChar(200)
+  description      String?                    @db.NVarChar(1000)
+  enabled          Boolean                    @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                   @default(now())
+  rules            PiiBlockRule[]
+  assignments      PiiBlockPolicyAssignment[]
+}
+
+model PiiBlockRule {
+  id        String         @id @default(uuid())
+  policyId  String
+  policy    PiiBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String         @db.NVarChar(30)
+  value     String         @db.NVarChar(255)
+  label     String?        @db.NVarChar(200)
+  createdAt DateTime       @default(now())
+}
+
+model PiiBlockPolicyAssignment {
+  id             String         @id @default(uuid())
+  policyId       String
+  policy         PiiBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId        String?
+  agent          Agent?         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          AssetGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?        @db.NVarChar(20)
+  lastSyncError  String?        @db.NVarChar(1000)
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// Email Attachment Blocking — scans attachments entirely client-side inside the Outlook
+// add-in's own JS runtime (see packages/outlook-addin/) at send time; the raw attachment
+// content NEVER reaches this server, only which PII categories matched (never the matched
+// values themselves — same discipline as DlpEvent's maskedSamples). Unlike PiiBlockPolicy
+// (endpoint agents/groups), this targets individual mailboxes by email address, since a
+// mailbox has no Agent record of its own. The two public (unauthenticated) endpoints this
+// feeds — policy lookup by email, and event reporting — are reachable from inside Outlook's
+// sandboxed add-in runtime, which cannot hold this app's own admin session or agent API key.
+model PiiEmailBlockPolicy {
+  id               String                      @id @default(uuid())
+  name             String                      @db.NVarChar(200)
+  description      String?                     @db.NVarChar(1000)
+  enabled          Boolean                     @default(true)
+  createdByAdminId String?
+  createdAt        DateTime                    @default(now())
+  rules            PiiEmailBlockRule[]
+  assignments      PiiEmailBlockAssignment[]
+  events           PiiEmailBlockEvent[]
+}
+
+model PiiEmailBlockRule {
+  id        String              @id @default(uuid())
+  policyId  String
+  policy    PiiEmailBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ruleType  String              @db.NVarChar(30)
+  value     String              @db.NVarChar(255)
+  label     String?             @db.NVarChar(200)
+  createdAt DateTime            @default(now())
+}
+
+model PiiEmailBlockAssignment {
+  id           String              @id @default(uuid())
+  policyId     String
+  policy       PiiEmailBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  emailAddress String              @db.NVarChar(320)
+  createdAt    DateTime            @default(now())
+
+  @@index([policyId])
+  @@index([emailAddress])
+}
+
+// Append-only audit trail (mirrors DlpEvent's shape) — matchedCategoryLabels is a JSON
+// array of display labels only (e.g. ["Credit/debit card number"]), never the matched
+// text itself, since the whole point of client-side scanning is that content never leaves
+// the mail client.
+model PiiEmailBlockEvent {
+  id                     String              @id @default(uuid())
+  policyId               String?
+  policy                 PiiEmailBlockPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  senderEmail            String              @db.NVarChar(320)
+  attachmentName         String              @db.NVarChar(500)
+  action                 String              @db.NVarChar(20) // BLOCKED | ALLOWED_WARNED
+  matchedCategoryLabels  String              @default("[]") @db.NVarChar(1000)
+  occurredAt             DateTime            @default(now())
+
+  @@index([senderEmail])
+  @@index([policyId])
+}
+
 // EPM — IP Blocking (Windows Firewall block rules on assigned IP/CIDR addresses). Same
 // re-assert-declarative-state shape as Web Block: no event log (asserting a firewall rule
 // has no convenient "a connection was just blocked" signal without enabling and parsing
@@ -1261,6 +1547,44 @@ model LicenseServerConfig {
   updatedAt             DateTime  @updatedAt
 }
 
+// Singleton — the addresses agents use to reach this server, in the order they try them:
+// localUrl (LAN IP:port), webUrl (the HTTPS domain URL), publicUrl (NAT'd public IP:port).
+// Baked into each per-token setup exe and pushed to enrolled agents on every check-in, so an
+// endpoint that moves between the office LAN and the internet keeps finding the server - see
+// agentConnection.service.ts and the agents' serverEndpoints.ts. All optional: until an
+// admin saves this, localUrl falls back to an auto-detected LAN address.
+model AgentConnectionSettings {
+  id        String   @id @default("singleton")
+  localUrl  String?  @db.NVarChar(500)
+  webUrl    String?  @db.NVarChar(500)
+  publicUrl String?  @db.NVarChar(500)
+  updatedAt DateTime @updatedAt
+}
+
+// Singleton — org-wide "hide this for everyone" toggle, at two granularities:
+//   - hiddenModuleKeys: whole top-level modules (AdminModuleKey values, e.g.
+//     "ENDPOINT_MANAGER") - hidden from the nav AND actually blocked server-side (see
+//     requireModuleVisible in middleware/requireModule.ts), the same way every module
+//     mount in app.ts is already gated by requireModule/requireModuleAccess. This is a
+//     THIRD, most-authoritative gate, stacked on top of the other two (LicenseActivation.
+//     modules = what the license includes; AdminModuleGrant = what a specific ADMIN was
+//     granted) and overrides both - even a SUPER_ADMIN, who otherwise bypasses
+//     AdminModuleGrant entirely.
+//   - hiddenItemPaths: individual sub-items within a module (console route paths, e.g.
+//     "/commands", "/dlp") - hidden from the nav and redirected away client-side
+//     (RequireModule.tsx), but NOT separately blocked server-side, since most sub-items
+//     don't have their own isolated API surface distinct from siblings (e.g. Endpoints/
+//     Enrollment Tokens both fall under the same generic admin.routes.ts catch-all) - only
+//     whole-module hiding gets the stronger, API-enforced guarantee.
+// Dashboard/Licensing/Administrators are deliberately never hideable via either list (no
+// way back in otherwise) - enforced in the console, not here.
+model ModuleVisibilitySettings {
+  id               String   @id @default("singleton")
+  hiddenModuleKeys String   @default("[]") @db.NVarChar(1000)
+  hiddenItemPaths  String   @default("[]") @db.NVarChar(2000)
+  updatedAt        DateTime @updatedAt
+}
+
 // Singleton — this deployment has exactly one license, so the app always reads/writes
 // the row with id "singleton" rather than looking one up by any other key. keyString and
 // bindingToken are stored encrypted (not hashed) because, unlike the License Server side,
@@ -1287,6 +1611,12 @@ model LicenseActivation {
   activatedAt           DateTime
   lastRevalidatedAt     DateTime?
   lastRevalidationError String?   @db.NVarChar(1000)
+  // Lifetime count of agents actually uninstalled/removed from this deployment (not
+  // currently-active seats - see currentAgentCount, which is always a live COUNT(*)).
+  // Incremented once per Agent row deletion, whether via the self-report uninstall path
+  // or an admin's manual delete - both represent one seat being fully consumed and given
+  // back over this license's history, independent of how many are active right now.
+  totalAgentsUninstalled Int      @default(0)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 }

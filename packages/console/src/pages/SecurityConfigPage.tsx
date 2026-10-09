@@ -2,6 +2,7 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import type { SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
 import type { SecurityBenchmarkDetail } from "../api/types";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAddSecurityRule,
   useAgents,
@@ -19,6 +20,7 @@ import {
   useUnassignSecurityBenchmark,
   type SecurityRuleInput,
 } from "../api/hooks";
+import EndpointLabel from "../components/EndpointLabel";
 
 const SEVERITIES: SecurityRuleSeverity[] = ["HIGH", "MEDIUM", "LOW"];
 const OPERATORS: SecurityRuleOperator[] = ["EQUALS", "NOT_EQUALS", "GTE", "LTE", "CONTAINS", "REGEX_MATCH"];
@@ -290,7 +292,7 @@ function AssignmentPanel({ benchmarkId }: { benchmarkId: string }) {
       <ul>
         {assignments?.map((a) => (
           <li key={a.id}>
-            {a.hostname ?? `Group: ${a.groupName}`}{" "}
+            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
             <button type="button" onClick={() => unassign.mutate({ benchmarkId, assignmentId: a.id })} disabled={unassign.isPending}>
               Remove
             </button>
@@ -300,17 +302,6 @@ function AssignmentPanel({ benchmarkId }: { benchmarkId: string }) {
       </ul>
 
       <h3>Assign to</h3>
-      <fieldset>
-        <legend>Endpoints</legend>
-        {agents?.map((agent) => (
-          <label key={agent.id} className="checkbox-row">
-            <input type="checkbox" checked={selectedAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-            {agent.hostname} {agent.osEditionLabel && <span style={{ color: "var(--text-muted)" }}>({agent.osEditionLabel})</span>}
-          </label>
-        ))}
-        {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-      </fieldset>
-
       {groups && groups.length > 0 && (
         <fieldset>
           <legend>Groups</legend>
@@ -322,6 +313,14 @@ function AssignmentPanel({ benchmarkId }: { benchmarkId: string }) {
           ))}
         </fieldset>
       )}
+
+      <EndpointCheckboxList
+        agents={agents}
+        selectedAgentIds={selectedAgentIds}
+        onToggle={toggleAgent}
+        selectedGroupIds={selectedGroupIds}
+        renderExtra={(agent) => agent.osEditionLabel && <span style={{ color: "var(--text-muted)" }}>({agent.osEditionLabel})</span>}
+      />
 
       {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
       <button
@@ -377,7 +376,9 @@ function CompliancePanel({ benchmarkId }: { benchmarkId: string }) {
         <tbody>
           {breakdown?.agents.map((a) => (
             <tr key={a.agentId}>
-              <td>{a.hostname}</td>
+              <td>
+                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+              </td>
               <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
               <td>{a.passCount}</td>
               <td>{a.failCount}</td>

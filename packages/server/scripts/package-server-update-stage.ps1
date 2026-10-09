@@ -13,6 +13,10 @@ $sharedDir = Join-Path $repoRoot "packages\shared"
 $licenseSharedDir = Join-Path $repoRoot "packages\license-shared"
 $consoleDir = Join-Path $repoRoot "packages\console"
 $agentInstallerExe = Join-Path $repoRoot "packages\agent\dist-installer\EndpointProAgentSetup.exe"
+$agentInstallerZip = Join-Path $repoRoot "packages\agent\dist-installer\EndpointProAgentInstaller.zip"
+$agentManifest = Join-Path $repoRoot "packages\agent\dist-installer\agent-manifest.json"
+$agentInstallerTarballLinux = Join-Path $repoRoot "packages\agent-linux\dist-installer\EndpointProAgentLinux.tar.gz"
+$agentManifestLinux = Join-Path $repoRoot "packages\agent-linux\dist-installer\agent-manifest.json"
 $rootNodeModules = Join-Path $repoRoot "node_modules"
 $templatesDir = Join-Path $PSScriptRoot "templates"
 
@@ -28,6 +32,9 @@ New-Item -ItemType Directory -Force -Path $appDist | Out-Null
 Copy-Item -Path (Join-Path $serverDir "dist\*") -Destination $appDist -Recurse -Force
 
 Copy-Item -Path (Join-Path $serverDir "prisma") -Destination (Join-Path $appDir "prisma") -Recurse -Force
+# Outlook add-in files (commands.html/js, vendored JSZip, icons) - app.ts serves these from
+# <app>\public\outlook-addin, resolved relative to dist\.
+Copy-Item -Path (Join-Path $serverDir "public") -Destination (Join-Path $appDir "public") -Recurse -Force
 
 $appNodeModules = Join-Path $appDir "node_modules"
 New-Item -ItemType Directory -Force -Path $appNodeModules | Out-Null
@@ -87,9 +94,24 @@ Copy-Item -Path (Join-Path $consoleDir "dist") -Destination (Join-Path $appDir "
 
 Write-Host "Staging updated agent installer..."
 if (-not (Test-Path $agentInstallerExe)) { throw "Could not find agent installer at $agentInstallerExe - did package-server-build.ps1 run first?" }
+if (-not (Test-Path $agentInstallerZip)) { throw "Could not find agent installer zip at $agentInstallerZip - did package-server-build.ps1 run first?" }
+if (-not (Test-Path $agentManifest)) { throw "Could not find agent-manifest.json at $agentManifest - did package-server-build.ps1 run first?" }
 $agentInstallerDir = Join-Path $appDir "agent-installer"
 New-Item -ItemType Directory -Force -Path $agentInstallerDir | Out-Null
 Copy-Item -Path $agentInstallerExe -Destination (Join-Path $agentInstallerDir "EndpointProAgentSetup.exe") -Force
+# The zip is reused as-is as the self-update payload, and the manifest describes it (see
+# config.agentInstallerZipPath/agentManifestPath, agentBuild.service.ts) — kept in sync with
+# the .exe above since both come from the exact same package-installer.ps1 run.
+Copy-Item -Path $agentInstallerZip -Destination (Join-Path $agentInstallerDir "EndpointProAgentInstaller.zip") -Force
+Copy-Item -Path $agentManifest -Destination (Join-Path $agentInstallerDir "agent-manifest.json") -Force
+
+Write-Host "Staging updated Linux agent installer..."
+if (-not (Test-Path $agentInstallerTarballLinux)) { throw "Could not find Linux agent tarball at $agentInstallerTarballLinux - did package-server-build.ps1 run first?" }
+if (-not (Test-Path $agentManifestLinux)) { throw "Could not find Linux agent-manifest.json at $agentManifestLinux - did package-server-build.ps1 run first?" }
+$agentInstallerDirLinux = Join-Path $agentInstallerDir "linux"
+New-Item -ItemType Directory -Force -Path $agentInstallerDirLinux | Out-Null
+Copy-Item -Path $agentInstallerTarballLinux -Destination (Join-Path $agentInstallerDirLinux "EndpointProAgentLinux.tar.gz") -Force
+Copy-Item -Path $agentManifestLinux -Destination (Join-Path $agentInstallerDirLinux "agent-manifest.json") -Force
 
 Write-Host "Staging portable Node.js runtime..."
 $nodeDir = Join-Path $stagingRoot "node"

@@ -6,6 +6,7 @@ import AgentDetailPage from "./pages/AgentDetailPage";
 import EnrollmentTokensPage from "./pages/EnrollmentTokensPage";
 import CommandsPage from "./pages/CommandsPage";
 import PackagesPage from "./pages/PackagesPage";
+import AgentUpdatesPage from "./pages/AgentUpdatesPage";
 import PatchesPage from "./pages/PatchesPage";
 import VulnerabilitiesPage from "./pages/VulnerabilitiesPage";
 import AssetSettingsPage from "./pages/AssetSettingsPage";
@@ -15,10 +16,13 @@ import SecurityConfigPage from "./pages/SecurityConfigPage";
 import ZeroTrustPage from "./pages/ZeroTrustPage";
 import DataDiscoveryPage from "./pages/DataDiscoveryPage";
 import DlpPage from "./pages/DlpPage";
+import DlpContentPoliciesPage from "./pages/DlpContentPoliciesPage";
 import DataMovementPage from "./pages/DataMovementPage";
 import EpmPage from "./pages/EpmPage";
 import AppControlPage from "./pages/AppControlPage";
 import WebBlockPage from "./pages/WebBlockPage";
+import PiiBlockPage from "./pages/PiiBlockPage";
+import EmailAttachmentBlockPage from "./pages/EmailAttachmentBlockPage";
 import CommandBlockPage from "./pages/CommandBlockPage";
 import IpBlockPage from "./pages/IpBlockPage";
 import UsbControlPage from "./pages/UsbControlPage";
@@ -26,8 +30,10 @@ import AccessExceptionsPage from "./pages/AccessExceptionsPage";
 import UserProductivityPage from "./pages/UserProductivityPage";
 import EdrPage from "./pages/EdrPage";
 import LicenseActivationPage from "./pages/LicenseActivationPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
 import RequireAuth from "./components/RequireAuth";
 import RequireModule from "./components/RequireModule";
+import RequireSuperAdmin from "./components/RequireSuperAdmin";
 import Layout from "./components/Layout";
 
 export default function App() {
@@ -48,6 +54,7 @@ export default function App() {
         <Route path="/enrollment-tokens" element={<RequireModule module="ENDPOINT_MANAGER"><EnrollmentTokensPage /></RequireModule>} />
         <Route path="/commands" element={<RequireModule module="ENDPOINT_MANAGER"><CommandsPage /></RequireModule>} />
         <Route path="/packages" element={<RequireModule module="ENDPOINT_MANAGER"><PackagesPage /></RequireModule>} />
+        <Route path="/agent-updates" element={<RequireModule module="ENDPOINT_MANAGER"><AgentUpdatesPage /></RequireModule>} />
         <Route path="/asset-settings" element={<RequireModule module="ENDPOINT_MANAGER"><AssetSettingsPage /></RequireModule>} />
         <Route path="/patches" element={<RequireModule module="SECURITY_MANAGER"><PatchesPage /></RequireModule>} />
         <Route path="/vulnerabilities" element={<RequireModule module="SECURITY_MANAGER"><VulnerabilitiesPage /></RequireModule>} />
@@ -57,12 +64,17 @@ export default function App() {
         <Route path="/software-licenses" element={<RequireModule module="SOFTWARE_MANAGER"><SoftwareLicensesPage /></RequireModule>} />
         <Route path="/network-scan" element={<RequireModule module="NETWORK_MANAGER"><NetworkScanPage /></RequireModule>} />
         <Route path="/data-discovery" element={<RequireModule module="DATA_MANAGER"><DataDiscoveryPage /></RequireModule>} />
-        <Route path="/dlp" element={<RequireModule module="DATA_MANAGER"><DlpPage /></RequireModule>} />
+        <Route path="/dlp" element={<RequireModule module="DATA_MANAGER"><DlpPage /></RequireModule>}>
+          <Route index element={<Navigate to="content-policies" replace />} />
+          <Route path="content-policies" element={<DlpContentPoliciesPage />} />
+          <Route path="email-attachment-block" element={<EmailAttachmentBlockPage />} />
+        </Route>
         <Route path="/data-movement" element={<RequireModule module="DATA_MANAGER"><DataMovementPage /></RequireModule>} />
         <Route path="/epm" element={<RequireModule module="DATA_MANAGER"><EpmPage /></RequireModule>}>
           <Route index element={<Navigate to="app-control" replace />} />
           <Route path="app-control" element={<AppControlPage />} />
           <Route path="web-block" element={<WebBlockPage />} />
+          <Route path="pii-block" element={<PiiBlockPage />} />
           <Route path="command-block" element={<CommandBlockPage />} />
           <Route path="ip-block" element={<IpBlockPage />} />
           <Route path="usb-control" element={<UsbControlPage />} />
@@ -70,6 +82,7 @@ export default function App() {
         <Route path="/access-exceptions" element={<RequireModule module="DATA_MANAGER"><AccessExceptionsPage /></RequireModule>} />
         <Route path="/user-productivity" element={<RequireModule module="USER_MANAGER"><UserProductivityPage /></RequireModule>} />
         <Route path="/licensing" element={<LicenseActivationPage />} />
+        <Route path="/admin-users" element={<RequireSuperAdmin><AdminUsersPage /></RequireSuperAdmin>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>

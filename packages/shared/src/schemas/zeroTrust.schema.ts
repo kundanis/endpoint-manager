@@ -73,3 +73,13 @@ export const zeroTrustScanResultPayloadSchema = z.object({
   results: z.array(zeroTrustScanResultItemSchema).max(500),
 });
 export type ZeroTrustScanResultPayload = z.infer<typeof zeroTrustScanResultPayloadSchema>;
+
+// Bulk override: force specific conditionKeys to stop counting against selected devices'
+// compliance verdict, regardless of real posture (e.g. a known false positive while a fix
+// rolls out). Deliberately the only surface this concept exists on anywhere in the product —
+// see zeroTrustOverride.service.ts.
+export const zeroTrustOverrideBulkRequestSchema = z.object({
+  agentIds: z.array(z.string().min(1)).min(1),
+  conditionKeys: z.array(z.string().min(1)).min(1),
+});
+export type ZeroTrustOverrideBulkRequest = z.infer<typeof zeroTrustOverrideBulkRequestSchema>;

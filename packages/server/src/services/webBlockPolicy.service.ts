@@ -147,7 +147,7 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   const policy = await prisma.webBlockPolicy.findUnique({ where: { id: policyId } });
   if (!policy) return null;
 
-  const assignments = await prisma.webBlockPolicyAssignment.findMany({ where: { policyId } });
+  const assignments = await prisma.webBlockPolicyAssignment.findMany({ where: { policyId }, include: { group: true } });
   const directAgentIds = assignments.filter((a) => a.agentId).map((a) => a.agentId!);
   const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
   const memberships =
@@ -158,7 +158,10 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   const agentIds = [...new Set([...directAgentIds, ...memberships.map((m) => m.agentId)])];
   if (agentIds.length === 0) return { policyId, name: policy.name, agents: [] };
 
-  const agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
+  const agents = await prisma.agent.findMany({
+    where: { id: { in: agentIds } },
+    include: { inventory: { select: { lastLoggedOnUser: true } } },
+  });
 
   function assignmentForAgent(agentId: string) {
     const direct = assignments.find((a) => a.agentId === agentId);
@@ -175,6 +178,8 @@ export async function getPolicyAgentBreakdown(policyId: string) {
       return {
         agentId: a.id,
         hostname: a.hostname,
+        groupName: assignment?.group?.name ?? null,
+        lastLoggedOnUser: a.inventory?.lastLoggedOnUser ?? null,
         lastSyncedAt: assignment?.lastSyncedAt?.toISOString() ?? null,
         lastSyncStatus: assignment?.lastSyncStatus ?? null,
         lastSyncError: assignment?.lastSyncError ?? null,

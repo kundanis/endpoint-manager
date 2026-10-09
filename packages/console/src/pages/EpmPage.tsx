@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 const EPM_TABS = [
   { path: "app-control", label: "Application Control" },
   { path: "web-block", label: "Web & Email Blocking" },
+  { path: "pii-block", label: "PII Data Blocking" },
   { path: "command-block", label: "Command Blocking" },
   { path: "ip-block", label: "IP Blocking" },
   { path: "usb-control", label: "USB Device Control" },

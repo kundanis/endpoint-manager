@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { AppControlRuleType } from "@em/shared";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
+import BulkPolicyAssignPanel from "../components/BulkPolicyAssignPanel";
 import {
   useAddAppControlRule,
   useAgents,
@@ -19,6 +21,7 @@ import {
 } from "../api/hooks";
 import type { AppControlPolicyDetail, AppControlRuleView } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
+import EndpointLabel from "../components/EndpointLabel";
 
 const RULE_TYPES: AppControlRuleType[] = ["EXTENSION", "EXECUTABLE"];
 
@@ -231,7 +234,7 @@ function PolicySettingsPanel({ policy }: { policy: AppControlPolicyDetail }) {
   );
 }
 
-function AssignmentPanel({ policyId }: { policyId: string }) {
+function AssignmentPanel({ policyId, policyName }: { policyId: string; policyName: string }) {
   const { data: agents } = useAgents();
   const { data: groups } = useAssetGroups();
   const { data: assignments } = useAppControlAssignments(policyId);
@@ -258,13 +261,13 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
 
   return (
     <div className="panel">
-      <h2>Assignment</h2>
+      <h2>Application Control — {policyName} — Assignment</h2>
 
       <h3>Currently assigned</h3>
       <ul>
         {assignments?.map((a) => (
           <li key={a.id}>
-            {a.hostname ?? `Group: ${a.groupName}`}{" "}
+            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
             <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
               Remove
             </button>
@@ -274,17 +277,6 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       </ul>
 
       <h3>Assign to</h3>
-      <fieldset>
-        <legend>Endpoints</legend>
-        {agents?.map((agent) => (
-          <label key={agent.id} className="checkbox-row">
-            <input type="checkbox" checked={selectedAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-            {agent.hostname}
-          </label>
-        ))}
-        {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-      </fieldset>
-
       {groups && groups.length > 0 && (
         <fieldset>
           <legend>Groups</legend>
@@ -296,6 +288,13 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
           ))}
         </fieldset>
       )}
+
+      <EndpointCheckboxList
+        agents={agents}
+        selectedAgentIds={selectedAgentIds}
+        onToggle={toggleAgent}
+        selectedGroupIds={selectedGroupIds}
+      />
 
       {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
       <button
@@ -309,13 +308,13 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   );
 }
 
-function ActivityPanel({ policyId }: { policyId: string }) {
+function ActivityPanel({ policyId, policyName }: { policyId: string; policyName: string }) {
   const { data: breakdown } = useAppControlAgentBreakdown(policyId);
   const agents = breakdown?.agents ?? [];
 
   return (
     <div className="panel">
-      <h2>Activity</h2>
+      <h2>Application Control — {policyName} — Activity</h2>
 
       <div className="tiles">
         <div className="tile">
@@ -339,7 +338,9 @@ function ActivityPanel({ policyId }: { policyId: string }) {
         <tbody>
           {agents.map((a) => (
             <tr key={a.agentId}>
-              <td>{a.hostname}</td>
+              <td>
+                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+              </td>
               <td>
                 {a.eventCount > 0 ? (
                   <StatusBadge kind="warn" label={`${a.eventCount} event(s)`} />
@@ -368,10 +369,20 @@ export default function AppControlPage() {
   const deletePolicy = useDeleteAppControlPolicy();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
+  const bulkAssign = useAssignAppControlPolicy();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   const { data: policy } = useAppControlPolicy(selectedId);
+
+  function togglePolicySelect(id: string) {
+    setSelectedPolicyIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function toggleSelectAllPolicies() {
+    setSelectedPolicyIds((prev) => (policies && prev.length === policies.length ? [] : (policies?.map((p) => p.id) ?? [])));
+  }
 
   function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -413,6 +424,14 @@ export default function AppControlPage() {
       <table className="data-table">
         <thead>
           <tr>
+            <th style={{ width: "2rem" }}>
+              <input
+                type="checkbox"
+                checked={!!policies && policies.length > 0 && selectedPolicyIds.length === policies.length}
+                onChange={toggleSelectAllPolicies}
+                title="Select all"
+              />
+            </th>
             <th style={{ width: "3rem" }}>Enabled</th>
             <th>Name</th>
             <th>Rules</th>
@@ -424,6 +443,9 @@ export default function AppControlPage() {
         <tbody>
           {policies?.map((p) => (
             <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
+              <td onClick={(e) => e.stopPropagation()}>
+                <input type="checkbox" checked={selectedPolicyIds.includes(p.id)} onChange={() => togglePolicySelect(p.id)} />
+              </td>
               <td onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
@@ -452,11 +474,17 @@ export default function AppControlPage() {
           ))}
           {policies?.length === 0 && (
             <tr>
-              <td colSpan={6}>No policies yet.</td>
+              <td colSpan={7}>No policies yet.</td>
             </tr>
           )}
         </tbody>
       </table>
+
+      <BulkPolicyAssignPanel
+        policyIds={selectedPolicyIds}
+        onAssign={(args) => bulkAssign.mutateAsync(args)}
+        onDone={() => setSelectedPolicyIds([])}
+      />
 
       <form className="panel" onSubmit={handleCreate}>
         <h2>New policy</h2>
@@ -478,8 +506,8 @@ export default function AppControlPage() {
         <>
           <PolicySettingsPanel policy={policy} />
           <RulesPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} />
-          <ActivityPanel policyId={policy.id} />
+          <AssignmentPanel policyId={policy.id} policyName={policy.name} />
+          <ActivityPanel policyId={policy.id} policyName={policy.name} />
         </>
       )}
     </div>

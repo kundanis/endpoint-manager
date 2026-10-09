@@ -1,8 +1,11 @@
 import type { AssignedBenchmarkWire, SecurityConfigScanResultPayload, SecurityRuleOperator } from "@em/shared";
 import { prisma } from "../db";
 import { evaluateRule } from "./securityConfigEvaluate.util";
+import { isAgentPaused } from "./pause.service";
 
 export async function resolveAssignedBenchmarksForAgent(agentId: string): Promise<AssignedBenchmarkWire[]> {
+  if (await isAgentPaused(agentId)) return [];
+
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
   const groupIds = memberships.map((m) => m.groupId);
 

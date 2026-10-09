@@ -1,9 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { useLicenseStatus, useLogout, useMe } from "../api/hooks";
+import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
+import type { ModuleVisibilityView } from "../api/types";
 import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
 import LockIcon from "./LockIcon";
+
+// Unlike isModuleLocked/isModuleUngranted below (which gray a module out but keep it
+// visible), a hidden module/item is removed from the nav entirely — see
+// ModuleVisibilitySettings's schema comment for why this is a stronger, third gate.
+function isModuleHidden(module: NavModule, visibility: ModuleVisibilityView | undefined): boolean {
+  if (!module.licenseModule || !visibility) return false;
+  return visibility.hiddenModuleKeys.includes(module.licenseModule);
+}
+
+function visibleItems(module: NavModule, visibility: ModuleVisibilityView | undefined) {
+  const items = module.items ?? [];
+  if (!visibility) return items;
+  return items.filter((item) => !visibility.hiddenItemPaths.includes(item.path));
+}
 
 function isModuleActive(pathname: string, moduleKey: string): boolean {
   const module = NAV_MODULES.find((m) => m.key === moduleKey)!;
@@ -17,9 +32,19 @@ function isModuleLocked(module: NavModule, licenseStatus: ReturnType<typeof useL
   return !(licenseStatus.modules ?? []).includes(module.licenseModule);
 }
 
+// Independent of isModuleLocked (license) - a super admin always passes, a plain admin
+// needs this specific module in their own grant list regardless of what the license
+// includes. Mirrors requireModuleAccess.ts on the server exactly.
+function isModuleUngranted(module: NavModule, me: ReturnType<typeof useMe>["data"]): boolean {
+  if (!module.licenseModule || !me) return false;
+  if (me.role === "SUPER_ADMIN") return false;
+  return !me.moduleGrants.includes(module.licenseModule);
+}
+
 export default function Layout() {
   const { data: me } = useMe();
   const { data: licenseStatus } = useLicenseStatus();
+  const { data: visibility } = useModuleVisibility();
   const logout = useLogout();
   const location = useLocation();
 
@@ -55,7 +80,10 @@ export default function Layout() {
       <aside className="app-sidebar">
         <div className="sidebar-spacer" />
         <nav className="module-nav">
-          {NAV_MODULES.map((module) => {
+          {NAV_MODULES.filter((module) => !module.superAdminOnly || me?.role === "SUPER_ADMIN")
+            .filter((module) => !isModuleHidden(module, visibility))
+            .filter((module) => !module.items || visibleItems(module, visibility).length > 0)
+            .map((module) => {
             if (module.path) {
               return (
                 <div key={module.key} className="module-group">
@@ -69,21 +97,22 @@ export default function Layout() {
             const isExpanded = expanded.has(module.key);
             const isActive = module.key === activeModule.key;
             const locked = isModuleLocked(module, licenseStatus);
+            const ungranted = isModuleUngranted(module, me);
             return (
               <div key={module.key} className="module-group">
                 <button
                   type="button"
-                  className={`module-link ${isActive ? "active" : ""} ${locked ? "locked" : ""}`}
+                  className={`module-link ${isActive ? "active" : ""} ${locked || ungranted ? "locked" : ""}`}
                   onClick={() => toggleModule(module.key)}
-                  title={locked ? "Not included in your license" : undefined}
+                  title={locked ? "Not included in your license" : ungranted ? "You don't have access to this module" : undefined}
                 >
                   {module.label}
-                  {locked && <LockIcon />}
+                  {(locked || ungranted) && <LockIcon />}
                   <span className={`chevron ${isExpanded ? "open" : ""}`}>&#9656;</span>
                 </button>
                 {isExpanded && (
                   <div className="submodule-list">
-                    {(module.items ?? []).map((item) => (
+                    {visibleItems(module, visibility).map((item) => (
                       <NavLink
                         key={item.path}
                         to={item.path}

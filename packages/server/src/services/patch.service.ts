@@ -1,5 +1,14 @@
 import type { PatchInstallResultPayload, PatchScanResultPayload } from "@em/shared";
+import { normalizeSeverity } from "@em/shared";
 import { prisma } from "../db";
+
+export interface LatestMissingPatchView {
+  title: string;
+  severity: string | null;
+  normalizedSeverity: ReturnType<typeof normalizeSeverity>;
+  kbArticleIds: string[];
+  firstSeenAt: string;
+}
 
 export class PatchTaskNotOwnedError extends Error {}
 
@@ -50,10 +59,19 @@ export async function recordPatchScan(agentId: string, payload: PatchScanResultP
   });
 }
 
-export async function getFleetPatchSummary() {
+// groupId scopes "missing across the fleet" down to one asset group (e.g. "Production" vs
+// "Test") - the environment-filtering this RFP clause actually asks for reuses the asset
+// groups that already exist rather than inventing a parallel "environment" concept.
+export async function getFleetPatchSummary(groupId?: string) {
+  const agentIdFilter = groupId
+    ? (await prisma.agentGroupMembership.findMany({ where: { groupId }, select: { agentId: true } })).map(
+        (m) => m.agentId,
+      )
+    : undefined;
+
   const grouped = await prisma.patchFinding.groupBy({
     by: ["patchDefinitionId"],
-    where: { status: "MISSING" },
+    where: { status: "MISSING", ...(agentIdFilter ? { agentId: { in: agentIdFilter } } : {}) },
     _count: true,
   });
 
@@ -73,15 +91,20 @@ export async function getFleetPatchSummary() {
         updateId: def.updateId,
         title: def.title,
         severity: def.severity,
+        normalizedSeverity: normalizeSeverity(def.severity),
         kbArticleIds: JSON.parse(def.kbArticleIds) as string[],
         categories: JSON.parse(def.categories) as string[],
         sizeBytes: def.sizeBytes?.toString() ?? null,
         missingAgentCount: g._count,
+        // When this update was first seen missing anywhere in the fleet - the closest
+        // available proxy for a vendor "release date", since no update-catalog sync
+        // stores Microsoft's actual publish date anywhere in this schema.
+        firstSeenAt: def.firstSeenAt.toISOString(),
         lastSeenAt: def.lastSeenAt.toISOString(),
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
-    .sort((a, b) => b.missingAgentCount - a.missingAgentCount);
+    .sort((a, b) => new Date(b.firstSeenAt).getTime() - new Date(a.firstSeenAt).getTime());
 }
 
 interface CreatePatchJobParams {
@@ -89,20 +112,44 @@ interface CreatePatchJobParams {
   agentIds: string[]; // already resolved (groups expanded, deduped) by the caller
   groupIds: string[]; // kept for display/audit only — task fan-out uses agentIds
   createdByAdminId: string;
+  // Null/undefined/past = dispatch immediately (today's only behavior, tasks created
+  // PENDING). A future timestamp creates tasks as SCHEDULED instead - see
+  // promoteScheduledPatchTasks, which is the only thing that ever moves them to PENDING.
+  scheduledAt?: Date | null;
 }
 
 export async function createPatchJob(params: CreatePatchJobParams): Promise<{ jobId: string }> {
+  const isFutureSchedule = !!params.scheduledAt && params.scheduledAt.getTime() > Date.now();
   const job = await prisma.patchJob.create({
     data: {
       updateIds: JSON.stringify(params.updateIds),
       createdByAdminId: params.createdByAdminId,
       targetGroupIds: JSON.stringify(params.groupIds),
+      scheduledAt: isFutureSchedule ? params.scheduledAt : null,
       tasks: {
-        create: params.agentIds.map((agentId) => ({ agentId })),
+        create: params.agentIds.map((agentId) => ({ agentId, status: isFutureSchedule ? "SCHEDULED" : "PENDING" })),
       },
     },
   });
   return { jobId: job.id };
+}
+
+// Called from a periodic sweep (see index.ts) - checkin.service.ts's task-fetch only ever
+// looks at status="PENDING", so this is the sole place a SCHEDULED task ever becomes
+// deliverable. Deliberately a plain time check, not a precise-to-the-second cron: a patch
+// job's scheduled time slipping by a few minutes against the sweep interval is harmless.
+export async function promoteScheduledPatchTasks(): Promise<number> {
+  const dueJobs = await prisma.patchJob.findMany({
+    where: { scheduledAt: { lte: new Date() }, tasks: { some: { status: "SCHEDULED" } } },
+    select: { id: true },
+  });
+  if (dueJobs.length === 0) return 0;
+
+  const result = await prisma.patchTask.updateMany({
+    where: { jobId: { in: dueJobs.map((j) => j.id) }, status: "SCHEDULED" },
+    data: { status: "PENDING" },
+  });
+  return result.count;
 }
 
 async function resolveGroupNames(groupIdsJson: string): Promise<string[]> {
@@ -126,6 +173,7 @@ export async function listPatchJobs() {
       updateIds: JSON.parse(job.updateIds) as string[],
       targetGroupNames: await resolveGroupNames(job.targetGroupIds),
       createdAt: job.createdAt.toISOString(),
+      scheduledAt: job.scheduledAt?.toISOString() ?? null,
       taskCounts: job.tasks.reduce<Record<string, number>>((acc, t) => {
         acc[t.status] = (acc[t.status] ?? 0) + 1;
         return acc;
@@ -146,6 +194,7 @@ export async function getPatchJob(jobId: string) {
     updateIds: JSON.parse(job.updateIds) as string[],
     targetGroupNames: await resolveGroupNames(job.targetGroupIds),
     createdAt: job.createdAt.toISOString(),
+    scheduledAt: job.scheduledAt?.toISOString() ?? null,
     tasks: job.tasks.map((t) => ({
       id: t.id,
       agentId: t.agentId,
@@ -215,4 +264,25 @@ export async function getLastPatchInstalledAtByAgent(agentId?: string): Promise<
     _max: { installedAt: true },
   });
   return new Map(rows.filter((r) => r._max.installedAt).map((r) => [r.agentId, r._max.installedAt as Date]));
+}
+
+// Single-agent only (detail view) - the most recently-surfaced update this agent is still
+// missing, ranked by PatchDefinition.firstSeenAt (see the comment on getFleetPatchSummary
+// re: that being a "first detected", not a true vendor release date).
+export async function getLatestMissingPatchByAgent(agentId: string): Promise<LatestMissingPatchView | null> {
+  const finding = await prisma.patchFinding.findFirst({
+    where: { agentId, status: "MISSING" },
+    include: { patchDefinition: true },
+    orderBy: { patchDefinition: { firstSeenAt: "desc" } },
+  });
+  if (!finding) return null;
+
+  const def = finding.patchDefinition;
+  return {
+    title: def.title,
+    severity: def.severity,
+    normalizedSeverity: normalizeSeverity(def.severity),
+    kbArticleIds: JSON.parse(def.kbArticleIds) as string[],
+    firstSeenAt: def.firstSeenAt.toISOString(),
+  };
 }

@@ -19,13 +19,17 @@ export async function listGroups() {
 export async function getGroup(id: string) {
   const group = await prisma.assetGroup.findUnique({
     where: { id },
-    include: { members: { include: { agent: true } } },
+    include: { members: { include: { agent: { include: { inventory: { select: { lastLoggedOnUser: true } } } } } } },
   });
   if (!group) return null;
 
   return {
     ...serializeGroup(group, group.members.length),
-    members: group.members.map((m) => ({ agentId: m.agentId, hostname: m.agent.hostname })),
+    members: group.members.map((m) => ({
+      agentId: m.agentId,
+      hostname: m.agent.hostname,
+      lastLoggedOnUser: m.agent.inventory?.lastLoggedOnUser ?? null,
+    })),
   };
 }
 

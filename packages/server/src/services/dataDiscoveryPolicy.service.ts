@@ -175,6 +175,9 @@ export async function getPolicyAgentBreakdown(policyId: string) {
         scanned: scanState?.lastScannedAt != null,
         scanPending: scanState?.scanRequested ?? false,
         fileCount: agentFindings.length,
+        // How many files the last scan actually read — 0 means it found nothing to look
+        // at (wrong/missing target folders), which is not the same thing as "clean".
+        filesScanned: scanState?.filesScanned ?? null,
         lastScanAt: scanState?.lastScannedAt?.toISOString() ?? null,
       };
     }),

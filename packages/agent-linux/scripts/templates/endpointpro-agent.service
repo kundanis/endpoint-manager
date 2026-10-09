@@ -1,0 +1,18 @@
+[Unit]
+Description=Endpoint Pro Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=__NODE_BIN__ __INSTALL_DIR__/app/dist/index.js
+WorkingDirectory=__INSTALL_DIR__
+# root is required for the patch-management and package-deployment task types (apt-get/
+# dnf/dpkg/rpm all need it) - the same reason the Windows agent's Scheduled Task runs as
+# SYSTEM rather than a limited service account.
+User=root
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -2,7 +2,8 @@
 param(
     # No default on purpose - a silently-accepted placeholder here would point a fresh
     # entity's agents at whichever machine last built this installer. Always required,
-    # explicitly, per deployment.
+    # explicitly, per deployment. May be a comma-separated list (LAN, web URL, public IP -
+    # in the order the agent should try them); the agent fails over between them.
     [string]$ServerUrl,
     [string]$EnrollmentToken
 )
@@ -71,7 +72,14 @@ Copy-Item -Path (Join-Path $scriptRoot "watchdog.ps1") -Destination $installDir 
 
 # config.ts resolves config.json relative to dist/'s parent - i.e. <installDir>/app/,
 # not the outer install root (which just also holds the portable node/ runtime).
-$config = @{ serverUrl = $ServerUrl; enrollmentToken = $EnrollmentToken } | ConvertTo-Json
+# serverUrl (the first address) stays for the uninstall/self-update scripts that read a single
+# URL; the agent itself keeps it pointed at whichever address last worked.
+$serverUrls = @($ServerUrl -split ',' | ForEach-Object { $_.Trim().TrimEnd('/') } | Where-Object { $_ })
+if ($serverUrls.Count -eq 0) {
+    Write-Error "A server URL is required."
+    exit 1
+}
+$config = @{ serverUrl = $serverUrls[0]; serverUrls = $serverUrls; enrollmentToken = $EnrollmentToken } | ConvertTo-Json
 # ASCII, not UTF8 - Windows PowerShell 5.1's "UTF8" encoding writes a BOM, which JSON.parse
 # rejects. The values here (a URL and a hex token) are plain ASCII, so this is safe.
 Set-Content -Path (Join-Path $installDir "app\config.json") -Value $config -Encoding ASCII

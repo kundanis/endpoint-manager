@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NORMALIZED_SEVERITIES } from "./severity.schema";
 
 export const patchDetectedUpdateSchema = z.object({
   updateId: z.string(),
@@ -23,12 +24,28 @@ export const dispatchPatchJobRequestSchema = z
     updateIds: z.array(z.string().min(1)).min(1),
     agentIds: z.array(z.string().min(1)).default([]),
     groupIds: z.array(z.string().min(1)).default([]),
+    // Null/omitted = dispatch immediately (today's only behavior). A future timestamp holds
+    // the tasks back - see PatchJob.scheduledAt - until a periodic sweep promotes them.
+    scheduledAt: z.coerce.date().nullable().optional(),
   })
   .refine((data) => data.agentIds.length > 0 || data.groupIds.length > 0, {
     message: "At least one agentId or groupId is required",
     path: ["agentIds"],
   });
 export type DispatchPatchJobRequest = z.infer<typeof dispatchPatchJobRequestSchema>;
+
+// "Automatic Mode" - a standing policy that auto-dispatches any currently-missing patch at
+// or above minSeverity to its target agents, on a periodic sweep, without an admin manually
+// selecting updates each time. Empty groupIds means "every enrolled agent."
+export const createAutoPatchPolicyRequestSchema = z.object({
+  enabled: z.boolean().default(true),
+  minSeverity: z.enum(NORMALIZED_SEVERITIES),
+  groupIds: z.array(z.string().min(1)).default([]),
+});
+export type CreateAutoPatchPolicyRequest = z.infer<typeof createAutoPatchPolicyRequestSchema>;
+
+export const updateAutoPatchPolicyRequestSchema = createAutoPatchPolicyRequestSchema.partial();
+export type UpdateAutoPatchPolicyRequest = z.infer<typeof updateAutoPatchPolicyRequestSchema>;
 
 export const patchInstallResultItemSchema = z.object({
   updateId: z.string(),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useEdrAgents, useEdrEvents, useQuarantineAgent, useReleaseAgent, useSetEdrEnabled } from "../api/hooks";
 import type { EdrAgentSummaryView } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
+import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
 
 const CATEGORY_LABEL: Record<string, string> = {
   PROCESS: "Suspicious process",
@@ -53,7 +54,9 @@ function AgentRow({ agent }: { agent: EdrAgentSummaryView }) {
 
   return (
     <tr>
-      <td>{agent.hostname}</td>
+      <td>
+        <EndpointLabel hostname={agent.hostname} agentId={agent.agentId} />
+      </td>
       <td>
         <input
           type="checkbox"
@@ -125,9 +128,7 @@ export default function EdrPage() {
           <select value={selectedAgentId ?? ""} onChange={(e) => setSelectedAgentId(e.target.value || undefined)}>
             <option value="">All endpoints</option>
             {agents?.map((a) => (
-              <option key={a.agentId} value={a.agentId}>
-                {a.hostname}
-              </option>
+              <EndpointOption key={a.agentId} value={a.agentId} hostname={a.hostname} agentId={a.agentId} />
             ))}
           </select>
         </label>
@@ -147,7 +148,9 @@ export default function EdrPage() {
           <tbody>
             {events?.map((e) => (
               <tr key={e.id}>
-                <td>{e.hostname}</td>
+                <td>
+                  <EndpointLabel hostname={e.hostname} agentId={e.agentId} />
+                </td>
                 <td>{CATEGORY_LABEL[e.category] ?? e.category}</td>
                 <td>
                   {e.severity === "HIGH" ? (

@@ -5,6 +5,9 @@ import type {
   DlpRuleType,
   InstallerType,
   IpBlockRuleType,
+  PiiBlockRuleType,
+  PiiEmailBlockRuleType,
+  PiiPatternKey,
   PolicyAccessExceptionType,
   SecurityBenchmarkSource,
   SecurityBenchmarkTargetType,
@@ -35,11 +38,49 @@ export type LicenseModuleKey =
   | "DATA_MANAGER"
   | "USER_MANAGER";
 
+// Org-wide "hidden for everyone" state — a third, most-authoritative layer on top of
+// license modules (LicenseStatusView.modules) and per-admin grants (MeView.moduleGrants).
+// hiddenModuleKeys holds LicenseModuleKey values; hiddenItemPaths holds console route
+// paths (e.g. "/commands") for hiding an individual sub-item without hiding its whole
+// parent module — see moduleVisibility.service.ts on the server for the full split.
+export interface ModuleVisibilityView {
+  hiddenModuleKeys: string[];
+  hiddenItemPaths: string[];
+}
+
+// A super admin implicitly has every module regardless of moduleGrants - see
+// requireAdminRole.ts on the server for the exact same rule enforced server-side.
+export type AdminRole = "SUPER_ADMIN" | "ADMIN";
+
+export interface MeView {
+  id: string;
+  email: string;
+  role: AdminRole;
+  moduleGrants: LicenseModuleKey[];
+}
+
+export interface AdminUserListItem {
+  id: string;
+  email: string;
+  role: AdminRole;
+  moduleGrants: LicenseModuleKey[];
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
 export interface LicenseServerConfigView {
   configured: boolean;
   serverUrl?: string;
   lastConnectionCheckAt?: string | null;
   lastConnectionOk?: boolean | null;
+}
+
+export interface AgentConnectionSettingsView {
+  localUrl: string | null;
+  webUrl: string | null;
+  publicUrl: string | null;
+  detectedLocalUrl: string | null;
+  configured: boolean;
 }
 
 export interface LicenseStatusView {
@@ -56,6 +97,7 @@ export interface LicenseStatusView {
   lastRevalidatedAt?: string | null;
   lastRevalidationError?: string | null;
   currentAgentCount?: number;
+  totalAgentsUninstalled?: number;
 }
 
 export interface AgentGroupRef {
@@ -136,13 +178,27 @@ export interface AgentListItem {
   deviceType: DeviceType;
   deviceTypeOverride: DeviceType | null;
   quarantined: boolean;
+  paused: boolean;
+  pausedAt: string | null;
   zeroTrustNonCompliantCount: number;
   openVulnerabilityCount: number;
   lastPatchInstalledAt: string | null;
+  latestUpdateTask: LatestAgentUpdateTaskView | null;
   inventory: AgentListInventoryView | null;
   lastCheckinAt: string | null;
   status: "ONLINE" | "OFFLINE";
   createdAt: string;
+}
+
+// The status of the most recent AgentUpdateTask for this agent, regardless of which job
+// created it - PENDING/DISPATCHED/DOWNLOADING/APPLYING means one is actively in flight,
+// SUCCESS/FAILED is its outcome. null means no update has ever been dispatched to this agent.
+export interface LatestAgentUpdateTaskView {
+  status: string;
+  message: string | null;
+  targetVersion: string;
+  dispatchedAt: string | null;
+  completedAt: string | null;
 }
 
 export interface InstalledSoftwareEntry {
@@ -194,7 +250,16 @@ export interface InventorySnapshotView {
   collectedAt: string;
 }
 
+export interface LatestMissingPatchView {
+  title: string;
+  severity: string | null;
+  normalizedSeverity: NormalizedSeverity;
+  kbArticleIds: string[];
+  firstSeenAt: string;
+}
+
 export interface AgentDetail extends AgentListItem {
+  latestAvailablePatch: LatestMissingPatchView | null;
   inventory: InventorySnapshotView | null;
   customFieldValues: AgentCustomFieldValueView[];
   remoteAccessEnabled: boolean;
@@ -287,15 +352,61 @@ export interface DeploymentJobDetail {
   tasks: DeploymentTaskView[];
 }
 
+export interface AgentBuildInfo {
+  version: string;
+  sha256: string;
+  fileSizeBytes: number;
+  releaseNotes: string;
+  builtAt: string;
+}
+
+export interface AgentUpdateJobListItem {
+  id: string;
+  platform: string; // "win32" | "linux" - a job is always platform-homogeneous
+  targetVersion: string;
+  targetGroupNames: string[];
+  // Parallel arrays, one entry per targeted task, same order.
+  targetHostnames: string[];
+  targetIpAddresses: string[];
+  targetUsernames: string[];
+  createdAt: string;
+  taskCounts: Record<string, number>;
+}
+
+export interface AgentUpdateTaskView {
+  id: string;
+  agentId: string;
+  hostname: string;
+  ipAddress: string | null;
+  lastLoggedOnUser: string | null;
+  status: string;
+  message: string | null;
+  dispatchedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface AgentUpdateJobDetail {
+  id: string;
+  platform: string;
+  targetVersion: string;
+  targetGroupNames: string[];
+  createdAt: string;
+  tasks: AgentUpdateTaskView[];
+}
+
+export type NormalizedSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+
 export interface PatchSummaryItem {
   patchDefinitionId: string;
   updateId: string;
   title: string;
   severity: string | null;
+  normalizedSeverity: NormalizedSeverity;
   kbArticleIds: string[];
   categories: string[];
   sizeBytes: string | null;
   missingAgentCount: number;
+  firstSeenAt: string;
   lastSeenAt: string;
 }
 
@@ -304,7 +415,19 @@ export interface PatchJobListItem {
   updateIds: string[];
   targetGroupNames: string[];
   createdAt: string;
+  scheduledAt: string | null;
   taskCounts: Record<string, number>;
+}
+
+export interface AutoPatchPolicyView {
+  id: string;
+  enabled: boolean;
+  minSeverity: NormalizedSeverity;
+  groupIds: string[];
+  groupNames: string[];
+  createdByAdminId: string;
+  createdAt: string;
+  lastRunAt: string | null;
 }
 
 export interface PatchInstallResultItem {
@@ -330,6 +453,7 @@ export interface PatchJobDetail {
   updateIds: string[];
   targetGroupNames: string[];
   createdAt: string;
+  scheduledAt: string | null;
   tasks: PatchTaskView[];
 }
 
@@ -411,6 +535,7 @@ export interface AssetGroupListItem {
 export interface AssetGroupMember {
   agentId: string;
   hostname: string;
+  lastLoggedOnUser: string | null;
 }
 
 export interface AssetGroupDetail extends AssetGroupListItem {
@@ -504,6 +629,34 @@ export interface EnrollmentTokenListItem {
   createdAt: string;
   groupId: string | null;
   groupName: string | null;
+}
+
+export interface DuplicateAgentEntry {
+  id: string;
+  hostname: string;
+  serialNumber: string | null;
+  lastLoggedOnUser: string | null;
+  status: "ONLINE" | "OFFLINE";
+  agentVersion: string;
+  lastCheckinAt: string | null;
+  createdAt: string;
+}
+
+export interface RemoteInstallTaskView {
+  id: string;
+  target: string;
+  status: string; // PENDING | RUNNING | SUCCESS | FAILED
+  output: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface RemoteInstallJobView {
+  id: string;
+  serverUrl: string;
+  createdAt: string;
+  tasks: RemoteInstallTaskView[];
 }
 
 export interface SecurityBenchmarkSummary {
@@ -632,12 +785,21 @@ export interface ZeroTrustAgentRow {
   passCount: number;
   failCount: number;
   errorCount: number;
+  // Enabled conditions this endpoint currently fails (non-overridden) or errored on.
+  nonCompliantConditionIds: string[];
   trusted: boolean;
+}
+
+export interface ZeroTrustBreakdownCondition {
+  id: string;
+  conditionKey: string;
+  title: string;
 }
 
 export interface ZeroTrustAgentBreakdown {
   policyId: string;
   name: string;
+  conditions: ZeroTrustBreakdownCondition[];
   agents: ZeroTrustAgentRow[];
 }
 
@@ -652,6 +814,11 @@ export interface AgentZeroTrustFindingView {
   actualValue: string | null;
   status: "PASS" | "FAIL" | "ERROR";
   lastSeenAt: string;
+}
+
+export interface ZeroTrustOverridableConditionKey {
+  conditionKey: string;
+  title: string;
 }
 
 export interface DataDiscoveryPolicySummary {
@@ -682,6 +849,8 @@ export interface DataDiscoveryAgentRow {
   scanned: boolean;
   scanPending: boolean;
   fileCount: number;
+  // Files the last scan actually read; 0 = nothing to look at (bad/missing target folders).
+  filesScanned: number | null;
   lastScanAt: string | null;
 }
 
@@ -916,6 +1085,8 @@ export interface WebBlockAssignmentView {
 export interface WebBlockAgentRow {
   agentId: string;
   hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
   lastSyncedAt: string | null;
   lastSyncStatus: WebBlockSyncStatus | null;
   lastSyncError: string | null;
@@ -925,6 +1096,95 @@ export interface WebBlockAgentBreakdown {
   policyId: string;
   name: string;
   agents: WebBlockAgentRow[];
+}
+
+export interface PiiBlockPolicySummary {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  ruleCount: number;
+  assignedAgentCount: number;
+  createdAt: string;
+}
+
+export interface PiiBlockRuleView {
+  id: string;
+  ruleType: PiiBlockRuleType;
+  value: PiiPatternKey;
+  label: string | null;
+}
+
+export interface PiiBlockPolicyDetail extends PiiBlockPolicySummary {
+  rules: PiiBlockRuleView[];
+}
+
+export type PiiBlockSyncStatus = "SUCCESS" | "FAILED";
+
+export interface PiiBlockAssignmentView {
+  id: string;
+  agentId: string | null;
+  hostname: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: PiiBlockSyncStatus | null;
+  lastSyncError: string | null;
+}
+
+export interface PiiBlockAgentRow {
+  agentId: string;
+  hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: PiiBlockSyncStatus | null;
+  lastSyncError: string | null;
+}
+
+export interface PiiBlockAgentBreakdown {
+  policyId: string;
+  name: string;
+  agents: PiiBlockAgentRow[];
+}
+
+export interface PiiEmailBlockPolicySummary {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  ruleCount: number;
+  assignedEmailCount: number;
+  createdAt: string;
+}
+
+export interface PiiEmailBlockRuleView {
+  id: string;
+  ruleType: PiiEmailBlockRuleType;
+  value: PiiPatternKey;
+  label: string | null;
+}
+
+export interface PiiEmailBlockPolicyDetail extends PiiEmailBlockPolicySummary {
+  rules: PiiEmailBlockRuleView[];
+}
+
+export interface PiiEmailBlockAssignmentView {
+  id: string;
+  emailAddress: string;
+  createdAt: string;
+}
+
+export type PiiEmailBlockEventAction = "BLOCKED" | "ALLOWED_WARNED";
+
+export interface PiiEmailBlockEventView {
+  id: string;
+  policyId: string | null;
+  senderEmail: string;
+  attachmentName: string;
+  action: PiiEmailBlockEventAction;
+  matchedCategoryLabels: string[];
+  occurredAt: string;
 }
 
 export interface IpBlockPolicySummary {
@@ -964,6 +1224,8 @@ export interface IpBlockAssignmentView {
 export interface IpBlockAgentRow {
   agentId: string;
   hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
   lastSyncedAt: string | null;
   lastSyncStatus: IpBlockSyncStatus | null;
   lastSyncError: string | null;
@@ -1012,6 +1274,8 @@ export interface UsbControlAssignmentView {
 export interface UsbControlAgentRow {
   agentId: string;
   hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
   lastSyncedAt: string | null;
   lastSyncStatus: UsbControlSyncStatus | null;
   lastSyncError: string | null;
@@ -1107,15 +1371,21 @@ export interface AgentCommandBlockEventView {
 
 export type SoftwareLicenseBillingCycle = "MONTHLY" | "QUARTERLY" | "HALF_YEARLY" | "YEARLY";
 export type SoftwareLicenseDeploymentType = "ON_PREMISE" | "VENDOR_CLOUD" | "SYSTEMATIX_CLOUD" | "HYBRID";
+export type SoftwareLicenseAccessType = "INTERNAL" | "PUBLIC" | "VPN";
 
 export interface SoftwareLicenseView {
   id: string;
   softwareName: string;
+  version: string | null;
   vendor: string | null;
   licenseKey: string | null;
   licenseType: LicenseType;
   seatsPurchased: number;
   seatsInUse: number;
+  // Non-null when an admin manually set "in use" instead of relying on the automatic
+  // installed-software-matching estimate — seatsInUse above already reflects whichever one
+  // is active, this is just so the console can show which source it came from.
+  seatsInUseOverride: number | null;
   overCompliance: boolean;
   purchaseDate: string | null;
   expiryDate: string | null;
@@ -1123,6 +1393,7 @@ export interface SoftwareLicenseView {
   billingCycle: SoftwareLicenseBillingCycle;
   annualCost: number | null;
   deploymentType: SoftwareLicenseDeploymentType | null;
+  accessType: SoftwareLicenseAccessType | null;
   userDepartment: string | null;
   notes: string | null;
   createdByAdminId: string;
@@ -1143,6 +1414,7 @@ export interface UnmanagedNetworkDeviceView {
   ipAddress: string;
   macAddress: string | null;
   hostname: string | null;
+  openPorts: number[];
 }
 
 export interface NetworkDeviceSummary {

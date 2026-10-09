@@ -5,6 +5,7 @@ export class AgentNotFoundError extends Error {}
 export class PolicyNotFoundError extends Error {}
 export class RequestNotFoundError extends Error {}
 export class RequestAlreadyResolvedError extends Error {}
+export class SelfApprovalError extends Error {}
 
 async function getPolicyName(policyType: PolicyAccessExceptionType, policyId: string): Promise<string | null> {
   switch (policyType) {
@@ -70,6 +71,12 @@ export async function approveRequest(id: string, approvedByAdminId: string, reso
   const existing = await prisma.policyAccessException.findUnique({ where: { id } });
   if (!existing) throw new RequestNotFoundError();
   if (existing.status !== "PENDING") throw new RequestAlreadyResolvedError();
+  // Four-eyes: an exception loosens security enforcement, so whoever asked for it can't also
+  // grant it — unless this deployment has only one admin account, where nobody else could.
+  // (Rejecting your own request is still allowed: that's just withdrawing it.)
+  if (existing.requestedByAdminId === approvedByAdminId && (await prisma.adminUser.count()) > 1) {
+    throw new SelfApprovalError();
+  }
 
   const now = new Date();
   const request = await prisma.policyAccessException.update({

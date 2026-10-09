@@ -3,7 +3,7 @@ import { z } from "zod";
 export const packageMetadataSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
-  installerType: z.enum(["EXE", "MSI"]),
+  installerType: z.enum(["EXE", "MSI", "DEB", "RPM", "SH"]),
   silentArgs: z.string(),
 });
 export type PackageMetadata = z.infer<typeof packageMetadataSchema>;

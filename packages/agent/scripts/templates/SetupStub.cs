@@ -60,15 +60,35 @@ internal static class SetupStub
 
         string serverUrl;
         string token;
+        string[] embedded = ReadEmbeddedSetupConfig();
         if (args.Length >= 2)
         {
             serverUrl = args[0];
             token = args[1];
         }
+        else if (embedded != null)
+        {
+            // Downloaded from the console - the server appended every address it can be
+            // reached on (Server connection details). A per-token copy also carries the token
+            // and installs with no prompts; the generic download asks for the token only.
+            serverUrl = embedded[0];
+            token = embedded[1];
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                token = Microsoft.VisualBasic.Interaction.InputBox(
+                    "Enrollment token:", "Endpoint Pro Agent Setup", "").Trim();
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    MessageBox.Show("An enrollment token is required.", "Endpoint Pro Agent Setup",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return 1;
+                }
+            }
+        }
         else
         {
             serverUrl = Microsoft.VisualBasic.Interaction.InputBox(
-                "Server URL (e.g. http://your-server:4000):", "Endpoint Pro Agent Setup", "");
+                "Server URL (e.g. http://your-server:4000 - several can be given, comma-separated):", "Endpoint Pro Agent Setup", "");
             if (string.IsNullOrWhiteSpace(serverUrl))
             {
                 MessageBox.Show("A server URL is required.", "Endpoint Pro Agent Setup",
@@ -89,6 +109,52 @@ internal static class SetupStub
         string installArgs = " -ServerUrl \"" + serverUrl + "\" -EnrollmentToken \"" + token + "\"";
         return RunBundledScript("install.ps1", installArgs, "Setup Complete",
             "The Endpoint Pro agent was installed successfully and is now running.", "Setup Failed", "Installation failed:");
+    }
+
+    // Server-appended trailer: [UTF-8 "url1,url2,...\ntoken"][int32 LE length][16-byte magic]
+    // (see agentConnection.service.ts's buildConfiguredSetupExe). Returns {serverUrls, token}
+    // - token is "" for the generic download - or null for the plain, unconfigured exe.
+    private static readonly byte[] SetupConfigMagic = System.Text.Encoding.ASCII.GetBytes("EPAGENTSETUPCFG1");
+
+    private static string[] ReadEmbeddedSetupConfig()
+    {
+        try
+        {
+            // Only the tail - the exe embeds the whole agent, no need to load all of it.
+            byte[] self;
+            using (FileStream fs = File.OpenRead(Assembly.GetExecutingAssembly().Location))
+            {
+                int tailLength = (int)Math.Min(fs.Length, 64 * 1024);
+                fs.Seek(-tailLength, SeekOrigin.End);
+                self = new byte[tailLength];
+                int read = 0;
+                while (read < tailLength)
+                {
+                    int n = fs.Read(self, read, tailLength - read);
+                    if (n <= 0) return null;
+                    read += n;
+                }
+            }
+            int magicStart = self.Length - SetupConfigMagic.Length;
+            if (magicStart < 4) return null;
+            for (int i = 0; i < SetupConfigMagic.Length; i++)
+            {
+                if (self[magicStart + i] != SetupConfigMagic[i]) return null;
+            }
+
+            int length = BitConverter.ToInt32(self, magicStart - 4);
+            int payloadStart = magicStart - 4 - length;
+            if (length <= 0 || payloadStart < 0) return null;
+
+            string payload = System.Text.Encoding.UTF8.GetString(self, payloadStart, length);
+            string[] parts = payload.Split('\n');
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0])) return null;
+            return new[] { parts[0].Trim(), parts[1].Trim() };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static int RunBundledScript(string scriptName, string scriptArgs, string successTitle,

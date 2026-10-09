@@ -1,14 +1,59 @@
 import { Router } from "express";
-import { dispatchPatchJobRequestSchema } from "@em/shared";
+import { createAutoPatchPolicyRequestSchema, dispatchPatchJobRequestSchema, updateAutoPatchPolicyRequestSchema } from "@em/shared";
 import { prisma } from "../db";
 import { createPatchJob, getFleetPatchSummary, getPatchJob, listPatchJobs } from "../services/patch.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
+import {
+  AutoPatchPolicyNotFoundError,
+  createAutoPatchPolicy,
+  deleteAutoPatchPolicy,
+  listAutoPatchPolicies,
+  updateAutoPatchPolicy,
+} from "../services/autoPatchPolicy.service";
 
 export const patchesRouter = Router();
 
-patchesRouter.get("/", async (_req, res, next) => {
+patchesRouter.get("/", async (req, res, next) => {
   try {
-    res.json(await getFleetPatchSummary());
+    const groupId = typeof req.query.groupId === "string" ? req.query.groupId : undefined;
+    res.json(await getFleetPatchSummary(groupId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+patchesRouter.get("/auto-policies", async (_req, res, next) => {
+  try {
+    res.json(await listAutoPatchPolicies());
+  } catch (err) {
+    next(err);
+  }
+});
+
+patchesRouter.post("/auto-policies", async (req, res, next) => {
+  try {
+    const payload = createAutoPatchPolicyRequestSchema.parse(req.body);
+    res.status(201).json(await createAutoPatchPolicy(payload, req.adminId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+patchesRouter.patch("/auto-policies/:id", async (req, res, next) => {
+  try {
+    const payload = updateAutoPatchPolicyRequestSchema.parse(req.body);
+    res.json(await updateAutoPatchPolicy(req.params.id, payload));
+  } catch (err) {
+    if (err instanceof AutoPatchPolicyNotFoundError) return res.status(404).json({ error: "Auto-patch policy not found" });
+    next(err);
+  }
+});
+
+patchesRouter.delete("/auto-policies/:id", async (req, res, next) => {
+  try {
+    const deleted = await deleteAutoPatchPolicy(req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Auto-patch policy not found" });
+    res.status(204).send();
   } catch (err) {
     next(err);
   }
@@ -47,6 +92,7 @@ patchesRouter.post("/jobs", async (req, res, next) => {
       agentIds: resolvedAgentIds,
       groupIds: payload.groupIds,
       createdByAdminId: req.adminId!,
+      scheduledAt: payload.scheduledAt,
     });
     res.status(201).json(result);
   } catch (err) {

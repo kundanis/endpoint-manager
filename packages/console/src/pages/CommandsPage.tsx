@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { Shell } from "@em/shared";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAgents,
   useAssetGroups,
@@ -16,6 +17,7 @@ import {
 } from "../api/hooks";
 import type { CommandTemplateView } from "../api/types";
 import Collapsible from "../components/Collapsible";
+import EndpointLabel from "../components/EndpointLabel";
 
 const ISOLATE_OPTION = "isolate";
 const RELEASE_OPTION = "release";
@@ -118,8 +120,10 @@ function ManageTemplatesPanel() {
         <label>
           Shell
           <select value={shell} onChange={(e) => setShell(e.target.value as Shell)}>
-            <option value="powershell">PowerShell</option>
-            <option value="cmd">cmd</option>
+            <option value="powershell">PowerShell (Windows)</option>
+            <option value="cmd">cmd (Windows)</option>
+            <option value="bash">bash (Linux)</option>
+            <option value="sh">sh (Linux)</option>
           </select>
         </label>
         <label>
@@ -218,31 +222,10 @@ export default function CommandsPage() {
     <div>
       <h1>Commands</h1>
 
+      <ManageTemplatesPanel />
+
       <form className="panel" onSubmit={handleSubmit}>
         <h2>Dispatch a command</h2>
-        <fieldset>
-          <legend>Target endpoints</legend>
-          {agents?.map((agent) => (
-            <label key={agent.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-              {agent.hostname} <span className={`status-badge ${agent.status.toLowerCase()}`}>{agent.status}</span>
-            </label>
-          ))}
-          {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-        </fieldset>
-
-        {groups && groups.length > 0 && (
-          <fieldset>
-            <legend>Target groups</legend>
-            {groups.map((g) => (
-              <label key={g.id} className="checkbox-row">
-                <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-                {g.name} ({g.memberCount})
-              </label>
-            ))}
-          </fieldset>
-        )}
-
         <label>
           Predefined command
           <select value={predefined} onChange={(e) => setPredefined(e.target.value)}>
@@ -263,13 +246,36 @@ export default function CommandsPage() {
         {predefined === RELEASE_OPTION && <p>Restores normal outbound network access on every selected endpoint.</p>}
         {selectedTemplate?.description && <p>{selectedTemplate.description}</p>}
 
+        {groups && groups.length > 0 && (
+          <fieldset>
+            <legend>Target groups</legend>
+            {groups.map((g) => (
+              <label key={g.id} className="checkbox-row">
+                <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
+                {g.name} ({g.memberCount})
+              </label>
+            ))}
+          </fieldset>
+        )}
+
+        <EndpointCheckboxList
+          agents={agents}
+          selectedAgentIds={selectedAgentIds}
+          onToggle={toggleAgent}
+          selectedGroupIds={selectedGroupIds}
+          legend="Target endpoints"
+          renderExtra={(agent) => <span className={`status-badge ${agent.status.toLowerCase()}`}>{agent.status}</span>}
+        />
+
         {isCustom && (
           <>
             <label>
               Shell
               <select value={shell} onChange={(e) => setShell(e.target.value as Shell)}>
-                <option value="powershell">PowerShell</option>
-                <option value="cmd">cmd</option>
+                <option value="powershell">PowerShell (Windows)</option>
+                <option value="cmd">cmd (Windows)</option>
+                <option value="bash">bash (Linux)</option>
+                <option value="sh">sh (Linux)</option>
               </select>
             </label>
 
@@ -297,9 +303,7 @@ export default function CommandsPage() {
         </button>
       </form>
 
-      <ManageTemplatesPanel />
-
-      <h2>Recent jobs</h2>
+      <h2>Recent jobs (last 24 hours)</h2>
       <table className="data-table">
         <thead>
           <tr>
@@ -326,7 +330,7 @@ export default function CommandsPage() {
           ))}
           {jobs?.length === 0 && (
             <tr>
-              <td colSpan={5}>No commands dispatched yet.</td>
+              <td colSpan={5}>No commands dispatched in the last 24 hours.</td>
             </tr>
           )}
         </tbody>
@@ -349,7 +353,9 @@ export default function CommandsPage() {
             <tbody>
               {jobDetail.tasks.map((task) => (
                 <tr key={task.id}>
-                  <td>{task.hostname}</td>
+                  <td>
+                    <EndpointLabel hostname={task.hostname} agentId={task.agentId} />
+                  </td>
                   <td>{task.status}</td>
                   <td>{task.exitCode ?? "—"}</td>
                   <td>

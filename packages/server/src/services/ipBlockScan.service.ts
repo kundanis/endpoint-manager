@@ -1,6 +1,7 @@
 import type { AssignedIpBlockResponse, IpBlockSyncResultPayload } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
+import { isAgentPaused } from "./pause.service";
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
@@ -11,6 +12,8 @@ async function groupIdsForAgent(agentId: string): Promise<string[]> {
 // agent (directly or via a group) — the agent applies one combined pair of firewall rules,
 // not independent per-policy rules.
 export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedIpBlockResponse> {
+  if (await isAgentPaused(agentId)) return { policyIds: [], addresses: [] };
+
   const groupIds = await groupIdsForAgent(agentId);
 
   const assignments = await prisma.ipBlockPolicyAssignment.findMany({

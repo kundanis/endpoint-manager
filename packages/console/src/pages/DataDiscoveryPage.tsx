@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { DataDiscoveryRegulation } from "@em/shared";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAgents,
   useAssetGroups,
@@ -16,6 +17,7 @@ import {
 } from "../api/hooks";
 import type { DataDiscoveryPolicyDetail } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
+import EndpointLabel from "../components/EndpointLabel";
 
 const REGULATIONS: DataDiscoveryRegulation[] = ["DPDP", "GDPR", "BOTH"];
 
@@ -132,7 +134,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       <ul>
         {assignments?.map((a) => (
           <li key={a.id}>
-            {a.hostname ?? `Group: ${a.groupName}`}{" "}
+            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
             <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
               Remove
             </button>
@@ -142,17 +144,6 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       </ul>
 
       <h3>Assign to</h3>
-      <fieldset>
-        <legend>Endpoints</legend>
-        {agents?.map((agent) => (
-          <label key={agent.id} className="checkbox-row">
-            <input type="checkbox" checked={selectedAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-            {agent.hostname}
-          </label>
-        ))}
-        {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-      </fieldset>
-
       {groups && groups.length > 0 && (
         <fieldset>
           <legend>Groups</legend>
@@ -164,6 +155,13 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
           ))}
         </fieldset>
       )}
+
+      <EndpointCheckboxList
+        agents={agents}
+        selectedAgentIds={selectedAgentIds}
+        onToggle={toggleAgent}
+        selectedGroupIds={selectedGroupIds}
+      />
 
       {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
       <button
@@ -177,7 +175,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   );
 }
 
-type ResultsFilter = "all" | "flagged" | "clean";
+type ResultsFilter = "all" | "flagged" | "clean" | "nothing-scanned";
 
 function ResultsPanel({ policyId }: { policyId: string }) {
   const { data: breakdown } = useDataDiscoveryAgentBreakdown(policyId);
@@ -185,11 +183,16 @@ function ResultsPanel({ policyId }: { policyId: string }) {
   const [filter, setFilter] = useState<ResultsFilter>("all");
 
   const agents = breakdown?.agents ?? [];
+  // A scan that read zero files proves nothing — it isn't "clean", it means none of the
+  // target folders existed on that endpoint (or none held a supported file type).
+  const readNothing = (a: (typeof agents)[number]) => a.scanned && a.filesScanned === 0;
   const flaggedCount = agents.filter((a) => a.fileCount > 0).length;
-  const cleanCount = agents.filter((a) => a.scanned && a.fileCount === 0).length;
+  const cleanCount = agents.filter((a) => a.scanned && a.fileCount === 0 && !readNothing(a)).length;
+  const nothingScannedCount = agents.filter(readNothing).length;
   const filtered = agents.filter((a) => {
     if (filter === "flagged") return a.fileCount > 0;
-    if (filter === "clean") return a.scanned && a.fileCount === 0;
+    if (filter === "clean") return a.scanned && a.fileCount === 0 && !readNothing(a);
+    if (filter === "nothing-scanned") return readNothing(a);
     return true;
   });
 
@@ -229,6 +232,14 @@ function ResultsPanel({ policyId }: { policyId: string }) {
           <div className="tile-label">Clean (scanned, none found)</div>
           <div className="tile-value">{cleanCount}</div>
         </div>
+        <div
+          className={`tile accent-warn ${filter === "nothing-scanned" ? "active" : ""}`}
+          onClick={() => setFilter("nothing-scanned")}
+          title="The last scan read 0 files — the target folders don't exist on these endpoints, or hold no supported files"
+        >
+          <div className="tile-label">Nothing scanned (0 files read)</div>
+          <div className="tile-value">{nothingScannedCount}</div>
+        </div>
       </div>
 
       <table className="data-table">
@@ -236,6 +247,7 @@ function ResultsPanel({ policyId }: { policyId: string }) {
           <tr>
             <th>Endpoint</th>
             <th>Scanned</th>
+            <th>Files read</th>
             <th>Files with personal data</th>
             <th>Last scan</th>
             <th></th>
@@ -244,11 +256,16 @@ function ResultsPanel({ policyId }: { policyId: string }) {
         <tbody>
           {filtered.map((a) => (
             <tr key={a.agentId}>
-              <td>{a.hostname}</td>
+              <td>
+                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+              </td>
               <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
+              <td>{a.filesScanned ?? "—"}</td>
               <td>
                 {a.fileCount > 0 ? (
                   <StatusBadge kind="fail" label={`${a.fileCount} file${a.fileCount === 1 ? "" : "s"}`} />
+                ) : readNothing(a) ? (
+                  <StatusBadge kind="warn" label="Nothing scanned — check target paths" />
                 ) : a.scanned ? (
                   <StatusBadge kind="pass" label="None found" />
                 ) : (
@@ -273,7 +290,7 @@ function ResultsPanel({ policyId }: { policyId: string }) {
           ))}
           {filtered.length === 0 && (
             <tr>
-              <td colSpan={5}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>
+              <td colSpan={6}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>
             </tr>
           )}
         </tbody>

@@ -1,4 +1,4 @@
-export type Shell = "powershell" | "cmd";
+export type Shell = "powershell" | "cmd" | "bash" | "sh";
 
 export type CommandTaskStatus =
   | "PENDING"

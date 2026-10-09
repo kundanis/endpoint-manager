@@ -185,6 +185,7 @@ export interface UnmanagedNetworkDevice {
   ipAddress: string;
   macAddress: string | null;
   hostname: string | null;
+  openPorts: number[];
 }
 
 // "Network devices" = unmanaged hosts (no matched agent) from each VLAN's LATEST scan run
@@ -213,7 +214,7 @@ export async function getNetworkDeviceSummary(): Promise<{
     runIds.length > 0
       ? await prisma.discoveredHost.findMany({
           where: { scanRunId: { in: runIds } },
-          select: { scanRunId: true, ipAddress: true, macAddress: true, hostname: true, matchedAgentId: true },
+          select: { scanRunId: true, ipAddress: true, macAddress: true, hostname: true, matchedAgentId: true, openPorts: true },
         })
       : [];
 
@@ -239,6 +240,7 @@ export async function getNetworkDeviceSummary(): Promise<{
       ipAddress: h.ipAddress,
       macAddress: h.macAddress,
       hostname: h.hostname,
+      openPorts: JSON.parse(h.openPorts) as number[],
     }));
 
   return { perVlan, unmanagedHosts };

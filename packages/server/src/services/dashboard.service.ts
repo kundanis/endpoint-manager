@@ -36,12 +36,14 @@ export async function getDashboardSummary() {
   // Same query shape already used in admin.routes.ts's agent list route for
   // openVulnerabilityCount — reused here just to build a distinct-agent count instead of
   // a per-agent count.
-  const [openVulnFindings, trustSummary, networkDeviceSummary] = await Promise.all([
-    prisma.vulnerabilityFinding.findMany({ where: { status: "OPEN" }, select: { agentId: true } }),
+  const [vulnAgentGroups, trustSummary, networkDeviceSummary] = await Promise.all([
+    // Distinct agents with an open finding, counted in SQL (one row per agent) rather than
+    // loading every open finding into Node - see getFleetVulnerabilitySummary's note.
+    prisma.vulnerabilityFinding.groupBy({ by: ["agentId"], where: { status: "OPEN" }, _count: { _all: true } }),
     getFleetTrustSummary(),
     getNetworkDeviceSummary(),
   ]);
-  const agentsWithVulnerabilities = new Set(openVulnFindings.map((f) => f.agentId)).size;
+  const agentsWithVulnerabilities = vulnAgentGroups.length;
 
   // Fleet-wide comparison of "agents installed" vs "endpoints seen by a network scan" —
   // discoveredByNetworkScan/notInstalled are just sums over each VLAN's latest-scan totals

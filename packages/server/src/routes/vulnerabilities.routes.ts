@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { remediateBySeverityRequestSchema, triggerVulnerabilitySyncRequestSchema } from "@em/shared";
+import {
+  remediateBySeverityRequestSchema,
+  remediateVulnerabilityRequestSchema,
+  triggerVulnerabilitySyncRequestSchema,
+} from "@em/shared";
 import {
   getFindingsForAgent,
   getFindingsForVulnerability,
@@ -87,7 +91,8 @@ vulnerabilitiesRouter.post("/remediate-by-severity", async (req, res, next) => {
 
 vulnerabilitiesRouter.post("/:vulnerabilityDefinitionId/remediate", async (req, res, next) => {
   try {
-    res.status(202).json(await remediateVulnerability(req.params.vulnerabilityDefinitionId, req.adminId!));
+    const { findingIds } = remediateVulnerabilityRequestSchema.parse(req.body ?? {});
+    res.status(202).json(await remediateVulnerability(req.params.vulnerabilityDefinitionId, req.adminId!, findingIds));
   } catch (err) {
     next(err);
   }

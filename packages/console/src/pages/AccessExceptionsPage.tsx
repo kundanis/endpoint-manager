@@ -14,6 +14,7 @@ import {
 } from "../api/hooks";
 import type { PolicyAccessExceptionType } from "@em/shared";
 import StatusBadge from "../components/StatusBadge";
+import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
 
 const POLICY_TYPE_LABELS: Record<PolicyAccessExceptionType, string> = {
   APP_CONTROL: "Application Control",
@@ -122,9 +123,7 @@ function RequestForm() {
         <select value={agentId} onChange={(e) => setAgentId(e.target.value)} required>
           <option value="">Select an endpoint…</option>
           {agents?.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.hostname}
-            </option>
+            <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
           ))}
         </select>
       </label>
@@ -166,9 +165,13 @@ export default function AccessExceptionsPage() {
       <h1>Access Exceptions</h1>
       <p>
         Time-bound, admin-approved carve-outs from an EPM or DLP policy's enforcement for one endpoint — the
-        exception filter is applied server-side, so it takes effect the next time that endpoint syncs, and expires
-        automatically with no separate revert step.
+        exception filter is applied server-side, so it takes effect the next time that endpoint syncs (within about
+        20 seconds), and expires automatically with no separate revert step. A request must be approved by a
+        different admin than the one who raised it.
       </p>
+
+      {approve.isError && <p className="error-text">{(approve.error as Error).message}</p>}
+      {reject.isError && <p className="error-text">{(reject.error as Error).message}</p>}
 
       <table className="data-table">
         <thead>
@@ -188,7 +191,9 @@ export default function AccessExceptionsPage() {
             <tr key={r.id}>
               <td>{POLICY_TYPE_LABELS[r.policyType]}</td>
               <td>{r.policyName}</td>
-              <td>{r.hostname ?? "—"}</td>
+              <td>
+                <EndpointLabel hostname={r.hostname} agentId={r.agentId} />
+              </td>
               <td>{r.reason}</td>
               <td>{r.durationMinutes} min</td>
               <td>

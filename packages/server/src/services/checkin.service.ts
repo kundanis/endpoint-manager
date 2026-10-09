@@ -1,29 +1,98 @@
-import type { CheckinResponse, InventoryReport } from "@em/shared";
+import type { AgentUpdateTaskWire, CheckinResponse, InstallerType, InventoryReport, Shell } from "@em/shared";
 import { DEFAULT_POLL_INTERVAL_SEC } from "@em/shared";
 import { prisma } from "../db";
 import { logger } from "../logger";
 import { matchAgentInventory } from "./vulnerabilityMatch.service";
 import { refreshIpGeoIfStale } from "./ipGeo.service";
 import { decryptField } from "../utils/fieldEncryption";
+import { getServerUrlsForCheckin } from "./agentConnection.service";
+
+// Shared by both the paused and normal branches below - an agent update is a fleet
+// hygiene/security concern (staying on a current, non-vulnerable build), not "new work"
+// pause is meant to hold back, so it's delivered unconditionally either way. Marks
+// PENDING -> DISPATCHED same as every other task type, so it's never redelivered on a
+// later checkin no matter how long the endpoint takes to actually apply it.
+async function fetchAndDispatchAgentUpdateTasks(agentId: string): Promise<AgentUpdateTaskWire[]> {
+  const pending = await prisma.agentUpdateTask.findMany({
+    where: { agentId, status: "PENDING" },
+    include: { job: true },
+  });
+  if (pending.length > 0) {
+    await prisma.agentUpdateTask.updateMany({
+      where: { id: { in: pending.map((t) => t.id) } },
+      data: { status: "DISPATCHED", dispatchedAt: new Date() },
+    });
+  }
+  return pending.map((t) => ({
+    id: t.id,
+    jobId: t.jobId,
+    targetVersion: t.job.targetVersion,
+    sha256: t.job.sha256,
+  }));
+}
 
 export async function handleCheckin(
   agentId: string,
   ipAddress: string | null,
   macAddress: string | null,
+  agentVersion: string | null,
 ): Promise<CheckinResponse> {
-  await prisma.agent.update({
+  const agent = await prisma.agent.update({
     where: { id: agentId },
     data: {
       lastCheckinAt: new Date(),
       ipAddress: ipAddress ?? undefined,
       macAddress: macAddress ?? undefined,
+      // Self-corrects on every checkin from whatever the agent actually reports itself
+      // running (see checkin.schema.ts) rather than staying frozen at whatever was
+      // reported once at enroll — a successful self-update (agentUpdate.service.ts) still
+      // updates this too, redundantly but harmlessly, since both end up writing the same
+      // value once the endpoint's next checkin lands anyway.
+      agentVersion: agentVersion ?? undefined,
     },
+    select: { paused: true },
   });
 
   // Fire-and-forget — an external geo-IP lookup must never block or fail a checkin.
   void refreshIpGeoIfStale(agentId, ipAddress).catch((err) =>
     logger.error({ err, agentId }, "IP geolocation refresh failed"),
   );
+
+  // Paused agents still check in (so they stay visible/reportable if the endpoint is
+  // online) but receive no new work - see pause.service.ts for why this can't instead
+  // stop the local process outright. The one exception is CommandJob.bypassesPause
+  // (quarantine/remote-access/uninstall) - those MUST still reach the agent even while
+  // paused, since pause.service.ts itself relies on dispatching a release command before
+  // the pause actually takes effect in the database, and an uninstall must always be
+  // deliverable regardless of pause state.
+  if (agent.paused) {
+    const bypassCommands = await prisma.commandTask.findMany({
+      where: { agentId, status: "PENDING", job: { bypassesPause: true } },
+      include: { job: true },
+    });
+    if (bypassCommands.length > 0) {
+      await prisma.commandTask.updateMany({
+        where: { id: { in: bypassCommands.map((t) => t.id) } },
+        data: { status: "DISPATCHED", dispatchedAt: new Date() },
+      });
+    }
+    return {
+      pollIntervalSec: DEFAULT_POLL_INTERVAL_SEC,
+      commandTasks: bypassCommands.map((t) => ({
+        id: t.id,
+        jobId: t.jobId,
+        shell: t.job.shell as Shell,
+        script: decryptField(t.job.script),
+        timeoutSec: t.job.timeoutSec,
+      })),
+      deploymentTasks: [],
+      patchTasks: [],
+      networkScanTasks: [],
+      agentUpdateTasks: await fetchAndDispatchAgentUpdateTasks(agentId),
+      runDataDiscoveryScanNow: false,
+      serverUrls: await getServerUrlsForCheckin(),
+    };
+  }
 
   const pendingCommands = await prisma.commandTask.findMany({
     where: { agentId, status: "PENDING" },
@@ -85,14 +154,14 @@ export async function handleCheckin(
     commandTasks: pendingCommands.map((t) => ({
       id: t.id,
       jobId: t.jobId,
-      shell: t.job.shell as "powershell" | "cmd",
+      shell: t.job.shell as Shell,
       script: decryptField(t.job.script),
       timeoutSec: t.job.timeoutSec,
     })),
     deploymentTasks: pendingDeployments.map((t) => ({
       id: t.id,
       packageId: t.job.packageId,
-      installerType: t.job.package.installerType as "EXE" | "MSI",
+      installerType: t.job.package.installerType as InstallerType,
       silentArgs: t.job.package.silentArgs,
       sha256: t.job.package.sha256,
     })),
@@ -106,7 +175,9 @@ export async function handleCheckin(
       scanRunId: t.scanRunId,
       cidr: t.scanRun.cidr,
     })),
+    agentUpdateTasks: await fetchAndDispatchAgentUpdateTasks(agentId),
     runDataDiscoveryScanNow: pendingDataDiscoveryScan != null,
+    serverUrls: await getServerUrlsForCheckin(),
   };
 }
 

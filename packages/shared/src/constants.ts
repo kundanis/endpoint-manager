@@ -25,17 +25,33 @@ export const DEFAULT_ZERO_TRUST_SCAN_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hour
 // than a single PowerShell check, so it runs less often and is capped hard on every
 // axis (files, depth, per-file size) so one large target folder can't stall the agent.
 export const DEFAULT_DATA_DISCOVERY_SCAN_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
-export const DATA_DISCOVERY_MAX_FILES_PER_SCAN = 500;
+// Per policy per scan, across every user profile a %USERPROFILE%-style path fans out to.
+export const DATA_DISCOVERY_MAX_FILES_PER_SCAN = 2000;
 export const DATA_DISCOVERY_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB — larger files are skipped entirely, not partially read
 export const DATA_DISCOVERY_MAX_SCAN_DEPTH = 8;
-export const DATA_DISCOVERY_ALLOWED_EXTENSIONS = [".txt", ".csv", ".log", ".json", ".xml", ".md", ".ini", ".config"];
+// .docx/.xlsx/.pptx are unzipped agent-side and their text scanned (agent ooxmlText.ts);
+// PDF and legacy binary .doc/.xls/.ppt are not supported yet.
+export const DATA_DISCOVERY_ALLOWED_EXTENSIONS = [
+  ".txt", ".csv", ".log", ".json", ".xml", ".md", ".ini", ".config",
+  ".docx", ".xlsx", ".pptx",
+];
 export const DATA_DISCOVERY_MAX_SAMPLES_PER_PATTERN = 5; // masked samples kept per pattern per file, not every match in a large file
+
+// Common re-assert cadence for every admin-authored policy module (App Control, Web Block,
+// Command Block, IP Block, USB Control, DLP) - one shared constant so they can never drift
+// apart from each other, rather than each module picking its own interval. Deliberately
+// does NOT apply to the heavier background scanners below (patch/security-config/zero-trust/
+// data-discovery/data-movement/EDR/user-productivity/watchdog) - those aren't policy
+// re-assert loops, and several are intentionally infrequent because the underlying scan
+// itself is heavy (a WUA search, a file-tree walk); forcing those to this cadence too would
+// just hammer every endpoint's CPU/disk for no benefit.
+export const POLICY_SYNC_INTERVAL_MS = 20 * 1000;
 
 // DLP — the Node.js agent doesn't inspect file content itself; it only relays policy
 // to, and events from, a native sidecar process (Phase 2) over a local NDJSON file
 // handoff rather than a socket/named-pipe, since it's simplest to implement and to
 // hand-simulate for testing before that sidecar exists.
-export const DEFAULT_DLP_POLICY_SYNC_INTERVAL_MS = 60 * 1000; // how often the agent refreshes the local policy file from the server
+export const DEFAULT_DLP_POLICY_SYNC_INTERVAL_MS = POLICY_SYNC_INTERVAL_MS; // how often the agent refreshes the local policy file from the server
 export const DEFAULT_DLP_EVENT_FLUSH_INTERVAL_MS = 15 * 1000; // how often the agent tails+forwards+truncates the local events file
 export const DLP_POLICY_FILE_NAME = "dlp-policy.json";
 export const DLP_EVENTS_FILE_NAME = "dlp-events.ndjson";
@@ -52,12 +68,11 @@ export const DATA_MOVEMENT_MAX_SCAN_DEPTH = 10;
 // EPM — three separate modules, each a plain policy+rule+assignment resolved and enforced
 // by one periodic agent-side scan (no native sidecar needed, unlike DLP: SRP/hosts-file/
 // registry/WMI-process-query are all things the Node agent can do directly via PowerShell).
-export const DEFAULT_APP_CONTROL_SCAN_INTERVAL_MS = 30 * 60 * 1000; // 30 min — SRP registry state is cheap to re-assert, doesn't need to be frequent
-export const DEFAULT_WEB_BLOCK_SCAN_INTERVAL_MS = 15 * 60 * 1000; // 15 min — hosts-file/browser-policy re-assert cadence
-// Short — this is a best-effort "catch it running and kill it" model (not a real-time
-// kernel block), so the interval directly bounds how long a blocked command can run before
-// being caught.
-export const DEFAULT_COMMAND_BLOCK_SCAN_INTERVAL_MS = 20 * 1000;
+export const DEFAULT_APP_CONTROL_SCAN_INTERVAL_MS = POLICY_SYNC_INTERVAL_MS; // SRP registry re-assert
+export const DEFAULT_WEB_BLOCK_SCAN_INTERVAL_MS = POLICY_SYNC_INTERVAL_MS; // hosts-file/browser-policy re-assert
+// Best-effort "catch it running and kill it" model (not a real-time kernel block) - the
+// interval directly bounds how long a blocked command can run before being caught.
+export const DEFAULT_COMMAND_BLOCK_SCAN_INTERVAL_MS = POLICY_SYNC_INTERVAL_MS;
 
 // Command Block hard safety net: these process names can never be matched/killed by any
 // rule, regardless of policy content - an admin authoring an overly broad regex (or an
@@ -91,14 +106,12 @@ export const COMMAND_BLOCK_PROTECTED_PROCESS_NAMES = [
 // a hosts-file/registry entry. An explicit block rule wins over any allow rule regardless
 // of order/specificity, so this holds even when the endpoint's general firewall policy
 // allows everything else.
-export const DEFAULT_IP_BLOCK_SCAN_INTERVAL_MS = 15 * 60 * 1000; // 15 min, same cadence as Web Block
+export const DEFAULT_IP_BLOCK_SCAN_INTERVAL_MS = POLICY_SYNC_INTERVAL_MS;
 
 // USB Control — detect-and-disable poll loop, same shape as Command Block: every cycle,
 // enumerate connected USB storage devices and disable any whose serial isn't in the
-// assigned whitelist. Shorter than Web/IP Block since an inserted, unauthorized drive is
-// time-sensitive, but not as tight as Command Block's kill loop since device enumeration
-// carries slightly more overhead than a process list.
-export const DEFAULT_USB_CONTROL_SCAN_INTERVAL_MS = 30 * 1000;
+// assigned whitelist.
+export const DEFAULT_USB_CONTROL_SCAN_INTERVAL_MS = POLICY_SYNC_INTERVAL_MS;
 
 // Tamper-resistance watchdog — the agent checks its companion "EndpointProWatchdog"
 // Scheduled Task exists and is enabled, re-registering it if not; watchdog.ps1 (that task's

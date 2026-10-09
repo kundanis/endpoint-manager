@@ -5,6 +5,7 @@ import {
   createZeroTrustPolicyRequestSchema,
   updateZeroTrustConditionRequestSchema,
   updateZeroTrustPolicyRequestSchema,
+  zeroTrustOverrideBulkRequestSchema,
 } from "@em/shared";
 import {
   addCondition,
@@ -21,10 +22,41 @@ import {
   updateCondition,
   updatePolicy,
 } from "../services/zeroTrustPolicy.service";
+import { applyForceComply, listOverridableConditionKeys, revokeOverride } from "../services/zeroTrustOverride.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
 
 export const zeroTrustRouter = Router();
+
+// Everything under /overrides is the ENTIRE surface this feature exists on — no other
+// route, list, or CSV export anywhere in the product exposes override state (see
+// zeroTrustOverride.service.ts and ZeroTrustCheckOverride's schema comment). Mounted before
+// the "/:id" routes below so "overrides" is never swallowed as a policy id.
+zeroTrustRouter.get("/overrides/condition-keys", async (_req, res, next) => {
+  try {
+    res.json(await listOverridableConditionKeys());
+  } catch (err) {
+    next(err);
+  }
+});
+
+zeroTrustRouter.post("/overrides/force-comply", async (req, res, next) => {
+  try {
+    const payload = zeroTrustOverrideBulkRequestSchema.parse(req.body);
+    res.json(await applyForceComply(payload.agentIds, payload.conditionKeys, req.adminId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+zeroTrustRouter.post("/overrides/revoke", async (req, res, next) => {
+  try {
+    const payload = zeroTrustOverrideBulkRequestSchema.parse(req.body);
+    res.json(await revokeOverride(payload.agentIds, payload.conditionKeys));
+  } catch (err) {
+    next(err);
+  }
+});
 
 zeroTrustRouter.post("/", async (req, res, next) => {
   try {

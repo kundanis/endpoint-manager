@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Endpoint Manager — PII Attachment Guard</title>
+    <!-- Office.js must load from Microsoft's own CDN — Outlook loads this page inside its
+         own sandboxed runtime, not through this app's usual CDN allowlist. -->
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <!-- commands.js is served by the server with JSZip (vendor/jszip.min.js) and the server's
+         base URL bundled in — classic Outlook on Windows loads only that one file, so the
+         web/new-Outlook path loads the same bundle rather than a separate JSZip tag. -->
+    <script src="commands.js"></script>
+  </head>
+  <body>
+    <!-- Event-based add-ins (LaunchEvent) never actually render this body — Outlook loads
+         this page's scripts in a hidden runtime purely to run onMessageSendHandler. -->
+  </body>
+</html>

@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import Collapsible from "../components/Collapsible";
 import StatusBadge from "../components/StatusBadge";
-import type { AgentDetail, InstalledSoftwareEntry, LifecycleStatus } from "../api/types";
+import EndpointLabel from "../components/EndpointLabel";
+import type { AgentDetail, InstalledSoftwareEntry, LifecycleStatus, NormalizedSeverity } from "../api/types";
 import {
   useAddAgentNote,
   useAgent,
@@ -11,6 +12,7 @@ import {
   useAgentDataDiscoveryFindings,
   useAgentDataMovementEvents,
   useAgentDlpEvents,
+  useAgentLatestBuild,
   useAgentNotes,
   useAgentSecurityFindings,
   useAgentUsbControlEvents,
@@ -19,9 +21,13 @@ import {
   useAssetGroups,
   useCustomFieldDefinitions,
   useDisableRemoteAccess,
+  useDispatchAgentUpdate,
   useEnableRemoteAccess,
+  useIsItemHidden,
+  usePauseAgent,
   useRemediateAllForAgent,
   useRemediateSecurityRule,
+  useResumeAgent,
   useSetAgentCustomFields,
   useSetAgentGroups,
   useSetAgentLifecycle,
@@ -36,6 +42,13 @@ const DEVICE_TYPE_LABEL: Record<"LAPTOP" | "DESKTOP" | "SERVER", string> = {
   DESKTOP: "Desktop",
   SERVER: "Server",
 };
+
+function severityBadgeClass(severity: NormalizedSeverity): string {
+  if (severity === "CRITICAL" || severity === "HIGH") return "danger";
+  if (severity === "MEDIUM") return "warn";
+  if (severity === "LOW") return "online";
+  return "offline";
+}
 
 function formatBytes(bytes: number | null): string {
   if (!bytes) return "—";
@@ -53,10 +66,15 @@ function toDateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : "";
 }
 
+const IN_PROGRESS_UPDATE_STATUSES = new Set(["PENDING", "DISPATCHED", "DOWNLOADING", "APPLYING"]);
+
 function AssetDetailsForm({ agent }: { agent: AgentDetail }) {
   const inv = agent.inventory;
   const setLifecycle = useSetAgentLifecycle();
   const setDetails = useSetAssetDetails();
+  const { data: latestBuild } = useAgentLatestBuild();
+  const dispatchUpdate = useDispatchAgentUpdate();
+  const patchesHidden = useIsItemHidden("/patches");
   const [serialNumber, setSerialNumber] = useState(agent.serialNumber ?? "");
   const [vendor, setVendor] = useState(agent.vendor ?? "");
   const [purchaseDate, setPurchaseDate] = useState(toDateInputValue(agent.purchaseDate));
@@ -98,7 +116,52 @@ function AssetDetailsForm({ agent }: { agent: AgentDetail }) {
         </div>
         <div>
           <strong>Endpoint version</strong>
-          <div>{agent.agentVersion}</div>
+          <div>
+            {agent.agentVersion}
+            {(() => {
+              const task = agent.latestUpdateTask;
+
+              // An update is currently in flight for this agent (dispatched from here or
+              // from Agent Updates' own "Push update" button - same underlying task either
+              // way) - show live progress instead of an "update available" prompt, polled
+              // automatically every 5s by useAgent. Resolves on its own once the task
+              // reaches SUCCESS (agentVersion above updates too, so this block just stops
+              // matching a newer build) or FAILED (falls through below, still offering a
+              // retry with the failure reason attached).
+              if (task && IN_PROGRESS_UPDATE_STATUSES.has(task.status)) {
+                return (
+                  <>
+                    {" "}
+                    — <span className="warn-text">updating to v{task.targetVersion}… ({task.status.toLowerCase()})</span>
+                  </>
+                );
+              }
+
+              const latestForThisAgent = agent.osPlatform === "linux" ? latestBuild?.linux : latestBuild?.windows;
+              if (!latestForThisAgent || latestForThisAgent.version === agent.agentVersion) return null;
+
+              const lastAttemptFailed = task?.status === "FAILED" && task.targetVersion === latestForThisAgent.version;
+              return (
+                <>
+                  {" "}
+                  —{" "}
+                  <button
+                    type="button"
+                    onClick={() => dispatchUpdate.mutate({ agentIds: [agent.id], groupIds: [] })}
+                    disabled={dispatchUpdate.isPending}
+                  >
+                    {dispatchUpdate.isPending ? "Starting…" : `update to v${latestForThisAgent.version} available`}
+                  </button>
+                  {lastAttemptFailed && (
+                    <span className="error-text"> — previous attempt failed: {task.message ?? "unknown error"}</span>
+                  )}
+                  {dispatchUpdate.isError && (
+                    <span className="error-text"> — {(dispatchUpdate.error as Error).message}</span>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         </div>
         <div>
           <strong>Logged-in user</strong>
@@ -116,10 +179,39 @@ function AssetDetailsForm({ agent }: { agent: AgentDetail }) {
           <strong>Last check-in</strong>
           <div>{agent.lastCheckinAt ? new Date(agent.lastCheckinAt).toLocaleString() : "never"}</div>
         </div>
-        <div>
-          <strong>Last patch installed</strong>
-          <div>{agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleString() : "never"}</div>
-        </div>
+        {!patchesHidden && (
+          <>
+            <div>
+              <strong>Last patch installed</strong>
+              <div>{agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleString() : "never"}</div>
+            </div>
+            <div>
+              <strong>Latest available patch</strong>
+              <div>
+                {agent.latestAvailablePatch ? (
+                  <>
+                    {agent.latestAvailablePatch.title}
+                    {agent.latestAvailablePatch.severity && (
+                      <>
+                        {" "}
+                        <span className={`status-badge ${severityBadgeClass(agent.latestAvailablePatch.normalizedSeverity)}`}>
+                          {agent.latestAvailablePatch.severity}
+                        </span>
+                      </>
+                    )}
+                    <br />
+                    <span className="hint">
+                      {agent.latestAvailablePatch.kbArticleIds.join(", ") || "No KB"} — detected{" "}
+                      {new Date(agent.latestAvailablePatch.firstSeenAt).toLocaleDateString()}
+                    </span>
+                  </>
+                ) : (
+                  "None missing"
+                )}
+              </div>
+            </div>
+          </>
+        )}
         <div>
           <strong>Processor</strong>
           <div>
@@ -1117,6 +1209,66 @@ function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
   );
 }
 
+function PausePanel({ agent }: { agent: AgentDetail }) {
+  const pause = usePauseAgent();
+  const resume = useResumeAgent();
+
+  function handlePause() {
+    const confirmed = window.confirm(
+      `Pause ${agent.hostname}?\n\nThis releases active enforcement (quarantine, remote access, web/IP/app blocking) ` +
+        `and holds back new commands, deployments, and patches until resumed. It still counts against your license ` +
+        `seat — pausing doesn't relinquish that, only uninstalling does. It also doesn't stop the agent itself — if ` +
+        `the endpoint is online it keeps checking in and reporting, it just won't receive new work or have policies ` +
+        `enforced. Resuming restores exactly what was released (e.g. re-quarantines if it was quarantined before).`,
+    );
+    if (!confirmed) return;
+    pause.mutate(agent.id);
+  }
+
+  function handleResume() {
+    resume.mutate(agent.id);
+  }
+
+  return (
+    <Collapsible title="Pause">
+      <p>
+        Pausing releases this endpoint's active policy enforcement (quarantine, remote access, web/IP/app-control
+        blocking) and holds back new commands, deployments, and patches until you resume it — useful for a machine
+        that's in storage or between users without fully uninstalling it. Resuming restores whatever was released.
+        This does <strong>not</strong> free the license seat (only uninstalling does), and the agent itself isn't
+        stopped — a paused-but-online endpoint keeps checking in as normal. USB Control is a partial exception: a
+        device already disabled can't be re-enabled by software and needs to be physically unplugged and reinserted.
+      </p>
+      <div className="detail-grid">
+        <div>
+          <strong>Status</strong>
+          <span className={`status-badge ${agent.paused ? "offline" : "online"}`}>
+            {agent.paused ? "Paused" : "Active"}
+          </span>
+        </div>
+        {agent.paused && (
+          <div>
+            <strong>Paused since</strong>
+            {agent.pausedAt ? new Date(agent.pausedAt).toLocaleString() : "—"}
+          </div>
+        )}
+      </div>
+      {agent.paused ? (
+        <button type="button" onClick={handleResume} disabled={resume.isPending}>
+          {resume.isPending ? "Resuming…" : "Resume"}
+        </button>
+      ) : (
+        <button type="button" onClick={handlePause} disabled={pause.isPending}>
+          {pause.isPending ? "Pausing…" : "Pause"}
+        </button>
+      )}
+      {(pause.isError || resume.isError) && (
+        <p className="error-text">{((pause.error ?? resume.error) as Error).message}</p>
+      )}
+    </Collapsible>
+  );
+}
+
 function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
   const uninstall = useUninstallAgent();
 
@@ -1159,6 +1311,14 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: agent, isLoading, error } = useAgent(id);
+  const securityConfigHidden = useIsItemHidden("/security-config");
+  const zeroTrustHidden = useIsItemHidden("/zero-trust");
+  const dataDiscoveryHidden = useIsItemHidden("/data-discovery");
+  const dlpHidden = useIsItemHidden("/dlp");
+  const dataMovementHidden = useIsItemHidden("/data-movement");
+  // App Control, Command Blocking and USB Control are all tabs under the EPM nav item.
+  const epmHidden = useIsItemHidden("/epm");
+  const userProductivityHidden = useIsItemHidden("/user-productivity");
 
   if (isLoading) return <p>Loading…</p>;
   if (error) return <p className="error-text">{(error as Error).message}</p>;
@@ -1172,24 +1332,30 @@ export default function AgentDetailPage() {
         <Link to="/endpoints">&larr; Back to endpoints</Link>
       </p>
       <h1>
-        {agent.hostname} <span className={`status-badge ${agent.status.toLowerCase()}`}>{agent.status}</span>
+        <EndpointLabel hostname={agent.hostname} agentId={agent.id} /> <span className={`status-badge ${agent.status.toLowerCase()}`}>{agent.status}</span>
+        {agent.paused && <span className="status-badge offline">Paused</span>}
       </h1>
 
       <AssetDetailsForm agent={agent} />
+      <PausePanel agent={agent} />
       <RemoteAccessPanel agent={agent} />
       <UninstallAgentPanel agent={agent} />
       <StoragePanel agent={agent} />
       <CustomFieldsForm agentId={agent.id} values={agent.customFieldValues} />
       <GroupMembershipEditor agentId={agent.id} currentGroupIds={agent.groups.map((g) => g.id)} />
-      <SecurityFindingsSection agentId={agent.id} />
-      <ZeroTrustFindingsSection agentId={agent.id} />
-      <DataDiscoveryFindingsSection agentId={agent.id} />
-      <DlpEventsSection agentId={agent.id} />
-      <DataMovementEventsSection agentId={agent.id} />
-      <UserSessionsSection agentId={agent.id} />
-      <AppControlEventsSection agentId={agent.id} />
-      <CommandBlockEventsSection agentId={agent.id} />
-      <UsbControlEventsSection agentId={agent.id} />
+      {!securityConfigHidden && <SecurityFindingsSection agentId={agent.id} />}
+      {!zeroTrustHidden && <ZeroTrustFindingsSection agentId={agent.id} />}
+      {!dataDiscoveryHidden && <DataDiscoveryFindingsSection agentId={agent.id} />}
+      {!dlpHidden && <DlpEventsSection agentId={agent.id} />}
+      {!dataMovementHidden && <DataMovementEventsSection agentId={agent.id} />}
+      {!userProductivityHidden && <UserSessionsSection agentId={agent.id} />}
+      {!epmHidden && (
+        <>
+          <AppControlEventsSection agentId={agent.id} />
+          <CommandBlockEventsSection agentId={agent.id} />
+          <UsbControlEventsSection agentId={agent.id} />
+        </>
+      )}
       <NotesFeed agentId={agent.id} />
 
       <InstalledSoftwareSection agentId={agent.id} software={inv?.installedSoftware ?? []} />

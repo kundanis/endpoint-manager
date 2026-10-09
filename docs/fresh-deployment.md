@@ -137,6 +137,15 @@ non-interactively for a scripted rollout — neither the exe nor `install.ps1` h
 baked-in default server, so there's no risk of accidentally enrolling a new entity's
 endpoints against the wrong server.
 
+**Before enrolling endpoints with active AV/EDR** (Kaspersky, Defender, CrowdStrike,
+SentinelOne, etc.), send the customer's IT/security team `docs/av-edr-exclusions.md` and
+have them apply it — either up front for the whole fleet, or at minimum before rollout to
+any endpoint. Without it, some agent features (anything that spawns `powershell.exe`/
+`reg.exe` — Web Block, IP Block, inventory, patch scanning, and more) can intermittently
+fail on individual endpoints with no visible error on the dashboard beyond a specific
+policy assignment showing `FAILED`/`spawn EPERM`. This is a standing prerequisite now, not
+a reactive fix — confirmed root cause and per-vendor steps are in that doc.
+
 ## Troubleshooting
 
 **`P1011: Error opening a TLS connection... certificate chain... terminated in a root

@@ -16,6 +16,7 @@ import {
   useSetUninstallPassword,
   useUpdateAssetGroup,
 } from "../api/hooks";
+import EndpointLabel, { EndpointStatusDot } from "../components/EndpointLabel";
 
 function TamperProtectionSection() {
   const { data: status } = useAgentSecurityStatus();
@@ -162,6 +163,8 @@ function GroupsSection() {
   const [description, setDescription] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>();
   const [memberPickerAgentIds, setMemberPickerAgentIds] = useState<string[]>([]);
+  const [memberPickerHostFilter, setMemberPickerHostFilter] = useState("");
+  const [memberPickerNameFilter, setMemberPickerNameFilter] = useState("");
 
   const { data: groupDetail } = useAssetGroup(selectedGroupId);
 
@@ -186,7 +189,11 @@ function GroupsSection() {
   }
 
   const memberIds = new Set(groupDetail?.members.map((m) => m.agentId) ?? []);
-  const availableAgents = agents?.filter((a) => !memberIds.has(a.id)) ?? [];
+  const hostTerm = memberPickerHostFilter.trim().toLowerCase();
+  const nameTerm = memberPickerNameFilter.trim().toLowerCase();
+  const availableAgents = (agents?.filter((a) => !memberIds.has(a.id)) ?? [])
+    .filter((a) => !hostTerm || a.hostname.toLowerCase().includes(hostTerm))
+    .filter((a) => !nameTerm || (a.inventory?.lastLoggedOnUser ?? "").toLowerCase().includes(nameTerm));
 
   return (
     <section>
@@ -254,13 +261,17 @@ function GroupsSection() {
             <thead>
               <tr>
                 <th>Hostname</th>
+                <th>User</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {groupDetail.members.map((m) => (
                 <tr key={m.agentId}>
-                  <td>{m.hostname}</td>
+                  <td>
+                    <EndpointLabel hostname={m.hostname} agentId={m.agentId} hideUser />
+                  </td>
+                  <td>{m.lastLoggedOnUser ?? "—"}</td>
                   <td>
                     <button
                       type="button"
@@ -273,15 +284,33 @@ function GroupsSection() {
               ))}
               {groupDetail.members.length === 0 && (
                 <tr>
-                  <td colSpan={2}>No members yet.</td>
+                  <td colSpan={3}>No members yet.</td>
                 </tr>
               )}
             </tbody>
           </table>
 
-          {availableAgents.length > 0 && (
+          <h4>Add members</h4>
+          <label style={{ display: "inline-block", marginBottom: "0.75rem", marginRight: "1rem" }}>
+            Filter by host
+            <input
+              type="text"
+              value={memberPickerHostFilter}
+              onChange={(e) => setMemberPickerHostFilter(e.target.value)}
+              placeholder="Hostname…"
+            />
+          </label>
+          <label style={{ display: "inline-block", marginBottom: "0.75rem", marginRight: "1rem" }}>
+            Filter by name
+            <input
+              type="text"
+              value={memberPickerNameFilter}
+              onChange={(e) => setMemberPickerNameFilter(e.target.value)}
+              placeholder="Logged-on user…"
+            />
+          </label>
+          {availableAgents.length > 0 ? (
             <>
-              <h4>Add members</h4>
               <fieldset>
                 {availableAgents.map((a) => (
                   <label key={a.id} className="checkbox-row">
@@ -290,7 +319,8 @@ function GroupsSection() {
                       checked={memberPickerAgentIds.includes(a.id)}
                       onChange={() => toggleMemberPick(a.id)}
                     />
-                    {a.hostname}
+                    <EndpointStatusDot hostname={a.hostname} agentId={a.id} />
+                    {a.hostname} {a.inventory?.lastLoggedOnUser ? `— ${a.inventory.lastLoggedOnUser}` : ""}
                   </label>
                 ))}
               </fieldset>
@@ -298,6 +328,8 @@ function GroupsSection() {
                 Add selected
               </button>
             </>
+          ) : (
+            <p>{hostTerm || nameTerm ? "No endpoints match this filter." : "All endpoints are already members of this group."}</p>
           )}
         </div>
       )}

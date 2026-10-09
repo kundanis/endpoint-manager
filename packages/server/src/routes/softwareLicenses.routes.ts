@@ -1,9 +1,14 @@
 import { Router } from "express";
-import { createSoftwareLicenseRequestSchema, updateSoftwareLicenseRequestSchema } from "@em/shared";
+import {
+  createSoftwareLicenseRequestSchema,
+  importSoftwareLicensesRequestSchema,
+  updateSoftwareLicenseRequestSchema,
+} from "@em/shared";
 import {
   createLicense,
   deleteLicense,
   getLicense,
+  importLicenses,
   listLicenses,
   updateLicense,
 } from "../services/softwareLicense.service";
@@ -14,6 +19,15 @@ softwareLicensesRouter.post("/", async (req, res, next) => {
   try {
     const payload = createSoftwareLicenseRequestSchema.parse(req.body);
     res.status(201).json(await createLicense(payload, req.adminId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareLicensesRouter.post("/import", async (req, res, next) => {
+  try {
+    const payload = importSoftwareLicensesRequestSchema.parse(req.body);
+    res.status(201).json(await importLicenses(payload.licenses, req.adminId!));
   } catch (err) {
     next(err);
   }

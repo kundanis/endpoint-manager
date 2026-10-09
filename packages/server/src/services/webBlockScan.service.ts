@@ -1,6 +1,7 @@
 import type { AssignedWebBlockResponse, WebBlockSyncResultPayload } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
+import { isAgentPaused } from "./pause.service";
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
@@ -11,6 +12,8 @@ async function groupIdsForAgent(agentId: string): Promise<string[]> {
 // agent (directly or via a group) — the agent applies one combined hosts-file block + one
 // combined browser URLBlocklist, not independent per-policy actions.
 export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedWebBlockResponse> {
+  if (await isAgentPaused(agentId)) return { policyIds: [], domains: [] };
+
   const groupIds = await groupIdsForAgent(agentId);
 
   const assignments = await prisma.webBlockPolicyAssignment.findMany({

@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import type { InstallerType } from "@em/shared";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAgents,
   useAssetGroups,
@@ -10,6 +11,7 @@ import {
   usePackages,
   useUploadPackage,
 } from "../api/hooks";
+import EndpointLabel from "../components/EndpointLabel";
 
 export default function PackagesPage() {
   const { data: packages } = usePackages();
@@ -93,8 +95,11 @@ export default function PackagesPage() {
         <label>
           Installer type
           <select value={installerType} onChange={(e) => setInstallerType(e.target.value as InstallerType)}>
-            <option value="EXE">EXE</option>
-            <option value="MSI">MSI</option>
+            <option value="EXE">EXE (Windows)</option>
+            <option value="MSI">MSI (Windows)</option>
+            <option value="DEB">DEB (Linux — dpkg)</option>
+            <option value="RPM">RPM (Linux — rpm/yum)</option>
+            <option value="SH">Shell script (Linux — self-installing .sh)</option>
           </select>
         </label>
         <label>
@@ -153,20 +158,6 @@ export default function PackagesPage() {
       {selectedPackageId && (
         <form className="panel" onSubmit={handleDeploy}>
           <h2>Deploy selected package</h2>
-          <fieldset>
-            <legend>Target endpoints</legend>
-            {agents?.map((agent) => (
-              <label key={agent.id} className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={selectedAgentIds.includes(agent.id)}
-                  onChange={() => toggleAgent(agent.id)}
-                />
-                {agent.hostname}
-              </label>
-            ))}
-            {agents?.length === 0 && <p>No endpoints enrolled yet.</p>}
-          </fieldset>
           {groups && groups.length > 0 && (
             <fieldset>
               <legend>Target groups</legend>
@@ -178,6 +169,13 @@ export default function PackagesPage() {
               ))}
             </fieldset>
           )}
+          <EndpointCheckboxList
+            agents={agents}
+            selectedAgentIds={selectedAgentIds}
+            onToggle={toggleAgent}
+            selectedGroupIds={selectedGroupIds}
+            legend="Target endpoints"
+          />
           {dispatchDeploy.isError && <p className="error-text">{(dispatchDeploy.error as Error).message}</p>}
           <button
             type="submit"
@@ -239,7 +237,9 @@ export default function PackagesPage() {
             <tbody>
               {jobDetail.tasks.map((task) => (
                 <tr key={task.id}>
-                  <td>{task.hostname}</td>
+                  <td>
+                    <EndpointLabel hostname={task.hostname} agentId={task.agentId} />
+                  </td>
                   <td>{task.status}</td>
                   <td>{task.exitCode ?? "—"}</td>
                   <td>{task.message ?? "—"}</td>

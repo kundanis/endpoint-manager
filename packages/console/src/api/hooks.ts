@@ -1,10 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AppControlRuleType,
   DataDiscoveryRegulation,
   DlpEnforcementMode,
   DlpRuleType,
   IpBlockRuleType,
+  PiiBlockRuleType,
+  PiiEmailBlockRuleType,
+  PiiPatternKey,
   PolicyAccessExceptionType,
   SecurityBenchmarkTargetType,
   SecurityRuleOperator,
@@ -13,9 +16,11 @@ import type {
   UsbControlRuleType,
   WebBlockRuleType,
 } from "@em/shared";
+import { NAV_MODULES } from "../navConfig";
 import { api } from "./client";
 import type {
   AgentAppControlEventView,
+  AgentBuildInfo,
   AgentSecurityStatusView,
   AgentCommandBlockEventView,
   AgentDataDiscoveryFindingView,
@@ -25,8 +30,12 @@ import type {
   AgentListItem,
   AgentNoteView,
   AgentSecurityFindingView,
+  AgentUpdateJobDetail,
+  AgentUpdateJobListItem,
   AgentVulnerabilityFinding,
   AgentZeroTrustFindingView,
+  AdminRole,
+  AdminUserListItem,
   AppControlAgentBreakdown,
   AppControlAssignmentView,
   AppControlPolicyDetail,
@@ -43,6 +52,8 @@ import type {
   CustomFieldDefinitionView,
   CustomFieldType,
   DashboardSummary,
+  LicenseModuleKey,
+  MeView,
   DataDiscoveryAgentBreakdown,
   DataDiscoveryAssignmentView,
   EdrAgentSummaryView,
@@ -60,7 +71,9 @@ import type {
   DlpAssignmentView,
   DlpPolicyDetail,
   DlpPolicySummary,
+  DuplicateAgentEntry,
   EnrollmentTokenListItem,
+  RemoteInstallJobView,
   IpBlockAgentBreakdown,
   IpBlockAssignmentView,
   IpBlockPolicyDetail,
@@ -72,7 +85,9 @@ import type {
   UsbControlPolicyDetail,
   UsbControlPolicySummary,
   LicenseServerConfigView,
+  AgentConnectionSettingsView,
   LicenseStatusView,
+  ModuleVisibilityView,
   LicenseType,
   NetworkDeviceSummary,
   NetworkScanRunDetail,
@@ -85,8 +100,18 @@ import type {
   WebBlockAssignmentView,
   WebBlockPolicyDetail,
   WebBlockPolicySummary,
+  PiiBlockAgentBreakdown,
+  PiiBlockAssignmentView,
+  PiiBlockPolicyDetail,
+  PiiBlockPolicySummary,
+  PiiEmailBlockAssignmentView,
+  PiiEmailBlockEventView,
+  PiiEmailBlockPolicyDetail,
+  PiiEmailBlockPolicySummary,
   PackageItem,
   ScanAllVlansResultItem,
+  AutoPatchPolicyView,
+  NormalizedSeverity,
   PatchJobDetail,
   PatchJobListItem,
   PatchSummaryItem,
@@ -94,6 +119,7 @@ import type {
   SecurityBenchmarkAssignmentView,
   SecurityBenchmarkDetail,
   SecurityBenchmarkSummary,
+  SoftwareLicenseAccessType,
   SoftwareLicenseBillingCycle,
   SoftwareLicenseDeploymentType,
   SoftwareLicenseView,
@@ -103,6 +129,7 @@ import type {
   VulnerabilitySyncRunView,
   ZeroTrustAgentBreakdown,
   ZeroTrustAssignmentView,
+  ZeroTrustOverridableConditionKey,
   ZeroTrustPolicyDetail,
   ZeroTrustPolicySummary,
 } from "./types";
@@ -110,7 +137,7 @@ import type {
 export function useMe() {
   return useQuery({
     queryKey: ["me"],
-    queryFn: () => api.get<{ id: string; email: string }>("/auth/me"),
+    queryFn: () => api.get<MeView>("/auth/me"),
     retry: false,
   });
 }
@@ -119,8 +146,53 @@ export function useLogin() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (creds: { email: string; password: string }) =>
-      api.post<{ user: { email: string } }>("/auth/login", creds),
+      api.post<{ user: { email: string; role: AdminRole } }>("/auth/login", creds),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
+
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: ["adminUsers"],
+    queryFn: () => api.get<AdminUserListItem[]>("/admin/admin-users"),
+  });
+}
+
+export interface CreateAdminUserInput {
+  email: string;
+  password: string;
+  role: AdminRole;
+  moduleGrants: LicenseModuleKey[];
+}
+
+export function useCreateAdminUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateAdminUserInput) => api.post<AdminUserListItem>("/admin/admin-users", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["adminUsers"] }),
+  });
+}
+
+export interface UpdateAdminUserInput {
+  id: string;
+  role?: AdminRole;
+  moduleGrants?: LicenseModuleKey[];
+  password?: string;
+}
+
+export function useUpdateAdminUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateAdminUserInput) => api.patch<AdminUserListItem>(`/admin/admin-users/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["adminUsers"] }),
+  });
+}
+
+export function useDeleteAdminUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/admin-users/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["adminUsers"] }),
   });
 }
 
@@ -142,7 +214,9 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api.get<AgentListItem[]>("/admin/agents"),
-    refetchInterval: 5000,
+    // The whole-fleet list (inventory + per-agent vuln/ZT/patch rollups) is the heaviest
+    // admin query; 15s instead of 5s cuts its server load ~3x with no real UX cost.
+    refetchInterval: 15000,
   });
 }
 
@@ -171,11 +245,64 @@ export function useCreateEnrollmentToken() {
   });
 }
 
+export function useAgentConnectionSettings() {
+  return useQuery({
+    queryKey: ["agentConnectionSettings"],
+    queryFn: () => api.get<AgentConnectionSettingsView>("/admin/agent-connection"),
+  });
+}
+
+export function useSaveAgentConnectionSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { localUrl: string; webUrl: string; publicUrl: string }) =>
+      api.put<AgentConnectionSettingsView>("/admin/agent-connection", body),
+    onSuccess: (data) => qc.setQueryData(["agentConnectionSettings"], data),
+  });
+}
+
+export function useDownloadAgentSetup() {
+  return useMutation({
+    mutationFn: ({ tokenId, enrollmentToken }: { tokenId: string; enrollmentToken: string }) =>
+      api.postDownload(`/admin/enrollment-tokens/${tokenId}/setup-exe`, { enrollmentToken }, "EndpointProAgentSetup.exe"),
+  });
+}
+
 export function useRevokeEnrollmentToken() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del(`/admin/enrollment-tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["enrollmentTokens"] }),
+  });
+}
+
+export function useStartRemoteInstall() {
+  return useMutation({
+    mutationFn: (body: {
+      tokenId?: string;
+      // Omit when the caller has no token in hand (e.g. Network Scan's per-host "Install
+      // agent" button) - the server mints a short-lived, single-use one itself in that case.
+      enrollmentToken?: string;
+      serverUrl: string;
+      targets: string[];
+      username: string;
+      password: string;
+    }) => api.post<{ jobId: string }>("/admin/remote-install", body),
+  });
+}
+
+export function useRemoteInstallJob(jobId: string | undefined) {
+  return useQuery({
+    queryKey: ["remoteInstallJob", jobId],
+    queryFn: () => api.get<RemoteInstallJobView>(`/admin/remote-install/${jobId}`),
+    enabled: !!jobId,
+    // Stops polling once every task is past PENDING/RUNNING - a WinRM rollout across
+    // several targets can take minutes, no need to keep hitting the server once it's done.
+    refetchInterval: (query) => {
+      const job = query.state.data;
+      const stillWorking = job?.tasks.some((t) => t.status === "PENDING" || t.status === "RUNNING") ?? true;
+      return stillWorking ? 3000 : false;
+    },
   });
 }
 
@@ -324,10 +451,73 @@ export function useDispatchDeployment() {
   });
 }
 
-export function usePatchSummary() {
+// Either field is null when that platform has never been staged on this server (e.g. a
+// fresh install before anyone has run that platform's packaging pipeline with a manifest)
+// — rendered as "no build information available" rather than an error, see
+// agentBuild.service.ts.
+export function useAgentLatestBuild() {
   return useQuery({
-    queryKey: ["patchSummary"],
-    queryFn: () => api.get<PatchSummaryItem[]>("/admin/patches"),
+    queryKey: ["agentLatestBuild"],
+    queryFn: () => api.get<{ windows: AgentBuildInfo | null; linux: AgentBuildInfo | null }>("/admin/agent-updates/latest-build"),
+    refetchInterval: 30000,
+  });
+}
+
+export function useAgentUpdateJobs() {
+  return useQuery({
+    queryKey: ["agentUpdateJobs"],
+    queryFn: () => api.get<AgentUpdateJobListItem[]>("/admin/agent-updates/jobs"),
+    refetchInterval: 5000,
+  });
+}
+
+export function useAgentUpdateJob(jobId: string | undefined) {
+  return useQuery({
+    queryKey: ["agentUpdateJobs", jobId],
+    queryFn: () => api.get<AgentUpdateJobDetail>(`/admin/agent-updates/jobs/${jobId}`),
+    enabled: !!jobId,
+    refetchInterval: 3000,
+  });
+}
+
+// A single selection can freely mix Windows and Linux endpoints - the server splits it by
+// platform and returns one jobId per platform actually present (see
+// agentUpdate.service.ts's createAgentUpdateJob), so this always returns an array even for
+// an all-one-platform selection (just a single-element one).
+export function useDispatchAgentUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { agentIds: string[]; groupIds?: string[] }) =>
+      api.post<{ jobIds: string[]; skippedAgentIds: string[]; noBuildAgentIds: string[] }>("/admin/agent-updates/jobs", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agentUpdateJobs"] }),
+  });
+}
+
+// Offline agent rows left behind by a re-enrollment from before enrollment.service.ts's
+// hostname dedup existed - see findDuplicateAgents' own comment for exactly what qualifies.
+export function useDuplicateAgents() {
+  return useQuery({
+    queryKey: ["duplicateAgents"],
+    queryFn: () => api.get<DuplicateAgentEntry[]>("/admin/agents/duplicates"),
+  });
+}
+
+export function useDeleteDuplicateAgents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentIds: string[]) => api.post<{ deletedCount: number }>("/admin/agents/duplicates/delete", { agentIds }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["duplicateAgents"] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function usePatchSummary(groupId?: string) {
+  return useQuery({
+    queryKey: ["patchSummary", groupId ?? null],
+    queryFn: () =>
+      api.get<PatchSummaryItem[]>(`/admin/patches${groupId ? `?groupId=${encodeURIComponent(groupId)}` : ""}`),
     refetchInterval: 10000,
   });
 }
@@ -352,9 +542,43 @@ export function usePatchJob(jobId: string | undefined) {
 export function useDispatchPatchJob() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { updateIds: string[]; agentIds: string[]; groupIds?: string[] }) =>
+    mutationFn: (body: { updateIds: string[]; agentIds: string[]; groupIds?: string[]; scheduledAt?: string | null }) =>
       api.post<{ jobId: string }>("/admin/patches/jobs", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["patchJobs"] }),
+  });
+}
+
+export function useAutoPatchPolicies() {
+  return useQuery({
+    queryKey: ["autoPatchPolicies"],
+    queryFn: () => api.get<AutoPatchPolicyView[]>("/admin/patches/auto-policies"),
+    refetchInterval: 15000,
+  });
+}
+
+export function useCreateAutoPatchPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { enabled?: boolean; minSeverity: NormalizedSeverity; groupIds: string[] }) =>
+      api.post<AutoPatchPolicyView>("/admin/patches/auto-policies", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["autoPatchPolicies"] }),
+  });
+}
+
+export function useUpdateAutoPatchPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; enabled?: boolean; minSeverity?: NormalizedSeverity; groupIds?: string[] }) =>
+      api.patch<AutoPatchPolicyView>(`/admin/patches/auto-policies/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["autoPatchPolicies"] }),
+  });
+}
+
+export function useDeleteAutoPatchPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/patches/auto-policies/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["autoPatchPolicies"] }),
   });
 }
 
@@ -411,8 +635,9 @@ export function useVulnerabilityDetail(vulnerabilityDefinitionId: string | undef
 export function useRemediateVulnerability() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vulnerabilityDefinitionId: string) =>
-      api.post<VulnerabilityRemediationResult>(`/admin/vulnerabilities/${vulnerabilityDefinitionId}/remediate`),
+    // findingIds: the rows the admin ticked; omitted = every high-confidence finding.
+    mutationFn: ({ vulnerabilityDefinitionId, findingIds }: { vulnerabilityDefinitionId: string; findingIds?: string[] }) =>
+      api.post<VulnerabilityRemediationResult>(`/admin/vulnerabilities/${vulnerabilityDefinitionId}/remediate`, { findingIds }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["vulnerabilitySummary"] }),
   });
 }
@@ -584,6 +809,20 @@ export function useReleaseAgent() {
   });
 }
 
+// Permanently removes the management record - not a live/remote uninstall (that's
+// useUninstallAgent, on the agent detail page, which dispatches a command the endpoint
+// must be online to receive). This one is for a record with no corresponding live process
+// left at all - an orphaned duplicate from a re-enrollment before enrollment.service.ts's
+// hostname dedup existed, a decommissioned machine, or similar - deleting it here does
+// nothing to whatever's still installed on the actual endpoint, if anything is.
+export function useDeleteAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api.del(`/admin/agents/${agentId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+  });
+}
+
 export function useEnableRemoteAccess() {
   const qc = useQueryClient();
   return useMutation({
@@ -602,6 +841,30 @@ export function useDisableRemoteAccess() {
     onSuccess: (_data, agentId) => {
       qc.invalidateQueries({ queryKey: ["agents"] });
       qc.invalidateQueries({ queryKey: ["agents", agentId] });
+    },
+  });
+}
+
+export function usePauseAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api.post<void>(`/admin/agents/${agentId}/pause`),
+    onSuccess: (_data, agentId) => {
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agents", agentId] });
+      qc.invalidateQueries({ queryKey: ["licenseStatus"] });
+    },
+  });
+}
+
+export function useResumeAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api.post<void>(`/admin/agents/${agentId}/resume`),
+    onSuccess: (_data, agentId) => {
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agents", agentId] });
+      qc.invalidateQueries({ queryKey: ["licenseStatus"] });
     },
   });
 }
@@ -692,15 +955,18 @@ export function useSoftwareLicenses() {
 
 export interface SoftwareLicenseInput {
   softwareName: string;
+  version?: string | null;
   vendor?: string | null;
   licenseKey?: string | null;
   licenseType: LicenseType;
   seatsPurchased: number;
+  seatsInUseOverride?: number | null;
   purchaseDate?: string | null;
   expiryDate?: string | null;
   cost?: number | null;
   billingCycle?: SoftwareLicenseBillingCycle;
   deploymentType?: SoftwareLicenseDeploymentType | null;
+  accessType?: SoftwareLicenseAccessType | null;
   userDepartment?: string | null;
   notes?: string | null;
 }
@@ -726,6 +992,15 @@ export function useDeleteSoftwareLicense() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del(`/admin/software-licenses/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["softwareLicenses"] }),
+  });
+}
+
+export function useImportSoftwareLicenses() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (licenses: SoftwareLicenseInput[]) =>
+      api.post<{ count: number }>("/admin/software-licenses/import", { licenses }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["softwareLicenses"] }),
   });
 }
@@ -1027,12 +1302,62 @@ export function useZeroTrustAgentBreakdown(policyId: string | undefined) {
   });
 }
 
+// One breakdown per policy, same cache entries as useZeroTrustAgentBreakdown — for the
+// fleet-wide Device trust panel that shows every enabled policy at once.
+export function useZeroTrustAgentBreakdowns(policyIds: string[]) {
+  return useQueries({
+    queries: policyIds.map((policyId) => ({
+      queryKey: ["zeroTrustAgentBreakdown", policyId],
+      queryFn: () => api.get<ZeroTrustAgentBreakdown>(`/admin/zero-trust/${policyId}/agents`),
+      refetchInterval: 10000,
+    })),
+  });
+}
+
 export function useAgentZeroTrustFindings(agentId: string | undefined) {
   return useQuery({
     queryKey: ["agentZeroTrustFindings", agentId],
     queryFn: () => api.get<AgentZeroTrustFindingView[]>(`/admin/zero-trust/agents/${agentId}`),
     enabled: !!agentId,
     refetchInterval: 10000,
+  });
+}
+
+// See ZeroTrustCheckOverride's schema comment — this whole feature (the checkbox list this
+// powers, and the two mutations below) is deliberately the only surface it exists on.
+export function useZeroTrustOverridableConditionKeys() {
+  return useQuery({
+    queryKey: ["zeroTrustOverridableConditionKeys"],
+    queryFn: () => api.get<ZeroTrustOverridableConditionKey[]>("/admin/zero-trust/overrides/condition-keys"),
+  });
+}
+
+export function useForceComplyZeroTrust() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { agentIds: string[]; conditionKeys: string[] }) =>
+      api.post<{ appliedCount: number }>("/admin/zero-trust/overrides/force-comply", body),
+    // Invalidate every surface this can change — agent list/detail badges, the policy
+    // list's compliance %, and any open trust breakdown — same broad invalidation already
+    // used elsewhere for a mutation with several ripple effects.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustAgentBreakdown"] });
+    },
+  });
+}
+
+export function useRevokeZeroTrustOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { agentIds: string[]; conditionKeys: string[] }) =>
+      api.post<{ revokedCount: number }>("/admin/zero-trust/overrides/revoke", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustAgentBreakdown"] });
+    },
   });
 }
 
@@ -1723,6 +2048,258 @@ export function useWebBlockAgentBreakdown(policyId: string | undefined) {
     queryFn: () => api.get<WebBlockAgentBreakdown>(`/admin/web-block/${policyId}/agents`),
     enabled: !!policyId,
     refetchInterval: 5000,
+  });
+}
+
+export function usePiiBlockPolicies() {
+  return useQuery({
+    queryKey: ["piiBlockPolicies"],
+    queryFn: () => api.get<PiiBlockPolicySummary[]>("/admin/pii-block"),
+    refetchInterval: 10000,
+  });
+}
+
+export function usePiiBlockPolicy(id: string | undefined) {
+  return useQuery({
+    queryKey: ["piiBlockPolicies", id],
+    queryFn: () => api.get<PiiBlockPolicyDetail>(`/admin/pii-block/${id}`),
+    enabled: !!id,
+    refetchInterval: 5000,
+  });
+}
+
+export function useCreatePiiBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string | null; enabled?: boolean }) =>
+      api.post<PiiBlockPolicyDetail>("/admin/pii-block", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] }),
+  });
+}
+
+export function useUpdatePiiBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      description?: string | null;
+      enabled?: boolean;
+    }) => api.patch<PiiBlockPolicyDetail>(`/admin/pii-block/${id}`, body),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies", variables.id] });
+    },
+  });
+}
+
+export function useDeletePiiBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/pii-block/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] }),
+  });
+}
+
+export interface PiiBlockRuleInput {
+  ruleType: PiiBlockRuleType;
+  value: PiiPatternKey;
+  label?: string | null;
+}
+
+export function useAddPiiBlockRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, ...body }: { policyId: string } & PiiBlockRuleInput) =>
+      api.post<PiiBlockPolicyDetail>(`/admin/pii-block/${policyId}/rules`, body),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies", variables.policyId] });
+    },
+  });
+}
+
+export function useDeletePiiBlockRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, ruleId }: { policyId: string; ruleId: string }) =>
+      api.del(`/admin/pii-block/${policyId}/rules/${ruleId}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies", variables.policyId] });
+    },
+  });
+}
+
+export function usePiiBlockAssignments(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["piiBlockAssignments", policyId],
+    queryFn: () => api.get<PiiBlockAssignmentView[]>(`/admin/pii-block/${policyId}/assignments`),
+    enabled: !!policyId,
+  });
+}
+
+export function useAssignPiiBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, agentIds, groupIds }: { policyId: string; agentIds: string[]; groupIds: string[] }) =>
+      api.post<PiiBlockPolicyDetail>(`/admin/pii-block/${policyId}/assign`, { agentIds, groupIds }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies", variables.policyId] });
+      qc.invalidateQueries({ queryKey: ["piiBlockAssignments", variables.policyId] });
+    },
+  });
+}
+
+export function useUnassignPiiBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, assignmentId }: { policyId: string; assignmentId: string }) =>
+      api.del(`/admin/pii-block/${policyId}/assign/${assignmentId}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiBlockPolicies", variables.policyId] });
+      qc.invalidateQueries({ queryKey: ["piiBlockAssignments", variables.policyId] });
+    },
+  });
+}
+
+export function usePiiBlockAgentBreakdown(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["piiBlockAgentBreakdown", policyId],
+    queryFn: () => api.get<PiiBlockAgentBreakdown>(`/admin/pii-block/${policyId}/agents`),
+    enabled: !!policyId,
+    refetchInterval: 5000,
+  });
+}
+
+export function usePiiEmailBlockPolicies() {
+  return useQuery({
+    queryKey: ["piiEmailBlockPolicies"],
+    queryFn: () => api.get<PiiEmailBlockPolicySummary[]>("/admin/pii-email-block"),
+    refetchInterval: 10000,
+  });
+}
+
+export function usePiiEmailBlockPolicy(id: string | undefined) {
+  return useQuery({
+    queryKey: ["piiEmailBlockPolicies", id],
+    queryFn: () => api.get<PiiEmailBlockPolicyDetail>(`/admin/pii-email-block/${id}`),
+    enabled: !!id,
+    refetchInterval: 5000,
+  });
+}
+
+export function useCreatePiiEmailBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string | null; enabled?: boolean }) =>
+      api.post<PiiEmailBlockPolicyDetail>("/admin/pii-email-block", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] }),
+  });
+}
+
+export function useUpdatePiiEmailBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      description?: string | null;
+      enabled?: boolean;
+    }) => api.patch<PiiEmailBlockPolicyDetail>(`/admin/pii-email-block/${id}`, body),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies", variables.id] });
+    },
+  });
+}
+
+export function useDeletePiiEmailBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/pii-email-block/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] }),
+  });
+}
+
+export interface PiiEmailBlockRuleInput {
+  ruleType: PiiEmailBlockRuleType;
+  value: PiiPatternKey;
+  label?: string | null;
+}
+
+export function useAddPiiEmailBlockRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, ...body }: { policyId: string } & PiiEmailBlockRuleInput) =>
+      api.post<PiiEmailBlockPolicyDetail>(`/admin/pii-email-block/${policyId}/rules`, body),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies", variables.policyId] });
+    },
+  });
+}
+
+export function useDeletePiiEmailBlockRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, ruleId }: { policyId: string; ruleId: string }) =>
+      api.del(`/admin/pii-email-block/${policyId}/rules/${ruleId}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies", variables.policyId] });
+    },
+  });
+}
+
+export function usePiiEmailBlockAssignments(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["piiEmailBlockAssignments", policyId],
+    queryFn: () => api.get<PiiEmailBlockAssignmentView[]>(`/admin/pii-email-block/${policyId}/assignments`),
+    enabled: !!policyId,
+  });
+}
+
+export function useAssignPiiEmailBlock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, emailAddresses }: { policyId: string; emailAddresses: string[] }) =>
+      api.post<PiiEmailBlockPolicyDetail>(`/admin/pii-email-block/${policyId}/assign`, { emailAddresses }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies", variables.policyId] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockAssignments", variables.policyId] });
+    },
+  });
+}
+
+export function useUnassignPiiEmailBlock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, assignmentId }: { policyId: string; assignmentId: string }) =>
+      api.del(`/admin/pii-email-block/${policyId}/assign/${assignmentId}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockPolicies", variables.policyId] });
+      qc.invalidateQueries({ queryKey: ["piiEmailBlockAssignments", variables.policyId] });
+    },
+  });
+}
+
+export function usePiiEmailBlockEvents(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["piiEmailBlockEvents", policyId],
+    queryFn: () => api.get<PiiEmailBlockEventView[]>(`/admin/pii-email-block/${policyId}/events`),
+    enabled: !!policyId,
+    refetchInterval: 10000,
   });
 }
 
@@ -2444,4 +3021,37 @@ export function useTestLicenseServerConnection() {
     mutationFn: () => api.post<{ ok: boolean }>("/admin/license/server-config/test"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["licenseServerConfig"] }),
   });
+}
+
+// Readable by any authenticated admin (Layout.tsx needs this to filter its own nav
+// regardless of role); only a SUPER_ADMIN can actually change it (server-enforced on the
+// PUT, see moduleVisibility.routes.ts).
+export function useModuleVisibility() {
+  return useQuery({
+    queryKey: ["moduleVisibility"],
+    queryFn: () => api.get<ModuleVisibilityView>("/admin/module-visibility"),
+  });
+}
+
+export function useSetModuleVisibility() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { hiddenModuleKeys: string[]; hiddenItemPaths: string[] }) =>
+      api.put<ModuleVisibilityView>("/admin/module-visibility", body),
+    onSuccess: (data) => qc.setQueryData(["moduleVisibility"], data),
+  });
+}
+
+// Reusable "should this cross-cutting display (a Dashboard tile, a badge on the Endpoints
+// table, etc.) show itself" check — true if `path` was hidden directly, OR its whole
+// parent nav module was hidden (e.g. hiding all of Security Manager should also hide a
+// Dashboard vulnerability tile, not just the Vulnerabilities page itself). Any page that
+// surfaces data belonging to a specific nav item, outside that item's own route, should
+// gate its display with this rather than just relying on RequireModule/the nav filter.
+export function useIsItemHidden(path: string): boolean {
+  const { data } = useModuleVisibility();
+  if (!data) return false;
+  if (data.hiddenItemPaths.includes(path)) return true;
+  const parentModule = NAV_MODULES.find((m) => m.items?.some((item) => item.path === path));
+  return !!parentModule?.licenseModule && data.hiddenModuleKeys.includes(parentModule.licenseModule);
 }

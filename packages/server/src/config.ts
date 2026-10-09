@@ -18,6 +18,15 @@ const envSchema = z.object({
   // certificate is generated.
   TLS_PFX_PATH: z.string().optional(),
   TLS_PFX_PASSPHRASE: z.string().optional(),
+  // Optional, and only meaningful with the TLS pair above. Set, the server listens on BOTH
+  // ports: plain HTTP on PORT (so agents already enrolled against an http:// URL keep
+  // checking in) and HTTPS on TLS_PORT (Outlook add-in, console). Unset, HTTPS replaces
+  // HTTP on PORT, as before.
+  TLS_PORT: z.coerce.number().int().positive().optional(),
+  // Optional PEM file of intermediate CA certificate(s) to send alongside the PFX's leaf
+  // certificate — for a PFX exported without its chain. Node serves only what it's given,
+  // and strict clients (Outlook/Microsoft 365, Node, curl) reject an incomplete chain.
+  TLS_CA_CHAIN_PATH: z.string().optional(),
   // 32 raw bytes, base64-encoded — AES-256-GCM key for column-level encryption of a
   // handful of specifically sensitive fields (see utils/fieldEncryption.ts). Losing this
   // key makes every value it ever encrypted permanently unrecoverable — back it up
@@ -58,10 +67,25 @@ export const config = {
   jwtSecret: parsed.data.JWT_SECRET,
   uploadsDir: path.resolve(process.cwd(), parsed.data.UPLOADS_DIR),
   agentInstallerPath: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "EndpointProAgentSetup.exe"),
+  // Same directory, two more artifacts a packaging run stages alongside the interactive
+  // .exe: the raw installer zip (reused as-is for agent self-update - it already excludes
+  // config.json/.state, so extracting it over an existing install can't touch identity/
+  // enrollment) and a small manifest describing the version/checksum/release notes of
+  // whatever is currently staged here. See agentBuild.service.ts.
+  agentInstallerZipPath: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "EndpointProAgentInstaller.zip"),
+  agentManifestPath: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "agent-manifest.json"),
+  // Same idea, one directory level down, for the Linux agent (@em/agent-linux) — a
+  // self-installing tarball plus its own manifest, kept entirely separate from the Windows
+  // pair above since a mixed fleet needs the correct build served to each OS (see
+  // agentBuild.service.ts / agentUpdate.service.ts's per-platform job-splitting).
+  agentInstallerTarballPathLinux: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "linux", "EndpointProAgentLinux.tar.gz"),
+  agentManifestPathLinux: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "linux", "agent-manifest.json"),
   nvdApiKey: parsed.data.NVD_API_KEY,
   nvdRequestDelayMs: parsed.data.NVD_REQUEST_DELAY_MS,
   tlsPfxPath: parsed.data.TLS_PFX_PATH ? path.resolve(process.cwd(), parsed.data.TLS_PFX_PATH) : undefined,
   tlsPfxPassphrase: parsed.data.TLS_PFX_PASSPHRASE,
+  tlsPort: parsed.data.TLS_PORT,
+  tlsCaChainPath: parsed.data.TLS_CA_CHAIN_PATH ? path.resolve(process.cwd(), parsed.data.TLS_CA_CHAIN_PATH) : undefined,
   fieldEncryptionKey: Buffer.from(parsed.data.FIELD_ENCRYPTION_KEY, "base64"),
   licenseServerUrlSeed: parsed.data.LICENSE_SERVER_URL?.replace(/\/$/, ""),
   licenseServerCaPath: parsed.data.LICENSE_SERVER_CA_PATH

@@ -8,6 +8,7 @@ import type {
 } from "@em/shared";
 import { prisma } from "../db";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
+import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "./zeroTrustOverride.service";
 
 async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<string[]> {
   const assignments = await prisma.zeroTrustPolicyAssignment.findMany({ where: { policyId } });
@@ -30,15 +31,22 @@ export async function listPolicies() {
       conditions: { select: { id: true } },
       // Only enabled conditions' findings count toward the compliance figure —
       // a disabled condition's stale finding shouldn't drag the number down.
-      findings: { where: { condition: { enabled: true } }, select: { status: true } },
+      findings: { where: { condition: { enabled: true } }, select: { agentId: true, status: true, condition: { select: { conditionKey: true } } } },
     },
   });
+
+  const allAgentIds = [...new Set(policies.flatMap((p) => p.findings.map((f) => f.agentId)))];
+  const overriddenByAgent = await getOverriddenKeysByAgent(allAgentIds);
 
   return Promise.all(
     policies.map(async (p) => {
       const assignedAgentIds = await resolveAssignedAgentIdsForPolicy(p.id);
-      const passCount = p.findings.filter((f) => f.status === "PASS").length;
-      const gradedCount = p.findings.filter((f) => f.status === "PASS" || f.status === "FAIL").length;
+      const findings = excludeOverriddenFailures(
+        p.findings.map((f) => ({ agentId: f.agentId, status: f.status, conditionKey: f.condition.conditionKey })),
+        overriddenByAgent,
+      );
+      const passCount = findings.filter((f) => f.status === "PASS").length;
+      const gradedCount = findings.filter((f) => f.status === "PASS" || f.status === "FAIL").length;
       return {
         id: p.id,
         name: p.name,
@@ -62,8 +70,14 @@ export async function getPolicy(id: string) {
 
   const assignedAgentIds = await resolveAssignedAgentIdsForPolicy(id);
   const findings = await prisma.zeroTrustFinding.findMany({ where: { policyId: id } });
+  const conditionKeyById = new Map(policy.conditions.map((c) => [c.id, c.conditionKey]));
+  const overriddenByAgent = await getOverriddenKeysByAgent([...new Set(findings.map((f) => f.agentId))]);
+
   const findingsByCondition = new Map<string, { pass: number; fail: number; error: number }>();
   for (const f of findings) {
+    // A FAIL with an active override for its own conditionKey stops counting against this
+    // condition's tally — the row itself (and its real actualValue) isn't touched.
+    if (f.status === "FAIL" && overriddenByAgent.get(f.agentId)?.has(conditionKeyById.get(f.conditionId) ?? "")) continue;
     const bucket = findingsByCondition.get(f.conditionId) ?? { pass: 0, fail: 0, error: 0 };
     if (f.status === "PASS") bucket.pass++;
     else if (f.status === "ERROR") bucket.error++;
@@ -188,7 +202,11 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   const agents = assignedAgentIds.length > 0 ? await prisma.agent.findMany({ where: { id: { in: assignedAgentIds } } }) : [];
   // Only enabled conditions' findings count toward pass/fail/trust — a disabled
   // condition is excluded from evaluation entirely, not just informationally hidden.
-  const findings = await prisma.zeroTrustFinding.findMany({ where: { policyId, condition: { enabled: true } } });
+  const findings = await prisma.zeroTrustFinding.findMany({
+    where: { policyId, condition: { enabled: true } },
+    include: { condition: { select: { conditionKey: true } } },
+  });
+  const overriddenByAgent = await getOverriddenKeysByAgent([...new Set(findings.map((f) => f.agentId))]);
 
   const findingsByAgent = new Map<string, typeof findings>();
   for (const f of findings) {
@@ -197,14 +215,25 @@ export async function getPolicyAgentBreakdown(policyId: string) {
     findingsByAgent.set(f.agentId, list);
   }
 
-  const conditionCount = await prisma.zeroTrustCondition.count({ where: { policyId, enabled: true } });
+  const conditions = await prisma.zeroTrustCondition.findMany({
+    where: { policyId, enabled: true },
+    select: { id: true, conditionKey: true, title: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const conditionCount = conditions.length;
 
   return {
     policyId,
     name: policy.name,
+    // Enabled conditions only, so the console can show per-condition non-compliance.
+    conditions,
     agents: agents.map((a) => {
+      // Kept as the FULL raw list (including any overridden-fail rows) for `scanned`/
+      // completeness below — an override suppresses a failure from counting against
+      // trust, it doesn't make the condition un-scanned.
       const agentFindings = findingsByAgent.get(a.id) ?? [];
-      const failCount = agentFindings.filter((f) => f.status === "FAIL").length;
+      const overriddenKeys = overriddenByAgent.get(a.id);
+      const failCount = agentFindings.filter((f) => f.status === "FAIL" && !overriddenKeys?.has(f.condition.conditionKey)).length;
       const errorCount = agentFindings.filter((f) => f.status === "ERROR").length;
       return {
         agentId: a.id,
@@ -213,6 +242,13 @@ export async function getPolicyAgentBreakdown(policyId: string) {
         passCount: agentFindings.filter((f) => f.status === "PASS").length,
         failCount,
         errorCount,
+        // Conditions this endpoint currently fails (an overridden failure doesn't count,
+        // same as failCount) or errored on — what the per-condition tiles count.
+        nonCompliantConditionIds: agentFindings
+          .filter(
+            (f) => (f.status === "FAIL" && !overriddenKeys?.has(f.condition.conditionKey)) || f.status === "ERROR",
+          )
+          .map((f) => f.conditionId),
         // A device is trusted only once every condition in the policy has actually
         // been scanned and passed — unscanned/ERRORed conditions must not silently
         // read as trusted.

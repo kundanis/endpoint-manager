@@ -1,9 +1,18 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useAgents, useAssetGroups, useNetworkDeviceSummary, useQuarantineAgent, useReleaseAgent } from "../api/hooks";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  useAgents,
+  useAssetGroups,
+  useIsItemHidden,
+  useNetworkDeviceSummary,
+  useQuarantineAgent,
+  useReleaseAgent,
+} from "../api/hooks";
 import type { AgentListItem, DeviceType } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
 import Collapsible from "../components/Collapsible";
+import InstallAgentAction from "../components/InstallAgentAction";
+import { EndpointStatusDot } from "../components/EndpointLabel";
 
 function formatBytes(bytes: number | null): string {
   if (!bytes) return "—";
@@ -27,15 +36,25 @@ function csvCell(value: string | number | null | undefined): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function buildAgentsCsv(agents: AgentListItem[]): string {
+// Columns belonging to a hidden nav item (Module Visibility) are dropped from the export too,
+// not just from the on-screen table.
+function buildAgentsCsv(
+  agents: AgentListItem[],
+  hidden: { vulnerabilitiesHidden: boolean; zeroTrustHidden: boolean; patchesHidden: boolean },
+): string {
+  const { vulnerabilitiesHidden: hideVulnerabilities, zeroTrustHidden: hideZeroTrust, patchesHidden: hidePatches } =
+    hidden;
   const headers = [
     "Hostname", "Device Type", "Last Logged On User", "Status", "Last Check-in",
     "IP Address", "MAC Address", "Location", "OS Platform", "OS Version", "OS Architecture",
     "OS Edition", "OS License Status", "OS End of Support", "OS EOL", "Processor",
     "Physical Cores", "Logical Cores", "Memory (GB)", "Storage (GB)", "Disk Types",
     "Serial Number", "Vendor", "Purchase Date", "Warranty Expiry", "Warranty Status",
-    "Lifecycle Status", "Groups", "Zero Trust Non-Compliant", "Open Vulnerabilities",
-    "Last Patch Installed", "Quarantined", "Agent Version", "Enrolled At",
+    "Lifecycle Status", "Groups",
+    ...(hideZeroTrust ? [] : ["Zero Trust Non-Compliant"]),
+    ...(hideVulnerabilities ? [] : ["Open Vulnerabilities"]),
+    ...(hidePatches ? [] : ["Last Patch Installed"]),
+    "Quarantined", "Agent Version", "Enrolled At",
   ];
 
   const rows = agents.map((agent) => {
@@ -70,9 +89,9 @@ function buildAgentsCsv(agents: AgentListItem[]): string {
       agent.warrantyExpiryDate ? (isWarrantyExpired ? "Expired" : "Active") : "",
       agent.lifecycleStatus,
       agent.groups.map((g) => g.name).join(" | "),
-      agent.zeroTrustNonCompliantCount,
-      agent.openVulnerabilityCount,
-      agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleString() : "never",
+      ...(hideZeroTrust ? [] : [agent.zeroTrustNonCompliantCount]),
+      ...(hideVulnerabilities ? [] : [agent.openVulnerabilityCount]),
+      ...(hidePatches ? [] : [agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleString() : "never"]),
       agent.quarantined ? "Yes" : "No",
       agent.agentVersion,
       new Date(agent.createdAt).toLocaleString(),
@@ -90,15 +109,79 @@ const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
 
 type StatusFilter = "all" | "ONLINE" | "OFFLINE";
 
+// Same heuristic as NetworkScanPage's DiscoveredHostsTable: the scanner has no real
+// OS/device fingerprinting, but phones and tablets never expose Windows management ports
+// or SSH the way a PC/server does - used here as an opt-in filter, not a certainty. No
+// matchedAgent check needed (unlike NetworkScanPage's version) since every host reaching
+// this panel is, by definition, already unmanaged.
+const COMPUTER_SIGNATURE_PORTS = [22, 135, 139, 445, 3389];
+
+function looksLikeComputer(openPorts: number[]): boolean {
+  return openPorts.some((p) => COMPUTER_SIGNATURE_PORTS.includes(p));
+}
+
+// DOM id the "Network devices (unmanaged)" panel is rendered with, and the id the
+// Unmanaged tile above the endpoints table targets — see NETWORK_DEVICES_PANEL_ID usage
+// below and Collapsible's `id` prop.
+const NETWORK_DEVICES_PANEL_ID = "network-devices-unmanaged-panel";
+
+// The panel lives lower on this same page (in a collapsed-by-default <details>), so
+// "opening" it from the Unmanaged tile just means forcing it open and scrolling to it —
+// no route change needed, unlike a normal tile-click filter.
+function scrollToUnmanagedNetworkDevices() {
+  const el = document.getElementById(NETWORK_DEVICES_PANEL_ID);
+  if (el instanceof HTMLDetailsElement) {
+    el.open = true;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function NetworkDevicesPanel() {
   const { data: summary } = useNetworkDeviceSummary();
+  const [search, setSearch] = useState("");
+  const [computersOnly, setComputersOnly] = useState(true);
+
+  const term = search.trim().toLowerCase();
+  const filteredHosts = summary?.unmanagedHosts
+    .filter((h) => !computersOnly || looksLikeComputer(h.openPorts))
+    .filter(
+      (h) =>
+        !term ||
+        h.vlanName.toLowerCase().includes(term) ||
+        h.ipAddress.toLowerCase().includes(term) ||
+        (h.macAddress ?? "").toLowerCase().includes(term) ||
+        (h.hostname ?? "").toLowerCase().includes(term),
+    );
+  const totalCount = summary?.unmanagedHosts.length ?? 0;
+  const computerCount = summary?.unmanagedHosts.filter((h) => looksLikeComputer(h.openPorts)).length ?? 0;
+  const hiddenByTypeCount = computersOnly ? totalCount - computerCount : 0;
 
   return (
-    <Collapsible title="Network devices (unmanaged)" defaultOpen={false}>
+    <Collapsible id={NETWORK_DEVICES_PANEL_ID} title="Network devices (unmanaged)" defaultOpen={false}>
       <p>
         Devices seen on a scanned VLAN with no agent installed — routers, switches, printers, and similar
         infrastructure. From each VLAN's most recent Network Scan.
       </p>
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by hostname, IP, MAC, or VLAN…"
+        style={{ marginBottom: "0.6rem", width: "100%", maxWidth: "24rem" }}
+      />
+      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+        <input type="checkbox" checked={computersOnly} onChange={(e) => setComputersOnly(e.target.checked)} />
+        <span className="mono-cell">
+          ({computerCount}/{totalCount})
+        </span>
+        Laptops/desktops/servers only (hides phones, tablets, routers, switches, printers, and other non-PC devices)
+      </label>
+      {computersOnly && hiddenByTypeCount > 0 && (
+        <p style={{ color: "var(--text-muted)", fontSize: "0.85em" }}>
+          {hiddenByTypeCount} device{hiddenByTypeCount === 1 ? "" : "s"} hidden — heuristic based on open ports (no
+          Windows/SSH management ports responded), not a guaranteed device type.
+        </p>
+      )}
       <table className="data-table">
         <thead>
           <tr>
@@ -106,20 +189,29 @@ function NetworkDevicesPanel() {
             <th>IP address</th>
             <th>MAC address</th>
             <th>Hostname</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {summary?.unmanagedHosts.map((h) => (
+          {filteredHosts?.map((h) => (
             <tr key={`${h.vlanName}-${h.ipAddress}`}>
               <td>{h.vlanName}</td>
               <td className="mono-cell">{h.ipAddress}</td>
               <td className="mono-cell">{h.macAddress ?? "—"}</td>
               <td>{h.hostname ?? "—"}</td>
+              <td>
+                <InstallAgentAction hostname={h.hostname} ipAddress={h.ipAddress} />
+              </td>
             </tr>
           ))}
           {summary?.unmanagedHosts.length === 0 && (
             <tr>
-              <td colSpan={4}>No unmanaged devices found — scan a VLAN on the Network Scan page.</td>
+              <td colSpan={5}>No unmanaged devices found — scan a VLAN on the Network Scan page.</td>
+            </tr>
+          )}
+          {summary && summary.unmanagedHosts.length > 0 && filteredHosts?.length === 0 && (
+            <tr>
+              <td colSpan={5}>{term ? `No devices match "${search}".` : "All unmanaged devices were filtered out by the computers-only filter."}</td>
             </tr>
           )}
         </tbody>
@@ -131,9 +223,34 @@ function NetworkDevicesPanel() {
 export default function AgentsPage() {
   const { data: agents, isLoading, error } = useAgents();
   const { data: groups } = useAssetGroups();
+  // Shares the query-cache entry with NetworkDevicesPanel's own call below — only one
+  // network request either way, just needed here too for the Unmanaged tile's count.
+  const { data: networkDeviceSummary } = useNetworkDeviceSummary();
+  const vulnerabilitiesHidden = useIsItemHidden("/vulnerabilities");
+  const zeroTrustHidden = useIsItemHidden("/zero-trust");
+  const patchesHidden = useIsItemHidden("/patches");
+  // Initial filters can come from the URL, so Dashboard charts/tiles can deep-link here
+  // pre-filtered (e.g. /endpoints?status=OFFLINE, ?deviceType=LAPTOP, ?os=..., ?vuln=open).
+  const [searchParams, setSearchParams] = useSearchParams();
   const [groupFilter, setGroupFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [deviceTypeFilter, setDeviceTypeFilter] = useState<DeviceType | "">("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const s = searchParams.get("status");
+    return s === "ONLINE" || s === "OFFLINE" ? s : "all";
+  });
+  const [deviceTypeFilter, setDeviceTypeFilter] = useState<DeviceType | "">(() => {
+    const t = searchParams.get("deviceType");
+    return t === "LAPTOP" || t === "DESKTOP" || t === "SERVER" ? t : "";
+  });
+  // No dropdowns for these two — they're only ever set by a Dashboard link, and shown as a
+  // removable chip below so it's obvious why the list is narrowed.
+  const [osFilter, setOsFilter] = useState(() => searchParams.get("os") ?? "");
+  const [vulnFilter, setVulnFilter] = useState<"" | "open" | "none">(() => {
+    const v = searchParams.get("vuln");
+    return v === "open" || v === "none" ? v : "";
+  });
+  const [hostnameFilter, setHostnameFilter] = useState("");
+  const [ipFilter, setIpFilter] = useState("");
+  const [userFilter, setUserFilter] = useState("");
   const quarantine = useQuarantineAgent();
   const release = useReleaseAgent();
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
@@ -163,11 +280,24 @@ export default function AgentsPage() {
   const totalCount = agents?.length ?? 0;
   const onlineCount = agents?.filter((a) => a.status === "ONLINE").length ?? 0;
   const offlineCount = agents?.filter((a) => a.status === "OFFLINE").length ?? 0;
+  const unmanagedCount = networkDeviceSummary?.unmanagedHosts.length ?? 0;
 
   const filteredAgents = agents
     ?.filter((agent) => !groupFilter || agent.groups.some((g) => g.id === groupFilter))
     .filter((agent) => statusFilter === "all" || agent.status === statusFilter)
-    .filter((agent) => !deviceTypeFilter || agent.deviceType === deviceTypeFilter);
+    .filter((agent) => !deviceTypeFilter || agent.deviceType === deviceTypeFilter)
+    // Same "Unknown" fallback the Dashboard's OS chart uses (dashboard.service.ts).
+    .filter((agent) => !osFilter || (agent.osEditionLabel || "Unknown") === osFilter)
+    .filter(
+      (agent) =>
+        !vulnFilter || (vulnFilter === "open" ? agent.openVulnerabilityCount > 0 : agent.openVulnerabilityCount === 0),
+    )
+    .filter((agent) => !hostnameFilter.trim() || agent.hostname.toLowerCase().includes(hostnameFilter.trim().toLowerCase()))
+    .filter((agent) => !ipFilter.trim() || (agent.ipAddress ?? "").toLowerCase().includes(ipFilter.trim().toLowerCase()))
+    .filter(
+      (agent) =>
+        !userFilter.trim() || (agent.inventory?.lastLoggedOnUser ?? "").toLowerCase().includes(userFilter.trim().toLowerCase()),
+    );
 
   return (
     <div>
@@ -192,7 +322,52 @@ export default function AgentsPage() {
           <div className="tile-label">Offline</div>
           <div className="tile-value">{offlineCount}</div>
         </div>
+        <div
+          className="tile accent-warn"
+          onClick={scrollToUnmanagedNetworkDevices}
+          title="Devices seen on a scanned VLAN with no agent installed — jumps to the Network devices (unmanaged) panel below"
+        >
+          <div className="tile-label">Unmanaged</div>
+          <div className="tile-value">{unmanagedCount}</div>
+        </div>
       </div>
+
+      {(osFilter || vulnFilter) && (
+        <p>
+          {osFilter && (
+            <span className="filter-chip">
+              Operating system: {osFilter}{" "}
+              <button
+                type="button"
+                aria-label="Clear operating system filter"
+                onClick={() => {
+                  setOsFilter("");
+                  searchParams.delete("os");
+                  setSearchParams(searchParams, { replace: true });
+                }}
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {vulnFilter && (
+            <span className="filter-chip">
+              {vulnFilter === "open" ? "Has open vulnerabilities" : "No open vulnerabilities"}{" "}
+              <button
+                type="button"
+                aria-label="Clear vulnerability filter"
+                onClick={() => {
+                  setVulnFilter("");
+                  searchParams.delete("vuln");
+                  setSearchParams(searchParams, { replace: true });
+                }}
+              >
+                ×
+              </button>
+            </span>
+          )}
+        </p>
+      )}
 
       {groups && groups.length > 0 && (
         <label style={{ display: "inline-block", marginBottom: "1rem", marginRight: "1rem" }}>
@@ -218,9 +393,39 @@ export default function AgentsPage() {
         </select>
       </label>
 
+      <label style={{ display: "inline-block", marginBottom: "1rem", marginRight: "1rem" }}>
+        Filter by hostname
+        <input
+          type="text"
+          value={hostnameFilter}
+          onChange={(e) => setHostnameFilter(e.target.value)}
+          placeholder="Hostname…"
+        />
+      </label>
+
+      <label style={{ display: "inline-block", marginBottom: "1rem", marginRight: "1rem" }}>
+        Filter by IP
+        <input
+          type="text"
+          value={ipFilter}
+          onChange={(e) => setIpFilter(e.target.value)}
+          placeholder="IP address…"
+        />
+      </label>
+
+      <label style={{ display: "inline-block", marginBottom: "1rem", marginRight: "1rem" }}>
+        Filter by user
+        <input
+          type="text"
+          value={userFilter}
+          onChange={(e) => setUserFilter(e.target.value)}
+          placeholder="Logged-on user…"
+        />
+      </label>
+
       <button
         type="button"
-        onClick={() => downloadTextFile("endpoints.csv", buildAgentsCsv(filteredAgents ?? []))}
+        onClick={() => downloadTextFile("endpoints.csv", buildAgentsCsv(filteredAgents ?? [], { vulnerabilitiesHidden, zeroTrustHidden, patchesHidden }))}
         disabled={!filteredAgents || filteredAgents.length === 0}
         style={{ verticalAlign: "top" }}
       >
@@ -245,7 +450,7 @@ export default function AgentsPage() {
               <th>Memory</th>
               <th>Storage</th>
               <th>Warranty expiry</th>
-              <th>Last patch installed</th>
+              {!patchesHidden && <th>Last patch installed</th>}
               <th>Groups</th>
             </tr>
           </thead>
@@ -260,6 +465,7 @@ export default function AgentsPage() {
                 <>
                 <tr key={agent.id}>
                   <td>
+                    <EndpointStatusDot agentId={agent.id} />
                     <Link to={`/endpoints/${agent.id}`}>{agent.hostname}</Link>
                   </td>
                   <td>{DEVICE_TYPE_LABEL[agent.deviceType]}</td>
@@ -322,23 +528,30 @@ export default function AgentsPage() {
                       "—"
                     )}
                   </td>
-                  <td>
-                    {agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleDateString() : "—"}
-                  </td>
+                  {!patchesHidden && (
+                    <td>
+                      {agent.lastPatchInstalledAt ? new Date(agent.lastPatchInstalledAt).toLocaleDateString() : "—"}
+                    </td>
+                  )}
                   <td>{agent.groups.map((g) => g.name).join(", ") || "—"}</td>
                 </tr>
                 <tr key={`${agent.id}-summary`} className="agent-summary-row">
                   <td colSpan={16}>
                     <div className="agent-summary-row-content">
-                      <StatusBadge
-                        kind={agent.zeroTrustNonCompliantCount > 0 ? "fail" : "pass"}
-                        label={`Zero Trust: ${agent.zeroTrustNonCompliantCount} non-compliant`}
-                      />
-                      <StatusBadge
-                        kind={agent.openVulnerabilityCount > 0 ? "warn" : "pass"}
-                        label={`${agent.openVulnerabilityCount} vulnerabilit${agent.openVulnerabilityCount === 1 ? "y" : "ies"}`}
-                      />
+                      {!zeroTrustHidden && (
+                        <StatusBadge
+                          kind={agent.zeroTrustNonCompliantCount > 0 ? "fail" : "pass"}
+                          label={`Zero Trust: ${agent.zeroTrustNonCompliantCount} non-compliant`}
+                        />
+                      )}
+                      {!vulnerabilitiesHidden && (
+                        <StatusBadge
+                          kind={agent.openVulnerabilityCount > 0 ? "warn" : "pass"}
+                          label={`${agent.openVulnerabilityCount} vulnerabilit${agent.openVulnerabilityCount === 1 ? "y" : "ies"}`}
+                        />
+                      )}
                       {agent.quarantined && <StatusBadge kind="lock" label="Quarantined" />}
+                      {agent.paused && <StatusBadge kind="warn" label="Paused" />}
                       <button
                         type="button"
                         className="quarantine-toggle-btn"
