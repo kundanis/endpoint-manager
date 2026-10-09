@@ -1,11 +1,11 @@
 import { Router } from "express";
-import { getDashboardSummary } from "../services/dashboard.service";
+import { getDashboardSummaryCached } from "../cache/fleetCache";
 
 export const dashboardRouter = Router();
 
 dashboardRouter.get("/summary", async (_req, res, next) => {
   try {
-    res.json(await getDashboardSummary());
+    res.json(await getDashboardSummaryCached());
   } catch (err) {
     next(err);
   }

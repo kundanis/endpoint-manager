@@ -45,6 +45,7 @@ import {
 import { getLatestAgentUpdateTaskByAgent } from "../services/agentUpdate.service";
 import { getLastPatchInstalledAtByAgent, getLatestMissingPatchByAgent } from "../services/patch.service";
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "../services/zeroTrustOverride.service";
+import { getAgentRollupsCached } from "../cache/fleetCache";
 import { quarantineAgents, releaseAgents } from "../services/quarantine.service";
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
 import { pauseAgent, resumeAgent, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
@@ -96,30 +97,13 @@ adminRouter.get("/agents", async (_req, res, next) => {
       },
     });
 
-    // Per-agent counts for the endpoint list's summary row — computed once for the
-    // whole list rather than N+1 queries per row.
-    const [openVulnGroups, nonCompliantZtFindingsRaw, lastPatchInstalledByAgent, latestUpdateTaskByAgent] = await Promise.all([
-      // Count open findings per agent in SQL (one row per agent) instead of pulling every
-      // open finding into Node - the finding table can hold hundreds of thousands of rows.
-      prisma.vulnerabilityFinding.groupBy({ by: ["agentId"], where: { status: "OPEN" }, _count: { _all: true } }),
-      // Only enabled conditions count — matches the same filter used everywhere else
-      // a Zero Trust compliance figure is computed.
-      prisma.zeroTrustFinding.findMany({
-        where: { status: "FAIL", condition: { enabled: true } },
-        select: { agentId: true, status: true, condition: { select: { conditionKey: true } } },
-      }),
-      getLastPatchInstalledAtByAgent(),
-      getLatestAgentUpdateTaskByAgent(agents.map((a) => a.id)),
-    ]);
-    const overriddenByAgent = await getOverriddenKeysByAgent([...new Set(nonCompliantZtFindingsRaw.map((f) => f.agentId))]);
-    const nonCompliantZtFindings = excludeOverriddenFailures(
-      nonCompliantZtFindingsRaw.map((f) => ({ agentId: f.agentId, status: f.status, conditionKey: f.condition.conditionKey })),
-      overriddenByAgent,
-    );
-    const vulnCountByAgent = new Map<string, number>();
-    for (const g of openVulnGroups) vulnCountByAgent.set(g.agentId, g._count._all);
-    const ztCountByAgent = new Map<string, number>();
-    for (const f of nonCompliantZtFindings) ztCountByAgent.set(f.agentId, (ztCountByAgent.get(f.agentId) ?? 0) + 1);
+    // Per-agent rollups for the endpoint list's summary row. Served from the fleet cache
+    // (recomputed on a short timer) instead of running these fleet-wide scans on every poll
+    // from every open console tab - the vulnerability table alone can hold hundreds of
+    // thousands of rows. The agent list itself (above) stays live, so per-agent actions
+    // (quarantine, pause, status) still reflect immediately.
+    const { vulnCountByAgent, ztCountByAgent, lastPatchByAgent: lastPatchInstalledByAgent, latestUpdateTaskByAgent } =
+      await getAgentRollupsCached();
 
     res.json(
       agents.map((a) => ({
