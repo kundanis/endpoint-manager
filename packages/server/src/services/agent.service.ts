@@ -5,6 +5,7 @@ import { buildUninstallScript, UNINSTALL_TIMEOUT_SEC } from "./vulnerabilityReme
 import { verifyUninstallPassword } from "./agentSecurity.service";
 import { incrementTotalAgentsUninstalled } from "./licenseActivation.service";
 import { computeStatus } from "./agentDerived.util";
+import { effectiveLastCheckin } from "../presence/presence";
 
 export class IncorrectUninstallPasswordError extends Error {}
 
@@ -336,14 +337,14 @@ export async function findDuplicateAgents() {
     if (group.length < 2) continue;
 
     const [primary] = [...group].sort((a, b) => {
-      const at = a.lastCheckinAt?.getTime() ?? 0;
-      const bt = b.lastCheckinAt?.getTime() ?? 0;
+      const at = effectiveLastCheckin(a.id, a.lastCheckinAt)?.getTime() ?? 0;
+      const bt = effectiveLastCheckin(b.id, b.lastCheckinAt)?.getTime() ?? 0;
       return at !== bt ? bt - at : b.createdAt.getTime() - a.createdAt.getTime();
     });
 
     for (const agent of group) {
       if (agent.id === primary.id) continue;
-      const status = computeStatus(agent.lastCheckinAt);
+      const status = computeStatus(effectiveLastCheckin(agent.id, agent.lastCheckinAt));
       if (status !== "OFFLINE") continue;
       if (compareVersions(agent.agentVersion, primary.agentVersion) >= 0) continue;
 
@@ -354,7 +355,7 @@ export async function findDuplicateAgents() {
         lastLoggedOnUser: agent.inventory?.lastLoggedOnUser ?? null,
         status,
         agentVersion: agent.agentVersion,
-        lastCheckinAt: agent.lastCheckinAt?.toISOString() ?? null,
+        lastCheckinAt: effectiveLastCheckin(agent.id, agent.lastCheckinAt)?.toISOString() ?? null,
         createdAt: agent.createdAt.toISOString(),
       });
     }

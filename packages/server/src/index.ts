@@ -9,6 +9,7 @@ import { runAutoPatchPolicies } from "./services/autoPatchPolicy.service";
 import { reconcileStaleAgentUpdateTasks } from "./services/agentUpdate.service";
 import { failInterruptedSyncRuns } from "./services/vulnerability.service";
 import { startFleetCache } from "./cache/fleetCache";
+import { startPresenceFlush } from "./presence/presence";
 
 // Last-resort safety net: without this, an unhandled rejection anywhere the request/response
 // try/catch chain doesn't reach (e.g. a future bug shaped like the one just fixed in
@@ -56,6 +57,7 @@ scheduleLicenseRevalidation();
 schedulePatchAutomation();
 scheduleStaleAgentUpdateReconciliation();
 startFleetCache();
+startPresenceFlush();
 
 // Re-validates roughly once a day against the License Server, not on a fixed wall-clock
 // time — scheduled off lastRevalidatedAt so a fleet of separate customer installs doesn't

@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { computeStatus, deriveDeviceType, extractOsEditionLabel } from "./agentDerived.util";
+import { effectiveLastCheckin } from "../presence/presence";
 import { getFleetTrustSummary } from "./zeroTrustPolicy.service";
 import { getNetworkDeviceSummary } from "./networkVlan.service";
 
@@ -21,7 +22,7 @@ export async function getDashboardSummary() {
   const osCounts = new Map<string, number>();
 
   for (const a of agents) {
-    if (computeStatus(a.lastCheckinAt) === "ONLINE") onlineCount++;
+    if (computeStatus(effectiveLastCheckin(a.id, a.lastCheckinAt)) === "ONLINE") onlineCount++;
 
     // `|| ` (not `??`) deliberately also catches a genuinely empty distro string —
     // seen on this real fleet from an agent enrolled before osInfo.distro was reliably

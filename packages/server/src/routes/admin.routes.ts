@@ -46,6 +46,7 @@ import { getLatestAgentUpdateTaskByAgent } from "../services/agentUpdate.service
 import { getLastPatchInstalledAtByAgent, getLatestMissingPatchByAgent } from "../services/patch.service";
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "../services/zeroTrustOverride.service";
 import { getAgentRollupsCached } from "../cache/fleetCache";
+import { effectiveLastCheckin } from "../presence/presence";
 import { quarantineAgents, releaseAgents } from "../services/quarantine.service";
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
 import { pauseAgent, resumeAgent, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
@@ -151,8 +152,8 @@ adminRouter.get("/agents", async (_req, res, next) => {
               battery: buildBatteryView(a.inventory),
             }
           : null,
-        lastCheckinAt: a.lastCheckinAt?.toISOString() ?? null,
-        status: computeStatus(a.lastCheckinAt),
+        lastCheckinAt: effectiveLastCheckin(a.id, a.lastCheckinAt)?.toISOString() ?? null,
+        status: computeStatus(effectiveLastCheckin(a.id, a.lastCheckinAt)),
         createdAt: a.createdAt.toISOString(),
       })),
     );
@@ -220,8 +221,8 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       lastPatchInstalledAt: lastPatchInstalledByAgent.get(agent.id)?.toISOString() ?? null,
       latestUpdateTask: latestUpdateTaskByAgent.get(agent.id) ?? null,
       latestAvailablePatch,
-      lastCheckinAt: agent.lastCheckinAt?.toISOString() ?? null,
-      status: computeStatus(agent.lastCheckinAt),
+      lastCheckinAt: effectiveLastCheckin(agent.id, agent.lastCheckinAt)?.toISOString() ?? null,
+      status: computeStatus(effectiveLastCheckin(agent.id, agent.lastCheckinAt)),
       createdAt: agent.createdAt.toISOString(),
       inventory: agent.inventory
         ? {

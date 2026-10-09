@@ -6,6 +6,7 @@ import { matchAgentInventory } from "./vulnerabilityMatch.service";
 import { refreshIpGeoIfStale } from "./ipGeo.service";
 import { decryptField } from "../utils/fieldEncryption";
 import { getServerUrlsForCheckin } from "./agentConnection.service";
+import { recordCheckin } from "../presence/presence";
 
 // Shared by both the paused and normal branches below - an agent update is a fleet
 // hygiene/security concern (staying on a current, non-vulnerable build), not "new work"
@@ -37,21 +38,13 @@ export async function handleCheckin(
   macAddress: string | null,
   agentVersion: string | null,
 ): Promise<CheckinResponse> {
-  const agent = await prisma.agent.update({
-    where: { id: agentId },
-    data: {
-      lastCheckinAt: new Date(),
-      ipAddress: ipAddress ?? undefined,
-      macAddress: macAddress ?? undefined,
-      // Self-corrects on every checkin from whatever the agent actually reports itself
-      // running (see checkin.schema.ts) rather than staying frozen at whatever was
-      // reported once at enroll — a successful self-update (agentUpdate.service.ts) still
-      // updates this too, redundantly but harmlessly, since both end up writing the same
-      // value once the endpoint's next checkin lands anyway.
-      agentVersion: agentVersion ?? undefined,
-    },
-    select: { paused: true },
-  });
+  // Presence (last check-in time + the agent's self-reported ip/mac/version) is tracked in
+  // memory and flushed to the Agent row periodically, instead of writing that row on every
+  // single check-in - see presence.ts. Reads overlay the in-memory value (effectiveLastCheckin)
+  // so online/offline still reflects instantly. We still read `paused` live by PK (cheap) so a
+  // newly-paused agent is honored on its very next check-in.
+  recordCheckin(agentId, { ipAddress, macAddress, agentVersion });
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { paused: true } });
 
   // Fire-and-forget — an external geo-IP lookup must never block or fail a checkin.
   void refreshIpGeoIfStale(agentId, ipAddress).catch((err) =>
@@ -65,7 +58,7 @@ export async function handleCheckin(
   // paused, since pause.service.ts itself relies on dispatching a release command before
   // the pause actually takes effect in the database, and an uninstall must always be
   // deliverable regardless of pause state.
-  if (agent.paused) {
+  if (agent?.paused) {
     const bypassCommands = await prisma.commandTask.findMany({
       where: { agentId, status: "PENDING", job: { bypassesPause: true } },
       include: { job: true },
