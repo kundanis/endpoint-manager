@@ -15,6 +15,7 @@ import { adminRouter } from "./routes/admin.routes";
 import { commandsRouter } from "./routes/commands.routes";
 import { commandTemplatesRouter } from "./routes/commandTemplates.routes";
 import { dashboardRouter } from "./routes/dashboard.routes";
+import { eventsRouter } from "./routes/events.routes";
 import { packagesRouter } from "./routes/packages.routes";
 import { deploymentsRouter } from "./routes/deployments.routes";
 import { agentUpdatesRouter } from "./routes/agentUpdates.routes";
@@ -120,6 +121,8 @@ export function createApp() {
   // includes (Dashboard for a fleet overview, Licensing so the admin can even see/fix
   // their license in the first place).
   app.use("/api/admin/dashboard", adminAuthMiddleware, dashboardRouter);
+  // SSE push stream for the console - no module gate (it carries cross-module invalidations).
+  app.use("/api/admin/events", adminAuthMiddleware, eventsRouter);
   app.use("/api/admin/commands", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandsRouter);
   app.use("/api/admin/command-templates", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandTemplatesRouter);
   app.use("/api/admin/packages", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), packagesRouter);

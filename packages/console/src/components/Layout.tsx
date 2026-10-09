@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
+import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
 import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
@@ -42,6 +43,8 @@ function isModuleUngranted(module: NavModule, me: ReturnType<typeof useMe>["data
 }
 
 export default function Layout() {
+  // Live push stream: refreshes data the moment the server says it changed (see serverEvents).
+  useServerEvents();
   const { data: me } = useMe();
   const { data: licenseStatus } = useLicenseStatus();
   const { data: visibility } = useModuleVisibility();

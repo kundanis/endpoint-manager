@@ -214,9 +214,9 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api.get<AgentListItem[]>("/admin/agents"),
-    // The whole-fleet list (inventory + per-agent vuln/ZT/patch rollups) is the heaviest
-    // admin query; 15s instead of 5s cuts its server load ~3x with no real UX cost.
-    refetchInterval: 15000,
+    // Freshness is now driven by the server's SSE push (see serverEvents); this interval is
+    // just a safety-net fallback for when the stream is briefly down, so it can be long.
+    refetchInterval: 60000,
   });
 }
 
@@ -2852,7 +2852,8 @@ export function useDashboardSummary() {
   return useQuery({
     queryKey: ["dashboardSummary"],
     queryFn: () => api.get<DashboardSummary>("/admin/dashboard/summary"),
-    refetchInterval: 10000,
+    // Driven by the server's SSE push (see serverEvents); long interval is just a fallback.
+    refetchInterval: 60000,
   });
 }
 

@@ -4,6 +4,7 @@ import { getDashboardSummary } from "../services/dashboard.service";
 import { getLatestAgentUpdateTaskByAgent } from "../services/agentUpdate.service";
 import { getLastPatchInstalledAtByAgent } from "../services/patch.service";
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "../services/zeroTrustOverride.service";
+import { emitInvalidate } from "../events/bus";
 
 // In-process cache of the fleet-wide aggregates that the Dashboard and the Endpoints list
 // recompute on every poll from every open console tab: the dashboard summary, and the
@@ -34,6 +35,7 @@ const REFRESH_MS = 10_000;
 let dashboardSummary: DashboardSummary | null = null;
 let agentRollups: AgentRollups | null = null;
 let refreshing = false; // re-entrancy guard: never run two refreshes at once
+let lastSignature = ""; // to push an SSE nudge only when the cached data actually changed
 
 async function computeRollups(): Promise<AgentRollups> {
   // Computed for the whole fleet (not a request's specific id list) so the cache is shared by
@@ -75,6 +77,21 @@ async function refresh(): Promise<void> {
     const [summary, rollups] = await Promise.all([getDashboardSummary(), computeRollups()]);
     dashboardSummary = summary;
     agentRollups = rollups;
+
+    // Push an SSE nudge to open consoles only when the fleet data actually changed, so they
+    // refetch within one refresh cycle of any change instead of polling constantly. The
+    // signature is a cheap stringify of the small cached values (~fleet-sized).
+    const signature =
+      JSON.stringify(summary) +
+      "|" +
+      JSON.stringify([...rollups.vulnCountByAgent]) +
+      JSON.stringify([...rollups.ztCountByAgent]) +
+      JSON.stringify([...rollups.lastPatchByAgent]) +
+      JSON.stringify([...rollups.latestUpdateTaskByAgent]);
+    if (signature !== lastSignature) {
+      lastSignature = signature;
+      emitInvalidate(["agents", "dashboardSummary"]);
+    }
   } catch (err) {
     logger.error({ err }, "Fleet cache refresh failed - serving last good values");
   } finally {
