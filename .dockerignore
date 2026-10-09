@@ -1,0 +1,24 @@
+# Build context is the repo root (docker/Dockerfile). Keep it lean and never ship secrets or
+# prebuilt outputs - the image rebuilds everything from source.
+**/node_modules
+**/dist
+**/dist-installer
+packages/server/console-dist
+packages/server/console-dist.bak-*
+packages/server/agent-installer
+**/.env
+**/.env.local
+.git
+**/*.log
+.state
+**/.state
+# Windows C++ driver build outputs (not part of the server image)
+native-dlp/bin
+native-dlp/**/x64
+native-dlp/**/Debug
+native-dlp/**/Release
+# Large repo odds and ends not needed to build the server image
+qa
+QurantineDats
+docs
+*.zip

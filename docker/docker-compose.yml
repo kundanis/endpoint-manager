@@ -1,0 +1,63 @@
+# Endpoint Pro - one-command deployment (server + console + SQL Server).
+#
+#   cd docker
+#   cp .env.example .env     # then edit secrets in .env
+#   docker compose up -d --build
+#
+# The server auto-creates the database, applies migrations and seeds the first admin on start
+# (idempotent, safe to restart). Open http://<host>:4000 and sign in with ADMIN_EMAIL /
+# ADMIN_PASSWORD, then set Enrollment Tokens -> Server connection details.
+#
+# NOTE: Remote agent install and server-side network scan are unavailable in the Linux image
+# (they need Windows/WinRM) - install agents with the downloadable setup exe instead.
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD:?set SA_PASSWORD in .env}
+      MSSQL_PID: Express
+    volumes:
+      - mssql-data:/var/opt/mssql
+    # Not published to the host by default - only the server container needs it. Uncomment to
+    # connect an external SQL client for debugging.
+    # ports:
+    #   - "1433:1433"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -No -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "4000"
+      # sa for the bundled DB. The server creates the DB on first start (via MASTER_DATABASE_URL).
+      DB_NAME: ${DB_NAME:-EndpointManagerDb}
+      DATABASE_URL: "sqlserver://db:1433;database=${DB_NAME:-EndpointManagerDb};user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
+      MASTER_DATABASE_URL: "sqlserver://db:1433;database=master;user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?set FIELD_ENCRYPTION_KEY in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@endpointpro.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads:/app/uploads
+      # Place built agent installers here so Console -> Download agent installer works.
+      - ./agent-installer:/app/agent-installer
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+  uploads:
