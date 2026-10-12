@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import type { DataDiscoveryRegulation } from "@em/shared";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAgents,
+  useAgentDataDiscoveryFindings,
   useAssetGroups,
   useAssignDataDiscoveryPolicy,
   useCreateDataDiscoveryPolicy,
@@ -177,10 +178,58 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
 
 type ResultsFilter = "all" | "flagged" | "clean" | "nothing-scanned";
 
+// Expanded drill-down shown under an endpoint row: the files where personal data was found on
+// that endpoint, with the category of each match (Aadhaar, PAN, credit card, …), the match
+// count, and masked previews. Scoped to this policy. Reuses the same per-agent findings API
+// the endpoint detail page uses.
+function AgentFindingsDetail({ agentId, policyId }: { agentId: string; policyId: string }) {
+  const { data: findings } = useAgentDataDiscoveryFindings(agentId);
+  if (!findings) return <p style={{ color: "var(--text-muted)" }}>Loading findings…</p>;
+  const forPolicy = findings.filter((f) => f.policyId === policyId);
+  if (forPolicy.length === 0) return <p style={{ color: "var(--text-muted)" }}>No file-level findings recorded for this endpoint yet.</p>;
+
+  return (
+    <table className="data-table" style={{ margin: "0.25rem 0" }}>
+      <thead>
+        <tr>
+          <th>File path</th>
+          <th>Category of data found</th>
+          <th>Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {forPolicy.map((f) => (
+          <tr key={f.id}>
+            <td className="mono-cell">{f.filePath}</td>
+            <td>
+              {f.matches.map((m) => (
+                <div key={m.label} style={{ marginBottom: "0.4rem" }}>
+                  <span className="status-badge danger">
+                    {m.label} ({m.count})
+                  </span>
+                  {m.samples.length > 0 && (
+                    <div className="mono-cell" style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
+                      {m.samples.join(", ")}
+                      {m.count > m.samples.length ? ` (+${m.count - m.samples.length} more)` : ""}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </td>
+            <td>{new Date(f.lastSeenAt).toLocaleString()}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function ResultsPanel({ policyId }: { policyId: string }) {
   const { data: breakdown } = useDataDiscoveryAgentBreakdown(policyId);
   const scanNow = useRequestDataDiscoveryScanNow();
   const [filter, setFilter] = useState<ResultsFilter>("all");
+  // Which endpoint's file-level findings are expanded, if any.
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
 
   const agents = breakdown?.agents ?? [];
   // A scan that read zero files proves nothing — it isn't "clean", it means none of the
@@ -254,40 +303,58 @@ function ResultsPanel({ policyId }: { policyId: string }) {
           </tr>
         </thead>
         <tbody>
-          {filtered.map((a) => (
-            <tr key={a.agentId}>
-              <td>
-                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-              </td>
-              <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
-              <td>{a.filesScanned ?? "—"}</td>
-              <td>
-                {a.fileCount > 0 ? (
-                  <StatusBadge kind="fail" label={`${a.fileCount} file${a.fileCount === 1 ? "" : "s"}`} />
-                ) : readNothing(a) ? (
-                  <StatusBadge kind="warn" label="Nothing scanned — check target paths" />
-                ) : a.scanned ? (
-                  <StatusBadge kind="pass" label="None found" />
-                ) : (
-                  "—"
+          {filtered.map((a) => {
+            const canExpand = a.fileCount > 0;
+            const isExpanded = expandedAgentId === a.agentId;
+            return (
+              <Fragment key={a.agentId}>
+                <tr
+                  className={canExpand ? "clickable-row" : undefined}
+                  onClick={canExpand ? () => setExpandedAgentId(isExpanded ? null : a.agentId) : undefined}
+                  title={canExpand ? "Click to show the files and the type of data found" : undefined}
+                >
+                  <td>
+                    {canExpand && <span style={{ marginRight: "0.4rem", color: "var(--text-muted)" }}>{isExpanded ? "▾" : "▸"}</span>}
+                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                  </td>
+                  <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
+                  <td>{a.filesScanned ?? "—"}</td>
+                  <td>
+                    {a.fileCount > 0 ? (
+                      <StatusBadge kind="fail" label={`${a.fileCount} file${a.fileCount === 1 ? "" : "s"}`} />
+                    ) : readNothing(a) ? (
+                      <StatusBadge kind="warn" label="Nothing scanned — check target paths" />
+                    ) : a.scanned ? (
+                      <StatusBadge kind="pass" label="None found" />
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td>{a.lastScanAt ? new Date(a.lastScanAt).toLocaleString() : "—"}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {a.scanPending ? (
+                      <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Scan requested…</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => scanNow.mutate({ policyId, agentId: a.agentId })}
+                        disabled={scanNow.isPending}
+                      >
+                        Scan now
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={6} style={{ background: "var(--stripe)" }}>
+                      <AgentFindingsDetail agentId={a.agentId} policyId={policyId} />
+                    </td>
+                  </tr>
                 )}
-              </td>
-              <td>{a.lastScanAt ? new Date(a.lastScanAt).toLocaleString() : "—"}</td>
-              <td>
-                {a.scanPending ? (
-                  <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Scan requested…</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => scanNow.mutate({ policyId, agentId: a.agentId })}
-                    disabled={scanNow.isPending}
-                  >
-                    Scan now
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
+              </Fragment>
+            );
+          })}
           {filtered.length === 0 && (
             <tr>
               <td colSpan={6}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>

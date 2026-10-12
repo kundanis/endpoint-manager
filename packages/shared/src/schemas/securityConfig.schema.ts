@@ -63,6 +63,13 @@ export const remediateRuleRequestSchema = z.object({
 });
 export type RemediateRuleRequest = z.infer<typeof remediateRuleRequestSchema>;
 
+// Remediate a chosen subset of an endpoint's failing rules (the checkboxes on the
+// "Compliance by endpoint" drill-down).
+export const remediateSelectedRequestSchema = z.object({
+  ruleIds: z.array(z.string().min(1)).min(1),
+});
+export type RemediateSelectedRequest = z.infer<typeof remediateSelectedRequestSchema>;
+
 // Deliberately excludes operator/expectedValue — grading happens server-side on
 // ingestion (see securityConfigEvaluate.util.ts), so an admin can edit a rule's
 // expected value without needing the agent to re-fetch or redeploy anything.

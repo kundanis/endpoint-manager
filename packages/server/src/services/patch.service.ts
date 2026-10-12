@@ -107,6 +107,18 @@ export async function getFleetPatchSummary(groupId?: string) {
     .sort((a, b) => new Date(b.firstSeenAt).getTime() - new Date(a.firstSeenAt).getTime());
 }
 
+// The endpoints on which a specific patch is currently MISSING - drives the per-patch
+// drill-down on the Patches page so an admin can dispatch it to just the affected machines.
+export async function getAgentsMissingPatch(patchDefinitionId: string) {
+  const findings = await prisma.patchFinding.findMany({
+    where: { patchDefinitionId, status: "MISSING" },
+    include: { agent: { select: { id: true, hostname: true } } },
+  });
+  return findings
+    .map((f) => ({ agentId: f.agentId, hostname: f.agent.hostname, detectedAt: f.detectedAt.toISOString() }))
+    .sort((a, b) => a.hostname.localeCompare(b.hostname));
+}
+
 interface CreatePatchJobParams {
   updateIds: string[];
   agentIds: string[]; // already resolved (groups expanded, deduped) by the caller

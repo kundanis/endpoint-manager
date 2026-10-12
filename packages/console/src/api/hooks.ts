@@ -522,6 +522,21 @@ export function usePatchSummary(groupId?: string) {
   });
 }
 
+export interface PatchMissingAgent {
+  agentId: string;
+  hostname: string;
+  detectedAt: string;
+}
+
+export function useAgentsMissingPatch(patchDefinitionId: string | undefined) {
+  return useQuery({
+    queryKey: ["patchMissingAgents", patchDefinitionId],
+    queryFn: () => api.get<PatchMissingAgent[]>(`/admin/patches/${patchDefinitionId}/agents`),
+    enabled: !!patchDefinitionId,
+    refetchInterval: 10000,
+  });
+}
+
 export function usePatchJobs() {
   return useQuery({
     queryKey: ["patchJobs"],
@@ -1150,6 +1165,16 @@ export function useRemediateAllForAgent() {
     mutationFn: (agentId: string) =>
       api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number }>(
         `/admin/security-config/agents/${agentId}/remediate-all`,
+      ),
+  });
+}
+
+export function useRemediateSelectedForAgentInBenchmark() {
+  return useMutation({
+    mutationFn: ({ benchmarkId, agentId, ruleIds }: { benchmarkId: string; agentId: string; ruleIds: string[] }) =>
+      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number }>(
+        `/admin/security-config/${benchmarkId}/agents/${agentId}/remediate-selected`,
+        { ruleIds },
       ),
   });
 }

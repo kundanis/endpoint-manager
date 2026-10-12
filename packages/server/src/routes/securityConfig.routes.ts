@@ -5,6 +5,7 @@ import {
   createRuleRequestSchema,
   importRulesRequestSchema,
   remediateRuleRequestSchema,
+  remediateSelectedRequestSchema,
   updateBenchmarkRequestSchema,
   updateRuleRequestSchema,
 } from "@em/shared";
@@ -22,6 +23,7 @@ import {
   listBenchmarks,
   remediateAllForAgent,
   remediateAllForAgentInBenchmark,
+  remediateSelectedForAgentInBenchmark,
   remediateRule,
   RuleHasNoRemediationError,
   unassign,
@@ -208,6 +210,17 @@ securityConfigRouter.get("/:id/agents", async (req, res, next) => {
 securityConfigRouter.post("/:id/agents/:agentId/remediate-all", async (req, res, next) => {
   try {
     const result = await remediateAllForAgentInBenchmark(req.params.id, req.params.agentId, req.adminId!);
+    if (!result) return res.status(404).json({ error: "Agent not found" });
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+securityConfigRouter.post("/:id/agents/:agentId/remediate-selected", async (req, res, next) => {
+  try {
+    const { ruleIds } = remediateSelectedRequestSchema.parse(req.body);
+    const result = await remediateSelectedForAgentInBenchmark(req.params.id, req.params.agentId, ruleIds, req.adminId!);
     if (!result) return res.status(404).json({ error: "Agent not found" });
     res.status(201).json(result);
   } catch (err) {

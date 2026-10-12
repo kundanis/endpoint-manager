@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { createAutoPatchPolicyRequestSchema, dispatchPatchJobRequestSchema, updateAutoPatchPolicyRequestSchema } from "@em/shared";
 import { prisma } from "../db";
-import { createPatchJob, getFleetPatchSummary, getPatchJob, listPatchJobs } from "../services/patch.service";
+import { createPatchJob, getAgentsMissingPatch, getFleetPatchSummary, getPatchJob, listPatchJobs } from "../services/patch.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import {
   AutoPatchPolicyNotFoundError,
@@ -17,6 +17,17 @@ patchesRouter.get("/", async (req, res, next) => {
   try {
     const groupId = typeof req.query.groupId === "string" ? req.query.groupId : undefined;
     res.json(await getFleetPatchSummary(groupId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Endpoints on which a specific patch is currently missing (per-patch drill-down). The
+// ":patchDefinitionId/agents" shape never collides with "/jobs/:jobId" or "/auto-policies"
+// since the second segment must be the literal "agents".
+patchesRouter.get("/:patchDefinitionId/agents", async (req, res, next) => {
+  try {
+    res.json(await getAgentsMissingPatch(req.params.patchDefinitionId));
   } catch (err) {
     next(err);
   }

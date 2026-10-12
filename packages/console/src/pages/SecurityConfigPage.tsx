@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { Fragment, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import type { SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
 import type { SecurityBenchmarkDetail } from "../api/types";
@@ -12,7 +12,9 @@ import {
   useDeleteSecurityBenchmark,
   useDeleteSecurityRule,
   useImportSecurityRules,
+  useAgentSecurityFindings,
   useRemediateAllForAgentInBenchmark,
+  useRemediateSelectedForAgentInBenchmark,
   useSecurityBenchmark,
   useSecurityBenchmarkAgentBreakdown,
   useSecurityBenchmarkAssignments,
@@ -334,9 +336,104 @@ function AssignmentPanel({ benchmarkId }: { benchmarkId: string }) {
   );
 }
 
+// Drill-down for one endpoint: its failing rules for this benchmark, each with a checkbox,
+// and a "Remediate selected" action that dispatches remediation only for the ticked rules.
+function AgentFailedRules({ benchmarkId, agentId }: { benchmarkId: string; agentId: string }) {
+  const { data: findings } = useAgentSecurityFindings(agentId);
+  const remediateSelected = useRemediateSelectedForAgentInBenchmark();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [result, setResult] = useState<{ remediatedCount: number; skippedCount: number } | null>(null);
+
+  if (!findings) return <p style={{ color: "var(--text-muted)" }}>Loading rules…</p>;
+  const failed = findings.filter((f) => f.benchmarkId === benchmarkId && f.status === "FAIL");
+  if (failed.length === 0) return <p style={{ color: "var(--text-muted)" }}>No failing rules for this benchmark.</p>;
+
+  const remediable = failed.filter((f) => f.hasRemediation);
+  const allRemediableSelected = remediable.length > 0 && remediable.every((f) => selected.has(f.ruleId));
+
+  function toggle(ruleId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(ruleId)) next.delete(ruleId);
+      else next.add(ruleId);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setSelected(allRemediableSelected ? new Set() : new Set(remediable.map((f) => f.ruleId)));
+  }
+  function handleRemediate() {
+    const ruleIds = [...selected];
+    if (ruleIds.length === 0) return;
+    setResult(null);
+    remediateSelected.mutate(
+      { benchmarkId, agentId, ruleIds },
+      {
+        onSuccess: (r) => {
+          setResult({ remediatedCount: r.remediatedCount, skippedCount: r.skippedCount });
+          setSelected(new Set());
+        },
+      },
+    );
+  }
+
+  return (
+    <div style={{ padding: "0.25rem 0 0.5rem" }}>
+      <table className="data-table" style={{ margin: "0.25rem 0" }}>
+        <thead>
+          <tr>
+            <th style={{ width: "2rem" }}>
+              <input type="checkbox" checked={allRemediableSelected} onChange={toggleAll} disabled={remediable.length === 0} title="Select all remediable rules" />
+            </th>
+            <th>Failed rule</th>
+            <th>Severity</th>
+            <th>Expected</th>
+            <th>Actual</th>
+          </tr>
+        </thead>
+        <tbody>
+          {failed.map((f) => (
+            <tr key={f.ruleId}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selected.has(f.ruleId)}
+                  onChange={() => toggle(f.ruleId)}
+                  disabled={!f.hasRemediation}
+                  title={f.hasRemediation ? undefined : "This rule has no remediation script"}
+                />
+              </td>
+              <td>
+                {f.title}
+                {!f.hasRemediation && <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}> (no auto-remediation)</span>}
+              </td>
+              <td><span className={`status-badge ${severityBadgeClass(f.severity)}`}>{f.severity}</span></td>
+              <td className="mono-cell">{f.expectedValue}</td>
+              <td className="mono-cell">{f.actualValue ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button type="button" onClick={handleRemediate} disabled={selected.size === 0 || remediateSelected.isPending}>
+        {remediateSelected.isPending ? "Remediating…" : `Remediate selected (${selected.size})`}
+      </button>
+      {result && (
+        <span style={{ marginLeft: "0.6rem", fontSize: "0.85rem" }}>
+          Dispatched {result.remediatedCount} job(s){result.skippedCount ? ` — ${result.skippedCount} skipped (no script)` : ""}. See{" "}
+          <Link to="/commands">Commands</Link> for status; this re-grades on the next scan.
+        </span>
+      )}
+      {remediateSelected.isError && (
+        <span className="error-text" style={{ marginLeft: "0.6rem" }}>{(remediateSelected.error as Error).message}</span>
+      )}
+    </div>
+  );
+}
+
 function CompliancePanel({ benchmarkId }: { benchmarkId: string }) {
   const { data: breakdown } = useSecurityBenchmarkAgentBreakdown(benchmarkId);
   const remediateAll = useRemediateAllForAgentInBenchmark();
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [remediatingAgentId, setRemediatingAgentId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{
     agentId: string;
@@ -374,45 +471,74 @@ function CompliancePanel({ benchmarkId }: { benchmarkId: string }) {
           </tr>
         </thead>
         <tbody>
-          {breakdown?.agents.map((a) => (
-            <tr key={a.agentId}>
-              <td>
-                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-              </td>
-              <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
-              <td>{a.passCount}</td>
-              <td>{a.failCount}</td>
-              <td>{a.errorCount}</td>
-              <td>
-                {a.failCount > 0 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleRemediateAll(a.agentId)}
-                      disabled={remediateAll.isPending && remediatingAgentId === a.agentId}
-                    >
-                      {remediateAll.isPending && remediatingAgentId === a.agentId
-                        ? "Remediating…"
-                        : "Remediate all failing"}
-                    </button>
-                    {lastResult?.agentId === a.agentId && lastResult.remediatedCount !== undefined && (
-                      <div style={{ fontSize: "0.8rem" }}>
-                        Dispatched {lastResult.remediatedCount} job(s)
-                        {lastResult.skippedCount ? ` — ${lastResult.skippedCount} rule(s) had no remediation script` : ""}
-                        . Check the <Link to="/commands">Commands</Link> page for status; this re-grades on the next
-                        scan.
-                      </div>
+          {breakdown?.agents.map((a) => {
+            const canExpand = a.failCount > 0;
+            const isExpanded = expandedAgentId === a.agentId;
+            return (
+              <Fragment key={a.agentId}>
+                <tr>
+                  <td>
+                    {canExpand && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedAgentId(isExpanded ? null : a.agentId)}
+                        title="Show failing rules to select and remediate"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0, marginRight: "0.4rem" }}
+                      >
+                        {isExpanded ? "▾" : "▸"}
+                      </button>
                     )}
-                    {lastResult?.agentId === a.agentId && lastResult.error && (
-                      <div className="error-text" style={{ fontSize: "0.8rem" }}>
-                        {lastResult.error}
-                      </div>
+                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                  </td>
+                  <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
+                  <td>{a.passCount}</td>
+                  <td>{a.failCount}</td>
+                  <td>{a.errorCount}</td>
+                  <td>
+                    {a.failCount > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedAgentId(isExpanded ? null : a.agentId)}
+                        >
+                          {isExpanded ? "Hide rules" : "Select & remediate"}
+                        </button>{" "}
+                        <button
+                          type="button"
+                          onClick={() => handleRemediateAll(a.agentId)}
+                          disabled={remediateAll.isPending && remediatingAgentId === a.agentId}
+                        >
+                          {remediateAll.isPending && remediatingAgentId === a.agentId
+                            ? "Remediating…"
+                            : "Remediate all failing"}
+                        </button>
+                        {lastResult?.agentId === a.agentId && lastResult.remediatedCount !== undefined && (
+                          <div style={{ fontSize: "0.8rem" }}>
+                            Dispatched {lastResult.remediatedCount} job(s)
+                            {lastResult.skippedCount ? ` — ${lastResult.skippedCount} rule(s) had no remediation script` : ""}
+                            . Check the <Link to="/commands">Commands</Link> page for status; this re-grades on the next
+                            scan.
+                          </div>
+                        )}
+                        {lastResult?.agentId === a.agentId && lastResult.error && (
+                          <div className="error-text" style={{ fontSize: "0.8rem" }}>
+                            {lastResult.error}
+                          </div>
+                        )}
+                      </>
                     )}
-                  </>
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={6} style={{ background: "var(--stripe)" }}>
+                      <AgentFailedRules benchmarkId={benchmarkId} agentId={a.agentId} />
+                    </td>
+                  </tr>
                 )}
-              </td>
-            </tr>
-          ))}
+              </Fragment>
+            );
+          })}
           {breakdown?.agents.length === 0 && (
             <tr>
               <td colSpan={6}>Not assigned to any endpoint yet.</td>

@@ -269,6 +269,19 @@ export default function AgentUpdatesPage() {
     .filter((a) => !versionFilter || a.agentVersion === versionFilter)
     .filter((a) => !statusFilter || getUpdateStatus(a, latestVersionFor).category === statusFilter);
 
+  // Only endpoints that actually have a build for their platform can be selected/pushed.
+  const selectableAgents = filteredAgents.filter((a) => latestVersionFor(a.osPlatform) !== null);
+  const allSelectableSelected = selectableAgents.length > 0 && selectableAgents.every((a) => selectedAgentIds.includes(a.id));
+  function toggleSelectAll() {
+    const ids = selectableAgents.map((a) => a.id);
+    if (allSelectableSelected) {
+      const remove = new Set(ids);
+      setSelectedAgentIds((prev) => prev.filter((id) => !remove.has(id)));
+    } else {
+      setSelectedAgentIds((prev) => [...new Set([...prev, ...ids])]);
+    }
+  }
+
   // Note: the Endpoint detail page's "update to vX.Y.Z available" now dispatches directly
   // from there (same useDispatchAgentUpdate mutation) rather than landing here first - so
   // there's no query-param handoff to pick up on mount. That update still shows up below in
@@ -292,7 +305,15 @@ export default function AgentUpdatesPage() {
 
       {anyBuildAvailable && (
         <form className="panel" onSubmit={handlePush}>
-          <h2>Roll out to endpoints</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0 }}>Roll out to endpoints</h2>
+            <button
+              type="submit"
+              disabled={dispatchUpdate.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
+            >
+              {dispatchUpdate.isPending ? "Pushing…" : "Push Update"}
+            </button>
+          </div>
           <fieldset>
             <legend>Target endpoints</legend>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "0.5rem" }}>
@@ -338,7 +359,15 @@ export default function AgentUpdatesPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th></th>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={allSelectableSelected}
+                      onChange={toggleSelectAll}
+                      disabled={selectableAgents.length === 0}
+                      title="Select all eligible endpoints in this list"
+                    />
+                  </th>
                   <th>Hostname</th>
                   <th>IP address</th>
                   <th>User name</th>

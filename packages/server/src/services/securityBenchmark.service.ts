@@ -311,6 +311,41 @@ export async function remediateAllForAgent(agentId: string, createdByAdminId: st
   return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
 }
 
+// Remediate only the rules the admin ticked on the "Compliance by endpoint" drill-down.
+// Scoped to this benchmark + agent + the chosen ruleIds, and still only acts on rules that
+// are actually FAILing and have a remediation script (so a stale selection can't run a
+// now-passing or non-remediable rule). One CommandJob per rule, same as the others.
+export async function remediateSelectedForAgentInBenchmark(
+  benchmarkId: string,
+  agentId: string,
+  ruleIds: string[],
+  createdByAdminId: string,
+) {
+  const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+  if (!agent) return null;
+
+  const findings = await prisma.securityBenchmarkFinding.findMany({
+    where: { benchmarkId, agentId, status: "FAIL", ruleId: { in: ruleIds } },
+    include: { rule: true },
+  });
+  const remediable = findings.filter((f) => f.rule.remediationPowerShell);
+
+  const jobIds: string[] = [];
+  for (const f of remediable) {
+    const { jobId } = await createCommandJob({
+      agentIds: [agentId],
+      groupIds: [],
+      shell: "powershell",
+      script: f.rule.remediationPowerShell!,
+      timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
+      createdByAdminId,
+    });
+    jobIds.push(jobId);
+  }
+
+  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
+}
+
 // Same one-job-per-rule reasoning as remediateAllForAgent, but scoped to a single
 // benchmark's findings — lives on the "Compliance by endpoint" panel, so it should
 // only touch rules belonging to the benchmark being viewed, not every benchmark

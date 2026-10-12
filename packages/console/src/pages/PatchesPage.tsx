@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 import type { NormalizedSeverity } from "../api/types";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAgents,
+  useAgentsMissingPatch,
   useAssetGroups,
   useAutoPatchPolicies,
   useCreateAutoPatchPolicy,
@@ -15,6 +16,63 @@ import {
   useUpdateAutoPatchPolicy,
 } from "../api/hooks";
 import EndpointLabel from "../components/EndpointLabel";
+
+// Per-patch drill-down: the endpoints this update is missing on, each selectable, with a
+// one-click dispatch of just this patch to the chosen machines.
+function MissingPatchEndpoints({ patchDefinitionId, updateId, title }: { patchDefinitionId: string; updateId: string; title: string }) {
+  const { data: missing } = useAgentsMissingPatch(patchDefinitionId);
+  const dispatch = useDispatchPatchJob();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [jobId, setJobId] = useState<string | null>(null);
+
+  if (!missing) return <p style={{ color: "var(--text-muted)" }}>Loading endpoints…</p>;
+  if (missing.length === 0) return <p style={{ color: "var(--text-muted)" }}>No endpoints are missing this patch right now.</p>;
+
+  const allSelected = missing.length > 0 && missing.every((m) => selected.has(m.agentId));
+  function toggle(id: string) {
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(missing!.map((m) => m.agentId)));
+  }
+  function handleDispatch() {
+    const agentIds = [...selected];
+    if (agentIds.length === 0) return;
+    setJobId(null);
+    dispatch.mutate(
+      { updateIds: [updateId], agentIds, groupIds: [] },
+      { onSuccess: (r) => { setJobId(r.jobId); setSelected(new Set()); } },
+    );
+  }
+
+  return (
+    <div style={{ padding: "0.25rem 0 0.5rem" }}>
+      <table className="data-table" style={{ margin: "0.25rem 0" }}>
+        <thead>
+          <tr>
+            <th style={{ width: "2rem" }}><input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" /></th>
+            <th>Endpoint missing "{title}"</th>
+            <th>Detected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {missing.map((m) => (
+            <tr key={m.agentId}>
+              <td><input type="checkbox" checked={selected.has(m.agentId)} onChange={() => toggle(m.agentId)} /></td>
+              <td><EndpointLabel hostname={m.hostname} agentId={m.agentId} /></td>
+              <td>{new Date(m.detectedAt).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button type="button" onClick={handleDispatch} disabled={selected.size === 0 || dispatch.isPending}>
+        {dispatch.isPending ? "Dispatching…" : `Dispatch to selected (${selected.size})`}
+      </button>
+      {jobId && <span style={{ marginLeft: "0.6rem", fontSize: "0.85rem" }}>Dispatched. Each endpoint installs on its next check-in; track progress under Recent patch jobs below.</span>}
+      {dispatch.isError && <span className="error-text" style={{ marginLeft: "0.6rem" }}>{(dispatch.error as Error).message}</span>}
+    </div>
+  );
+}
 
 function formatBytes(bytes: string | null): string {
   if (!bytes) return "—";
@@ -148,6 +206,7 @@ export default function PatchesPage() {
   const dispatchCommand = useDispatchCommand();
 
   const [selectedUpdateIds, setSelectedUpdateIds] = useState<string[]>([]);
+  const [expandedPatchId, setExpandedPatchId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState("");
@@ -218,29 +277,51 @@ export default function PatchesPage() {
           </tr>
         </thead>
         <tbody>
-          {summary?.map((item) => (
-            <tr key={item.patchDefinitionId}>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={selectedUpdateIds.includes(item.updateId)}
-                  onChange={() => toggleUpdate(item.updateId)}
-                />
-              </td>
-              <td>{item.title}</td>
-              <td>
-                {item.severity ? (
-                  <span className={`status-badge ${severityBadgeClass(item.normalizedSeverity)}`}>{item.severity}</span>
-                ) : (
-                  "—"
+          {summary?.map((item) => {
+            const isExpanded = expandedPatchId === item.patchDefinitionId;
+            return (
+              <Fragment key={item.patchDefinitionId}>
+                <tr>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedUpdateIds.includes(item.updateId)}
+                      onChange={() => toggleUpdate(item.updateId)}
+                      title="Add to the dispatch form below"
+                    />
+                  </td>
+                  <td>{item.title}</td>
+                  <td>
+                    {item.severity ? (
+                      <span className={`status-badge ${severityBadgeClass(item.normalizedSeverity)}`}>{item.severity}</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td>{item.kbArticleIds.join(", ") || "—"}</td>
+                  <td>{formatBytes(item.sizeBytes)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPatchId(isExpanded ? null : item.patchDefinitionId)}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, font: "inherit", textDecoration: "underline" }}
+                      title="Show the endpoints missing this patch and dispatch to selected"
+                    >
+                      {isExpanded ? "▾ " : "▸ "}{item.missingAgentCount} endpoint(s)
+                    </button>
+                  </td>
+                  <td>{new Date(item.firstSeenAt).toLocaleDateString()}</td>
+                </tr>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={7} style={{ background: "var(--stripe)" }}>
+                      <MissingPatchEndpoints patchDefinitionId={item.patchDefinitionId} updateId={item.updateId} title={item.title} />
+                    </td>
+                  </tr>
                 )}
-              </td>
-              <td>{item.kbArticleIds.join(", ") || "—"}</td>
-              <td>{formatBytes(item.sizeBytes)}</td>
-              <td>{item.missingAgentCount} endpoint(s)</td>
-              <td>{new Date(item.firstSeenAt).toLocaleDateString()}</td>
-            </tr>
-          ))}
+              </Fragment>
+            );
+          })}
           {summary?.length === 0 && (
             <tr>
               <td colSpan={7}>No missing patches detected yet — endpoints scan on their own multi-hour cycle.</td>
