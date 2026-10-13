@@ -4,6 +4,7 @@ import {
   useAgentConnectionSettings,
   useAssetGroups,
   useCreateEnrollmentToken,
+  useDownloadAgentInstaller,
   useDownloadAgentSetup,
   useEnrollmentTokens,
   useRemoteInstallJob,
@@ -291,6 +292,7 @@ export default function EnrollmentTokensPage() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const downloadSetup = useDownloadAgentSetup();
+  const downloadInstaller = useDownloadAgentInstaller();
 
   const paged = usePagedList(tokens ?? []);
 
@@ -529,11 +531,15 @@ export default function EnrollmentTokensPage() {
               when run it only asks for an enrollment token. For a no-typing install, create a token and use{" "}
               <em>Download setup for this token</em> instead.
             </p>
+            {downloadInstaller.isError && (
+              <Alert tone="critical" title="Installer not available">
+                {(downloadInstaller.error as Error).message}
+              </Alert>
+            )}
             <div className="app-actions-row">
-              <a className="ep-btn" href="/api/admin/agent-installer" download>
-                <Download size={15} strokeWidth={1.7} className="ep-ic" aria-hidden />
-                Download agent installer
-              </a>
+              <Button icon={Download} onClick={() => downloadInstaller.mutate()} disabled={downloadInstaller.isPending}>
+                {downloadInstaller.isPending ? "Preparing…" : "Download agent installer"}
+              </Button>
             </div>
           </div>
         </Card>

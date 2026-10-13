@@ -21,6 +21,9 @@ function devServerAgent(): https.Agent | undefined {
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Listen on all interfaces (not just localhost) so the dev console is reachable from
+    // other machines on the LAN at http://<this-machine-ip>:5173.
+    host: true,
     port: 5173,
     proxy: {
       "/api": {

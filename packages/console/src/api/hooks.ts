@@ -268,6 +268,13 @@ export function useDownloadAgentSetup() {
   });
 }
 
+// The generic installer (server addresses, no token) - GET /admin/agent-installer.
+export function useDownloadAgentInstaller() {
+  return useMutation({
+    mutationFn: () => api.getDownload("/admin/agent-installer", "EndpointProAgentSetup.exe"),
+  });
+}
+
 export function useRevokeEnrollmentToken() {
   const qc = useQueryClient();
   return useMutation({

@@ -43,13 +43,22 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   // POSTs JSON and saves the binary response as a file, named from Content-Disposition.
   postDownload: async (path: string, json: unknown, fallbackFilename: string) => {
-    const res = await send(path, { method: "POST", json });
-    const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "");
-    const url = URL.createObjectURL(await res.blob());
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = match?.[1] ?? fallbackFilename;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveResponse(await send(path, { method: "POST", json }), fallbackFilename);
+  },
+  // GET variant. Unlike a plain <a href download>, a server error (e.g. 404 "no installer
+  // published yet") rejects with the server's message instead of saving the JSON error body
+  // as a file.
+  getDownload: async (path: string, fallbackFilename: string) => {
+    saveResponse(await send(path), fallbackFilename);
   },
 };
+
+async function saveResponse(res: Response, fallbackFilename: string) {
+  const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match?.[1] ?? fallbackFilename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
