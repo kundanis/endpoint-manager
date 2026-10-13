@@ -10,6 +10,7 @@ import {
 } from "../api/hooks";
 import type { AgentListItem, DeviceType } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
+import { useConfirm } from "../components/ui";
 import Collapsible from "../components/Collapsible";
 import InstallAgentAction from "../components/InstallAgentAction";
 import { EndpointStatusDot } from "../components/EndpointLabel";
@@ -254,23 +255,30 @@ export default function AgentsPage() {
   const quarantine = useQuarantineAgent();
   const release = useReleaseAgent();
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   if (isLoading) return <p>Loading endpoints…</p>;
   if (error) return <p className="error-text">{(error as Error).message}</p>;
 
-  function handleQuarantineToggle(agent: AgentListItem) {
+  async function handleQuarantineToggle(agent: AgentListItem) {
     if (agent.quarantined) {
-      const confirmed = window.confirm(
-        `Release ${agent.hostname} from quarantine?\n\nThis restores normal outbound network access on the endpoint.`,
-      );
+      const confirmed = await confirm({
+        title: `Release ${agent.hostname} from quarantine?`,
+        body: "This restores normal outbound network access on the endpoint.",
+        confirmLabel: "Release endpoint",
+      });
       if (!confirmed) return;
       setPendingAgentId(agent.id);
       release.mutate(agent.id, { onSettled: () => setPendingAgentId(null) });
     } else {
-      const confirmed = window.confirm(
-        `Quarantine ${agent.hostname}?\n\nThis locks the endpoint's firewall down to DNS and this server only — ` +
-          `all other network access is blocked until you release it. The endpoint must be online to pick up the command.`,
-      );
+      const confirmed = await confirm({
+        title: `Quarantine ${agent.hostname}?`,
+        body:
+          "This locks the endpoint's firewall down to DNS and this server only — all other network access is blocked " +
+          "until you release it. The endpoint must be online to pick up the command.",
+        confirmLabel: "Quarantine endpoint",
+        tone: "danger",
+      });
       if (!confirmed) return;
       setPendingAgentId(agent.id);
       quarantine.mutate(agent.id, { onSettled: () => setPendingAgentId(null) });

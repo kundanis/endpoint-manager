@@ -3,6 +3,7 @@ import { useEdrAgents, useEdrEvents, useQuarantineAgent, useReleaseAgent, useSet
 import type { EdrAgentSummaryView } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
+import { useConfirm } from "../components/ui";
 
 const CATEGORY_LABEL: Record<string, string> = {
   PROCESS: "Suspicious process",
@@ -31,21 +32,28 @@ function AgentRow({ agent }: { agent: EdrAgentSummaryView }) {
   const setEnabled = useSetEdrEnabled();
   const quarantine = useQuarantineAgent();
   const release = useReleaseAgent();
+  const confirm = useConfirm();
   const [pending, setPending] = useState(false);
 
-  function handleIsolateToggle() {
+  async function handleIsolateToggle() {
     if (agent.quarantined) {
-      const confirmed = window.confirm(
-        `Release ${agent.hostname} from quarantine?\n\nThis restores normal outbound network access on the endpoint.`,
-      );
+      const confirmed = await confirm({
+        title: `Release ${agent.hostname} from quarantine?`,
+        body: "This restores normal outbound network access on the endpoint.",
+        confirmLabel: "Release endpoint",
+      });
       if (!confirmed) return;
       setPending(true);
       release.mutate(agent.agentId, { onSettled: () => setPending(false) });
     } else {
-      const confirmed = window.confirm(
-        `Isolate ${agent.hostname}?\n\nThis locks the endpoint's firewall down to DNS and this server only — ` +
-          `all other network access is blocked until you release it. The endpoint must be online to pick up the command.`,
-      );
+      const confirmed = await confirm({
+        title: `Isolate ${agent.hostname}?`,
+        body:
+          "This locks the endpoint's firewall down to DNS and this server only — all other network access is blocked " +
+          "until you release it. The endpoint must be online to pick up the command.",
+        confirmLabel: "Isolate endpoint",
+        tone: "danger",
+      });
       if (!confirmed) return;
       setPending(true);
       quarantine.mutate(agent.agentId, { onSettled: () => setPending(false) });

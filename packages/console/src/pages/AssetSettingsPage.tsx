@@ -17,11 +17,13 @@ import {
   useUpdateAssetGroup,
 } from "../api/hooks";
 import EndpointLabel, { EndpointStatusDot } from "../components/EndpointLabel";
+import { useConfirm } from "../components/ui";
 
 function TamperProtectionSection() {
   const { data: status } = useAgentSecurityStatus();
   const setPassword = useSetUninstallPassword();
   const clearPassword = useClearUninstallPassword();
+  const confirm = useConfirm();
 
   const [password, setPasswordInput] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -42,10 +44,13 @@ function TamperProtectionSection() {
     });
   }
 
-  function handleRemove() {
-    const confirmed = window.confirm(
-      "Remove uninstall protection?\n\nAnyone with admin access to a managed endpoint will be able to uninstall the agent without a password.",
-    );
+  async function handleRemove() {
+    const confirmed = await confirm({
+      title: "Remove uninstall protection?",
+      body: "Anyone with admin access to a managed endpoint will be able to uninstall the agent without a password.",
+      confirmLabel: "Remove protection",
+      tone: "danger",
+    });
     if (!confirmed) return;
     clearPassword.mutate();
   }

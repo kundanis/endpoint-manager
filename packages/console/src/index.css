@@ -224,42 +224,196 @@ button.ep-ni {
 }
 
 /* ------------------------------------------------------------------------------------------
+   3b. Shared component glue (src/components/ui)
+   ------------------------------------------------------------------------------------------ */
+/* Modals and toasts portal to <body>, outside .ep-app, so they carry their own reset/focus. */
+.app-overlay :where(h3, p) {
+  margin: 0;
+}
+
+.app-overlay :focus-visible {
+  outline: 2px solid var(--ep-focus);
+  outline-offset: 2px;
+  border-radius: var(--ep-radius-md);
+}
+
+.app-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ep-ink) 40%, transparent);
+}
+
+.app-modal-backdrop .ep-modal {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+/* A confirm with no body content: the header sits directly on the footer. */
+.ep-modal header:has(+ footer) {
+  padding-bottom: 16px;
+}
+
+.app-modal-desc {
+  font-size: 13px;
+  color: var(--ep-ink-muted);
+  margin-top: 4px;
+  white-space: pre-line;
+}
+
+.app-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Visually hidden but focusable (the switch's real checkbox). */
+.app-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ep-switch {
+  position: relative;
+}
+
+.ep-switch .app-vh:focus-visible + i {
+  outline: 2px solid var(--ep-focus);
+  outline-offset: 2px;
+}
+
+a.app-kpi-link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--ep-dur-fast) var(--ep-ease);
+}
+
+a.app-kpi-link:hover {
+  border-color: var(--ep-border-strong);
+}
+
+.app-skel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+/* A button that reads as a text link (Show all, Clear selection, chart labels). */
+button.app-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.ep-link.app-link-btn {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ep-accent);
+}
+
+.app-chart-link {
+  cursor: pointer;
+}
+
+.app-chart-link:hover {
+  text-decoration: underline;
+}
+
+.app-bl-more {
+  font-size: 12.5px;
+  color: var(--ep-ink-subtle);
+}
+
+.app-clickable {
+  cursor: pointer;
+}
+
+.app-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.app-menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+}
+
+.ep-menu > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ep-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app-page-gap {
+  min-width: 20px;
+  text-align: center;
+  color: var(--ep-ink-subtle);
+}
+
+/* ------------------------------------------------------------------------------------------
    4. Legacy page bridge
    meridian.css resets margin/padding on everything inside .ep-app. Pages not yet migrated
    still rely on element defaults, so restore them here, scoped to page content that has no
    Meridian page header (.ep-ph). A migrated page renders .ep-ph and drops out of this scope
    automatically. ":where(...)" keeps these at the same weight as the reset (later wins) and
    below any class-based rule, so section 5 and per-page classes still apply on top.
-   Elements carrying an ep-* class are excluded so shared Meridian components render exactly.
+   Elements carrying an ep-* class, or sitting inside an ep-* component (card, tabs, menu,
+   alert, empty state, modal), are excluded so shared Meridian components dropped into a
+   legacy page render exactly as specified.
    ------------------------------------------------------------------------------------------ */
-.ep-pg:where(:not(:has(.ep-ph))) :where(p, ul, ol, dl, pre, blockquote) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(p, ul, ol, dl, pre, blockquote) {
   margin: 1em 0;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(ul, ol) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(ul, ol) {
   padding-left: 40px;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(dd) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(dd) {
   margin-left: 40px;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(td, th) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(td, th) {
   padding: 2px 4px;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(hr) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(hr) {
   margin: 0.5em 0;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(legend) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(legend) {
   padding: 0 4px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--ep-ink-muted);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(h1) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(h1) {
   margin: 0 0 16px;
   font-size: 22px;
   line-height: 28px;
@@ -268,7 +422,7 @@ button.ep-ni {
   color: var(--ep-ink);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(h2) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(h2) {
   margin: 0 0 12px;
   font-size: 16px;
   line-height: 22px;
@@ -276,7 +430,7 @@ button.ep-ni {
   color: var(--ep-ink);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(h3) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(h3) {
   margin: 20px 0 10px;
   font-size: 14px;
   line-height: 20px;
@@ -284,14 +438,14 @@ button.ep-ni {
   color: var(--ep-ink);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(h4) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(h4) {
   margin: 16px 0 8px;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--ep-ink);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(label:not([class*="ep-"])) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(label:not([class*="ep-"])) {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -301,7 +455,7 @@ button.ep-ni {
   color: var(--ep-ink);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(input:not([class*="ep-"]), select:not([class*="ep-"]), textarea:not([class*="ep-"])) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(input:not([class*="ep-"]), select:not([class*="ep-"]), textarea:not([class*="ep-"])) {
   font: inherit;
   font-size: 13.5px;
   font-weight: 400;
@@ -312,15 +466,15 @@ button.ep-ni {
   background: var(--ep-surface);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(input:not([type="checkbox"], [type="radio"], [type="file"], [class*="ep-"]), select:not([class*="ep-"])) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(input:not([type="checkbox"], [type="radio"], [type="file"], [class*="ep-"]), select:not([class*="ep-"])) {
   min-height: var(--ep-control-height);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(input[type="checkbox"], input[type="radio"]) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(input[type="checkbox"], input[type="radio"]) {
   accent-color: var(--ep-brand);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(input:not([class*="ep-"]), select:not([class*="ep-"]), textarea:not([class*="ep-"])):focus {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(input:not([class*="ep-"]), select:not([class*="ep-"]), textarea:not([class*="ep-"])):focus {
   outline: none;
   border-color: var(--ep-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ep-focus) 18%, transparent);
@@ -328,7 +482,7 @@ button.ep-ni {
 
 /* Legacy buttons: secondary by default, primary only for explicit form submits — Meridian
    allows one brand-red action per view, so the old "every button is red" look is retired. */
-.ep-pg:where(:not(:has(.ep-ph))) :where(button:not([class*="ep-"])) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(button:not([class*="ep-"])) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -347,39 +501,39 @@ button.ep-ni {
   transition: background var(--ep-dur-fast) var(--ep-ease), border-color var(--ep-dur-fast) var(--ep-ease);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(button:not([class*="ep-"]):hover:not(:disabled)) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(button:not([class*="ep-"]):hover:not(:disabled)) {
   background: var(--ep-surface-2);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(button[type="submit"]:not([class*="ep-"])) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(button[type="submit"]:not([class*="ep-"])) {
   background: var(--ep-brand);
   border-color: var(--ep-brand);
   color: var(--ep-brand-ink);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(button[type="submit"]:not([class*="ep-"]):hover:not(:disabled)) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(button[type="submit"]:not([class*="ep-"]):hover:not(:disabled)) {
   background: var(--ep-brand-hover);
   border-color: var(--ep-brand-hover);
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(button:not([class*="ep-"]):disabled) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(button:not([class*="ep-"]):disabled) {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(fieldset) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(fieldset) {
   border: 1px solid var(--ep-border);
   border-radius: var(--ep-radius-md);
   margin-bottom: 12px;
   padding: 12px;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(code) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(code) {
   font-family: var(--ep-font-mono);
   font-size: 12.5px;
 }
 
-.ep-pg:where(:not(:has(.ep-ph))) :where(a:not([class*="ep-"])) {
+.ep-pg:where(:not(:has(.ep-ph))) :where(:not(.ep-card *, .ep-tabs *, .ep-menu *, .ep-alert *, .ep-empty *, .ep-modal *)):where(a:not([class*="ep-"])) {
   color: var(--ep-accent);
 }
 

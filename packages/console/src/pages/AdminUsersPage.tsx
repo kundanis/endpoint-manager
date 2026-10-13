@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
 import { useAdminUsers, useCreateAdminUser, useDeleteAdminUser, useMe, useUpdateAdminUser } from "../api/hooks";
+import { useConfirm, usePrompt } from "../components/ui";
 
 const MODULE_KEYS: LicenseModuleKey[] = [
   "ENDPOINT_MANAGER",
@@ -25,6 +26,8 @@ export default function AdminUsersPage() {
   const create = useCreateAdminUser();
   const update = useUpdateAdminUser();
   const del = useDeleteAdminUser();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingEmail, setEditingEmail] = useState("");
@@ -80,18 +83,27 @@ export default function AdminUsersPage() {
     }
   }
 
-  function handleResetPassword(admin: AdminUserListItem) {
-    const newPassword = window.prompt(`New password for ${admin.email} (at least 8 characters):`);
+  async function handleResetPassword(admin: AdminUserListItem) {
+    const newPassword = await prompt({
+      title: `Reset password for ${admin.email}?`,
+      label: "New password",
+      type: "password",
+      help: "At least 8 characters.",
+      confirmLabel: "Reset password",
+      validate: (value) => (value.length < 8 ? "Enter a password of at least 8 characters." : null),
+    });
     if (!newPassword) return;
-    if (newPassword.length < 8) {
-      window.alert("Password must be at least 8 characters.");
-      return;
-    }
     update.mutate({ id: admin.id, password: newPassword });
   }
 
-  function handleDelete(admin: AdminUserListItem) {
-    if (!window.confirm(`Delete admin account "${admin.email}"? This cannot be undone.`)) return;
+  async function handleDelete(admin: AdminUserListItem) {
+    const confirmed = await confirm({
+      title: `Delete admin account "${admin.email}"?`,
+      body: "This cannot be undone.",
+      confirmLabel: "Delete account",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     del.mutate(admin.id);
   }
 

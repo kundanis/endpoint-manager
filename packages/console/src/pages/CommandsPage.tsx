@@ -18,6 +18,7 @@ import {
 import type { CommandTemplateView } from "../api/types";
 import Collapsible from "../components/Collapsible";
 import EndpointLabel from "../components/EndpointLabel";
+import { useConfirm } from "../components/ui";
 
 const ISOLATE_OPTION = "isolate";
 const RELEASE_OPTION = "release";
@@ -29,6 +30,7 @@ function ManageTemplatesPanel() {
   const create = useCreateCommandTemplate();
   const update = useUpdateCommandTemplate();
   const del = useDeleteCommandTemplate();
+  const confirm = useConfirm();
 
   const [editingId, setEditingId] = useState<string | undefined>();
   const [name, setName] = useState("");
@@ -65,8 +67,14 @@ function ManageTemplatesPanel() {
     }
   }
 
-  function handleDelete(t: CommandTemplateView) {
-    if (!window.confirm(`Delete predefined command "${t.name}"? This cannot be undone.`)) return;
+  async function handleDelete(t: CommandTemplateView) {
+    const confirmed = await confirm({
+      title: `Delete predefined command "${t.name}"?`,
+      body: "This cannot be undone.",
+      confirmLabel: "Delete command",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     del.mutate(t.id, { onSuccess: () => editingId === t.id && resetForm() });
   }
 
@@ -155,6 +163,7 @@ export default function CommandsPage() {
   const dispatchTemplate = useDispatchCommandTemplate();
   const bulkQuarantine = useBulkQuarantine();
   const bulkRelease = useBulkRelease();
+  const confirm = useConfirm();
 
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -179,11 +188,17 @@ export default function CommandsPage() {
     setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
     if (predefined === ISOLATE_OPTION) {
-      if (!window.confirm(`Isolate ${targetCount} target(s) from the network? This locks down outbound access to DNS and this server only, until released.`)) return;
+      const confirmed = await confirm({
+        title: `Isolate ${targetCount} target(s) from the network?`,
+        body: "This locks down outbound access to DNS and this server only, until released.",
+        confirmLabel: "Isolate targets",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       bulkQuarantine.mutate(
         { agentIds: selectedAgentIds, groupIds: selectedGroupIds },
         { onSuccess: (result) => setSelectedJobId(result.jobId) },
@@ -192,7 +207,12 @@ export default function CommandsPage() {
     }
 
     if (predefined === RELEASE_OPTION) {
-      if (!window.confirm(`Release ${targetCount} target(s) from quarantine, restoring normal network access?`)) return;
+      const confirmed = await confirm({
+        title: `Release ${targetCount} target(s) from quarantine?`,
+        body: "This restores normal network access.",
+        confirmLabel: "Release targets",
+      });
+      if (!confirmed) return;
       bulkRelease.mutate(
         { agentIds: selectedAgentIds, groupIds: selectedGroupIds },
         { onSuccess: (result) => setSelectedJobId(result.jobId) },

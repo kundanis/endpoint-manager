@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import Collapsible from "../components/Collapsible";
 import StatusBadge from "../components/StatusBadge";
 import EndpointLabel from "../components/EndpointLabel";
+import { useConfirm, usePrompt, useToast } from "../components/ui";
 import type { AgentDetail, InstalledSoftwareEntry, LifecycleStatus, NormalizedSeverity } from "../api/types";
 import {
   useAddAgentNote,
@@ -516,6 +517,7 @@ type LicenseFilter = "ALL" | "LICENSED" | "UNLICENSED";
 
 function InstalledSoftwareSection({ agentId, software }: { agentId: string; software: InstalledSoftwareEntry[] }) {
   const uninstall = useUninstallSoftware();
+  const confirm = useConfirm();
   const [pendingName, setPendingName] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState("");
   const [publisherFilter, setPublisherFilter] = useState("");
@@ -531,13 +533,16 @@ function InstalledSoftwareSection({ agentId, software }: { agentId: string; soft
     return true;
   });
 
-  function handleUninstall(name: string) {
-    const confirmed = window.confirm(
-      `Uninstall "${name}" from this endpoint?\n\n` +
+  async function handleUninstall(name: string) {
+    const confirmed = await confirm({
+      title: `Uninstall "${name}" from this endpoint?`,
+      body:
         "This runs the software's own uninstaller unattended. MSI-based installs run fully silently; " +
         "other installers run whatever uninstall command is registered, which may not support a silent flag " +
         "and could hang waiting for input nobody is there to give. Check the Commands page to confirm it completed.",
-    );
+      confirmLabel: "Uninstall software",
+      tone: "danger",
+    });
     if (!confirmed) return;
     setPendingName(name);
     uninstall.mutate({ agentId, softwareName: name }, { onSettled: () => setPendingName(null) });
@@ -1140,18 +1145,25 @@ function downloadRdpFile(hostname: string, ipAddress: string) {
 function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
   const enable = useEnableRemoteAccess();
   const disable = useDisableRemoteAccess();
+  const confirm = useConfirm();
 
-  function handleEnable() {
-    const confirmed = window.confirm(
-      `Enable Remote Desktop on ${agent.hostname}?\n\nThis opens port 3389 to your current IP address only, and remains ` +
-        `open until you disable it. The endpoint must be online to pick up the command.`,
-    );
+  async function handleEnable() {
+    const confirmed = await confirm({
+      title: `Enable Remote Desktop on ${agent.hostname}?`,
+      body:
+        "This opens port 3389 to your current IP address only, and remains open until you disable it. " +
+        "The endpoint must be online to pick up the command.",
+      confirmLabel: "Enable remote access",
+    });
     if (!confirmed) return;
     enable.mutate(agent.id);
   }
 
-  function handleDisable() {
-    const confirmed = window.confirm(`Disable Remote Desktop on ${agent.hostname}?`);
+  async function handleDisable() {
+    const confirmed = await confirm({
+      title: `Disable Remote Desktop on ${agent.hostname}?`,
+      confirmLabel: "Disable remote access",
+    });
     if (!confirmed) return;
     disable.mutate(agent.id);
   }
@@ -1212,15 +1224,19 @@ function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
 function PausePanel({ agent }: { agent: AgentDetail }) {
   const pause = usePauseAgent();
   const resume = useResumeAgent();
+  const confirm = useConfirm();
 
-  function handlePause() {
-    const confirmed = window.confirm(
-      `Pause ${agent.hostname}?\n\nThis releases active enforcement (quarantine, remote access, web/IP/app blocking) ` +
-        `and holds back new commands, deployments, and patches until resumed. It still counts against your license ` +
-        `seat — pausing doesn't relinquish that, only uninstalling does. It also doesn't stop the agent itself — if ` +
-        `the endpoint is online it keeps checking in and reporting, it just won't receive new work or have policies ` +
-        `enforced. Resuming restores exactly what was released (e.g. re-quarantines if it was quarantined before).`,
-    );
+  async function handlePause() {
+    const confirmed = await confirm({
+      title: `Pause ${agent.hostname}?`,
+      body:
+        "This releases active enforcement (quarantine, remote access, web/IP/app blocking) " +
+        "and holds back new commands, deployments, and patches until resumed. It still counts against your license " +
+        "seat — pausing doesn't relinquish that, only uninstalling does. It also doesn't stop the agent itself — if " +
+        "the endpoint is online it keeps checking in and reporting, it just won't receive new work or have policies " +
+        "enforced. Resuming restores exactly what was released (e.g. re-quarantines if it was quarantined before).",
+      confirmLabel: "Pause endpoint",
+    });
     if (!confirmed) return;
     pause.mutate(agent.id);
   }
@@ -1271,24 +1287,35 @@ function PausePanel({ agent }: { agent: AgentDetail }) {
 
 function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
   const uninstall = useUninstallAgent();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
+  const toast = useToast();
 
-  function handleUninstall() {
-    const confirmed = window.confirm(
-      `Uninstall the Endpoint Pro agent from ${agent.hostname}?\n\nThis removes management of this endpoint entirely - ` +
-        `it will stop checking in and disappear from monitoring. This cannot be undone from here; re-enrolling requires ` +
-        `running the installer on the endpoint again. The endpoint must be online to pick up the command.`,
-    );
+  async function handleUninstall() {
+    const confirmed = await confirm({
+      title: `Uninstall the Endpoint Pro agent from ${agent.hostname}?`,
+      body:
+        "This removes management of this endpoint entirely - it will stop checking in and disappear from monitoring. " +
+        "This cannot be undone from here; re-enrolling requires running the installer on the endpoint again. " +
+        "The endpoint must be online to pick up the command.",
+      confirmLabel: "Continue",
+      tone: "danger",
+    });
     if (!confirmed) return;
 
-    const password = window.prompt(
-      "Enter the uninstall password for this deployment (leave blank if none is configured):",
-    );
+    const password = await prompt({
+      title: "Enter the uninstall password",
+      label: "Uninstall password",
+      type: "password",
+      help: "Leave blank if none is configured for this deployment.",
+      confirmLabel: "Uninstall agent",
+    });
     if (password === null) return; // cancelled
 
     uninstall.mutate(
       { agentId: agent.id, password },
       {
-        onSuccess: () => window.alert("Uninstall scheduled - the agent will be removed within about 30 seconds."),
+        onSuccess: () => toast("Uninstall scheduled - the agent will be removed within about 30 seconds."),
       },
     );
   }

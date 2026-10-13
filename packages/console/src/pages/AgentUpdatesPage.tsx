@@ -12,6 +12,7 @@ import {
 } from "../api/hooks";
 import Collapsible from "../components/Collapsible";
 import EndpointLabel from "../components/EndpointLabel";
+import { useConfirm } from "../components/ui";
 
 const PLATFORM_LABELS: Record<string, string> = { win32: "Windows", linux: "Linux" };
 
@@ -102,6 +103,7 @@ function BuildPanel({ platform, build }: { platform: string; build: AgentBuildIn
 function DuplicateEntriesPanel() {
   const { data: duplicates, isLoading } = useDuplicateAgents();
   const deleteDuplicates = useDeleteDuplicateAgents();
+  const confirm = useConfirm();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const allSelected = !!duplicates && duplicates.length > 0 && selectedIds.length === duplicates.length;
@@ -115,14 +117,17 @@ function DuplicateEntriesPanel() {
     setSelectedIds(allSelected ? [] : duplicates.map((d) => d.id));
   }
 
-  function handleDeleteSelected() {
+  async function handleDeleteSelected() {
     if (selectedIds.length === 0) return;
-    const confirmed = window.confirm(
-      `Delete ${selectedIds.length} duplicate agent record(s)?\n\n` +
-        `These are offline, older-version rows for hostnames that already have a newer, currently-active ` +
-        `record. This only removes the management record - it does not touch anything on any endpoint.` +
-        `\n\nThis cannot be undone.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete ${selectedIds.length} duplicate agent record(s)?`,
+      body:
+        "These are offline, older-version rows for hostnames that already have a newer, currently-active " +
+        "record. This only removes the management record - it does not touch anything on any endpoint." +
+        "\n\nThis cannot be undone.",
+      confirmLabel: "Delete records",
+      tone: "danger",
+    });
     if (!confirmed) return;
     deleteDuplicates.mutate(selectedIds, { onSuccess: () => setSelectedIds([]) });
   }
@@ -176,8 +181,14 @@ function DuplicateEntriesPanel() {
                   <td>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!window.confirm(`Delete the duplicate record for ${d.hostname}?\n\nThis cannot be undone.`)) return;
+                      onClick={async () => {
+                        const confirmed = await confirm({
+                          title: `Delete the duplicate record for ${d.hostname}?`,
+                          body: "This cannot be undone.",
+                          confirmLabel: "Delete record",
+                          tone: "danger",
+                        });
+                        if (!confirmed) return;
                         deleteDuplicates.mutate([d.id]);
                       }}
                       disabled={deleteDuplicates.isPending}

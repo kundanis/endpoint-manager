@@ -25,8 +25,24 @@ The order is fonts → `tokens/tokens.css` → `css/meridian.css` → `src/index
 | 0 Audit | Done (this file) |
 | 1 Foundations | Done: fonts, tokens, meridian.css, Lucide, chart palette, legacy classes re-themed to tokens |
 | 2 App shell | Done: `.ep-sb` sidebar (Operations/Administration), `.ep-tb` top bar with breadcrumb and avatar menu (Log out moved there), `.ep-pg`, ≤960px drawer. Login page rebuilt as a Meridian card |
-| 3 Shared components | Not started |
+| 3 Shared components | Done: `src/components/ui/` (see below). All `window.confirm`/`alert`/`prompt` calls replaced with Meridian modals and toasts; `StatusBadge` now renders `ep-badge` |
 | 4 Pages | Not started (every page still renders legacy markup through the bridge) |
+
+## Shared components (`src/components/ui`, import from `../components/ui`)
+
+| Need | Component |
+|---|---|
+| Buttons | `Button` (variant: primary, secondary, ghost, danger, danger-solid; size sm; Lucide `icon`), `IconButton` (required `label`) |
+| Status | `Status value=…` maps backend values via `statusDisplay()` to the fixed vocabulary; `Badge`, `Pill`, `Tag`. Legacy `StatusBadge kind/label` still works and renders `ep-badge` |
+| Page structure | `PageHeader`, `Tabs` (route or state), `Card` (`flush` for tables), `Row` (21/12/3), `KeyValueList` |
+| KPIs | `KpiStrip`, `Kpi` (suffix, footer, bar, `to`), `Delta` |
+| Tables | `Toolbar`, `SearchInput`, `Segmented`, `BulkBar`, `Pagination`, `RowMenu`; the table itself is `<table className="ep-tbl">` |
+| Forms | `Field`, `FormSection`, `FormGrid`, `FormFooter`, `Switch`, `Check` |
+| Feedback | `Alert`, `EmptyState`, `Skeleton` |
+| Charts | `Donut` (2–3 parts only), `RankedBars` (`tail` for long-tail "Other"), `CoverageTable`, `Legend` |
+| Dialogs | `useConfirm()`, `usePrompt()` (with `validate`), `useToast()`; `<DialogProvider>` is mounted in `main.tsx` |
+
+Shared components can be used inside legacy pages: the legacy bridge skips anything inside an `ep-*` component.
 
 ## Page → pattern map
 
@@ -64,5 +80,4 @@ The order is fonts → `tokens/tokens.css` → `css/meridian.css` → `src/index
 - **Nav expand behaviour** keeps the existing multi-expand. COMPONENTS.md §2 asks for one module at a time; changing that is a behaviour decision.
 - **Endpoint offline dot** changed from red to neutral grey, per the Meridian rule "offline = `--ep-neutral`". The old code had deliberately used red.
 - **Legacy buttons** are now secondary (white) by default, and only `type="submit"` buttons stay brand red. This replaces the old look where every button was red.
-- `window.confirm`/`alert` usage (about 21 call sites) still needs replacing with `.ep-modal` and `.ep-toast` in phase 3.
 - The JS bundle is about 930 kB. The large-chunk warning predates this work (Recharts and pages aren't code-split).

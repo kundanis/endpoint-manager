@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
+import { DialogProvider } from "./components/ui";
 // Meridian design system (design-system/CLAUDE.md). Order matters: fonts, then tokens, then
 // the ep-* component styles, then the app's own CSS last so its legacy bridge can override
 // the Meridian reset inside not-yet-migrated pages. Fonts are bundled (not Google Fonts)
@@ -25,7 +26,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <App />
+        <DialogProvider>
+          <App />
+        </DialogProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,

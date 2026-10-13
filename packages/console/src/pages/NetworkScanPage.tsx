@@ -15,6 +15,7 @@ import {
 import type { NetworkScanRunDetail, NetworkScanRunListItem, NetworkVlanListItem } from "../api/types";
 import Collapsible from "../components/Collapsible";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
+import { useConfirm } from "../components/ui";
 
 function statusBadgeClass(status: string): string {
   if (status === "SUCCESS") return "online";
@@ -326,6 +327,7 @@ function VlanForm({
 function VlanRow({ vlan }: { vlan: NetworkVlanListItem }) {
   const update = useUpdateNetworkVlan();
   const del = useDeleteNetworkVlan();
+  const confirm = useConfirm();
   const triggerScan = useTriggerVlanScan();
   const [editing, setEditing] = useState(false);
 
@@ -333,8 +335,14 @@ function VlanRow({ vlan }: { vlan: NetworkVlanListItem }) {
     update.mutate({ id: vlan.id, enabled });
   }
 
-  function handleDelete() {
-    if (!window.confirm(`Delete VLAN "${vlan.name}"? Past scan history is kept, just no longer grouped under a live VLAN.`)) return;
+  async function handleDelete() {
+    const confirmed = await confirm({
+      title: `Delete VLAN "${vlan.name}"?`,
+      body: "Past scan history is kept, just no longer grouped under a live VLAN.",
+      confirmLabel: "Delete VLAN",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     del.mutate(vlan.id);
   }
 

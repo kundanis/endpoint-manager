@@ -10,6 +10,7 @@ import {
 } from "../api/hooks";
 import type { VulnerabilityRemediationResult } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
+import { useConfirm } from "../components/ui";
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
@@ -40,6 +41,7 @@ export default function VulnerabilitiesPage() {
   const triggerRescan = useTriggerVulnerabilityRescan();
   const remediateVuln = useRemediateVulnerability();
   const remediateSeverity = useRemediateBySeverity();
+  const confirm = useConfirm();
 
   const [mode, setMode] = useState<"PUBLISHED" | "LAST_MODIFIED">("PUBLISHED");
   const [selectedDefId, setSelectedDefId] = useState<string | undefined>();
@@ -89,29 +91,36 @@ export default function VulnerabilitiesPage() {
     setSelectedSeverities((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   }
 
-  function handleRemediateSeverities() {
+  async function handleRemediateSeverities() {
     if (selectedSeverities.length === 0) return;
-    const confirmed = window.confirm(
-      `Uninstall the vulnerable software for every OPEN ${selectedSeverities.join("/")} finding across the fleet?\n\n` +
-        `This dispatches a real uninstall command to every affected endpoint. Lower-confidence (name-only) matches are skipped automatically.`,
-    );
+    const confirmed = await confirm({
+      title: `Uninstall the vulnerable software for every OPEN ${selectedSeverities.join("/")} finding across the fleet?`,
+      body:
+        "This dispatches a real uninstall command to every affected endpoint. Lower-confidence (name-only) matches " +
+        "are skipped automatically.",
+      confirmLabel: "Uninstall software",
+      tone: "danger",
+    });
     if (!confirmed) return;
     setSeverityResult(null);
     remediateSeverity.mutate(selectedSeverities, { onSuccess: (result) => setSeverityResult(result) });
   }
 
-  function handleRemediateVulnerability() {
+  async function handleRemediateVulnerability() {
     if (!detail || selectedFindingIds.length === 0) return;
     const selected = detail.findings.filter((f) => selectedFindingIds.includes(f.id));
     const agentCount = new Set(selected.map((f) => f.agentId)).size;
     const nameOnlyCount = selected.filter((f) => f.matchConfidence !== "PRODUCT_AND_VERSION").length;
-    const confirmed = window.confirm(
-      `Uninstall the software matched to ${detail.cveId} on ${agentCount} selected endpoint(s)?\n\n` +
-        `This dispatches a real uninstall command to each selected endpoint.` +
+    const confirmed = await confirm({
+      title: `Uninstall the software matched to ${detail.cveId} on ${agentCount} selected endpoint(s)?`,
+      body:
+        "This dispatches a real uninstall command to each selected endpoint." +
         (nameOnlyCount > 0
           ? `\n\n${nameOnlyCount} of the selected match(es) are name-only (version not confirmed) — they will be uninstalled too, because you ticked them.`
           : ""),
-    );
+      confirmLabel: "Uninstall software",
+      tone: "danger",
+    });
     if (!confirmed) return;
     setCveResult(null);
     remediateVuln.mutate(
