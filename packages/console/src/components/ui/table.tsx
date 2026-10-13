@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { ChevronLeft, ChevronRight, Columns3, Search, X } from "lucide-react";
+import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 
 // Data-table furniture (COMPONENTS.md §13). The table itself is a plain
 // <table className="ep-tbl"> inside <Card flush>, so columns stay fully under page control.
@@ -152,4 +152,100 @@ export function Pagination({
       </div>
     </div>
   );
+}
+
+// Show/hide optional table columns. Keep the identity column and the actions column out of
+// `columns` so they can never be hidden.
+export function ColumnPicker({
+  columns,
+  visible,
+  onChange,
+}: {
+  columns: { key: string; label: string }[];
+  visible: string[];
+  onChange: (visible: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function toggle(key: string) {
+    onChange(visible.includes(key) ? visible.filter((k) => k !== key) : [...visible, key]);
+  }
+
+  return (
+    <div className="app-menu-wrap" ref={wrapRef}>
+      <button type="button" className="ep-btn ep-btn-sm" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Columns3 size={15} strokeWidth={1.7} className="ep-ic" aria-hidden />
+        Columns
+      </button>
+      {open && (
+        <div className="ep-menu app-menu-pop app-column-menu">
+          {columns.map((c) => (
+            <label key={c.key} className="ep-check">
+              <input type="checkbox" checked={visible.includes(c.key)} onChange={() => toggle(c.key)} />
+              <span>{c.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Removable active-filter chips shown under a toolbar.
+export function FilterChips({ chips, onClearAll }: { chips: { key: string; label: ReactNode; onRemove: () => void }[]; onClearAll?: () => void }) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="app-chips">
+      {chips.map((c) => (
+        <span key={c.key} className="ep-tag app-chip">
+          {c.label}
+          <button type="button" aria-label="Remove filter" onClick={c.onRemove}>
+            <X size={12} strokeWidth={2} aria-hidden />
+          </button>
+        </span>
+      ))}
+      {onClearAll && chips.length > 1 && (
+        <button type="button" className="ep-link app-link-btn" onClick={onClearAll}>
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Client-side pagination state for an in-memory list. Clamps the page when the list shrinks
+// (live updates, filter changes) so the view never lands on an empty page.
+export function usePagedList<T>(items: T[], initialPageSize = 25) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const current = Math.min(page, pageCount);
+  return {
+    page: current,
+    pageSize,
+    total: items.length,
+    pageItems: items.slice((current - 1) * pageSize, current * pageSize),
+    setPage,
+    setPageSize: (size: number) => {
+      setPageSize(size);
+      setPage(1);
+    },
+  };
 }

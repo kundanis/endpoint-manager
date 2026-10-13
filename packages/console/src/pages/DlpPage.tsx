@@ -1,30 +1,23 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { Outlet } from "react-router-dom";
+import { PageHeader, Tabs } from "../components/ui";
 
 const DLP_TABS = [
-  { path: "content-policies", label: "Content & File Policies" },
-  { path: "email-attachment-block", label: "Email Attachment Blocking" },
+  { to: "content-policies", label: "Content & file policies" },
+  { to: "email-attachment-block", label: "Email attachment blocking" },
 ];
 
+// Two channels that share nothing at the enforcement level but the same goal: Content &
+// File Policies watch local file writes on assigned endpoints; Email Attachment Blocking
+// runs inside Outlook and targets mailboxes by address (see that tab for why).
 export default function DlpPage() {
   return (
-    <div>
-      <h1>DLP</h1>
-      <p>
-        Data loss prevention across two different channels that share nothing at the enforcement level but the same
-        goal — stop sensitive data leaving. <strong>Content &amp; File Policies</strong> watches local file writes
-        (USB/removable media by default) on assigned endpoints. <strong>Email Attachment Blocking</strong> runs
-        entirely inside Outlook itself and targets mailboxes by email address, not endpoints — see that tab for why.
-      </p>
-
-      <div className="tab-bar">
-        {DLP_TABS.map((tab) => (
-          <NavLink key={tab.path} to={tab.path} className={({ isActive }) => `tab-link ${isActive ? "active" : ""}`}>
-            {tab.label}
-          </NavLink>
-        ))}
-      </div>
-
+    <>
+      <PageHeader
+        title="Data loss prevention"
+        description="Stop sensitive data leaving — through local file writes on endpoints, or through Outlook attachments."
+      />
+      <Tabs items={DLP_TABS} />
       <Outlet />
-    </div>
+    </>
   );
 }

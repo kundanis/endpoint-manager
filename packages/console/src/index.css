@@ -369,6 +369,382 @@ button.ep-link.app-link-btn {
   cursor: not-allowed;
 }
 
+/* ---- Layout utilities for page bodies (documented in design-system/AUDIT.md) ---- */
+.app-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-actions-row.app-end {
+  justify-content: flex-end;
+}
+
+/* Right-aligned row actions in a table cell. */
+.app-cell-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.app-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 16px;
+}
+
+.app-muted {
+  color: var(--ep-ink-subtle);
+}
+
+/* Explanatory copy inside a card body. */
+.app-text {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ep-ink-muted);
+  max-width: 880px;
+}
+
+.app-text + .app-text {
+  margin-top: 8px;
+}
+
+.app-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+}
+
+/* A table inside a card body (not flush): framed like a well. */
+.app-table-wrap {
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+  overflow-x: auto;
+}
+
+.app-table-wrap .ep-tbl th:first-child,
+.app-table-wrap .ep-tbl td:first-child {
+  padding-left: 14px;
+}
+
+/* A flush table that may be wider than its card. */
+.app-table-scroll {
+  overflow-x: auto;
+}
+
+/* Command output, logs, multi-line machine text. */
+.app-pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--ep-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--ep-surface-2);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+}
+
+/* KPI strip column count follows the number of tiles (components/ui/Kpi.tsx). Restates
+   meridian.css's breakpoints because this base rule comes later in the cascade. */
+.ep-kpis {
+  grid-template-columns: repeat(var(--app-kpi-cols, 5), minmax(0, 1fr));
+}
+
+@media (max-width: 1280px) {
+  .ep-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .ep-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Section header under a page header + tabs (components/policy.tsx SectionHeader). */
+.app-section-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.app-section-head h2 {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.app-section-head p {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ep-ink-subtle);
+  max-width: 920px;
+}
+
+.app-section-head > .app-actions-row {
+  margin-left: auto;
+  flex: none;
+}
+
+/* Small uppercase-free sub-heading inside a card body. */
+.app-subhead {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ep-ink-muted);
+}
+
+/* Secondary line under a row's name (description), not monospace. */
+.app-row-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--ep-ink-subtle);
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-cell-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.app-saved {
+  font-size: 12.5px;
+  color: var(--ep-ok);
+  margin-right: auto;
+}
+
+/* Policy detail card: tabs sit inside the card, under its header. */
+.app-policy-detail {
+  scroll-margin-top: 16px;
+}
+
+.app-policy-tabs {
+  padding: 4px 20px 0;
+}
+
+.app-policy-tabs .ep-tabs {
+  margin-top: 0;
+}
+
+/* A form block inside a card body (add/edit rule): a subtle well. */
+.app-inset-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+  background: var(--ep-surface-2);
+}
+
+/* A settings form whose footer bleeds to the card edges. */
+.app-settings-form .ep-formfoot {
+  margin: 20px -20px -18px;
+}
+
+/* Several badges/tags in one cell. */
+.app-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The identity link in a table row: reads as text, underlines on hover. */
+a.app-row-link {
+  color: var(--ep-ink);
+  text-decoration: none;
+}
+
+a.app-row-link:hover {
+  color: var(--ep-accent);
+  text-decoration: underline;
+}
+
+/* KPI tile rendered as a button (in-page filter). */
+button.app-kpi-link {
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+button.app-kpi-link:hover {
+  border-color: var(--ep-border-strong);
+}
+
+.app-kpi-active,
+button.app-kpi-active:hover {
+  border-color: var(--ep-accent);
+  background: var(--ep-selected);
+}
+
+.app-column-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+
+.app-column-menu .ep-check {
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+.app-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--ep-border);
+}
+
+.app-chip {
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.app-chip button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: var(--ep-radius-pill);
+  background: transparent;
+  color: var(--ep-ink-subtle);
+  cursor: pointer;
+}
+
+.app-chip button:hover {
+  background: var(--ep-surface-2);
+  color: var(--ep-ink);
+}
+
+/* Collapsible card (components/Collapsible.tsx). */
+.app-collapsible > summary {
+  list-style: none;
+  cursor: pointer;
+  padding-bottom: 14px;
+}
+
+.app-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-collapsible[open] > summary {
+  padding-bottom: 0;
+}
+
+.app-collapsible-chev {
+  color: var(--ep-ink-subtle);
+  transition: transform var(--ep-dur) var(--ep-ease);
+}
+
+.app-collapsible[open] .app-collapsible-chev {
+  transform: rotate(90deg);
+}
+
+.app-collapsible > summary:focus-visible {
+  outline: 2px solid var(--ep-focus);
+  outline-offset: -2px;
+  border-radius: var(--ep-radius-lg);
+}
+
+/* Endpoint picker (components/EndpointCheckboxList.tsx). */
+.app-picker {
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+  background: var(--ep-surface);
+}
+
+button.app-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ep-ink);
+}
+
+.app-picker-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.app-picker-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ep-ink-subtle);
+}
+
+.app-picker-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+
+.app-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--ep-border);
+}
+
+.app-picker-row {
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.app-picker-implied {
+  color: var(--ep-ink-subtle);
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .app-picker-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Dashboard posture card: a sub-section below the donut, split by a hairline. */
 .app-posture-section {
   display: flex;

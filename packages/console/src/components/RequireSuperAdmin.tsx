@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { ShieldOff } from "lucide-react";
 import { useMe } from "../api/hooks";
+import { Card, EmptyState, PageHeader, Skeleton } from "./ui";
 
 // Route-level guard for Administrators, mirroring RequireModule.tsx's shape but gating on
 // role instead of license/grant - a UX layer only, the real enforcement is
@@ -8,17 +10,18 @@ import { useMe } from "../api/hooks";
 export default function RequireSuperAdmin({ children }: { children: ReactNode }) {
   const { data: me, isLoading } = useMe();
 
-  if (isLoading) return <div className="page-loading">Loading…</div>;
+  if (isLoading) return <Card><Skeleton /></Card>;
 
   if (me?.role !== "SUPER_ADMIN") {
     return (
-      <div>
-        <h1>Administrators</h1>
-        <div className="panel">
-          <h2>Super admin access required</h2>
-          <p>Only a super admin can manage administrator accounts.</p>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Administrators" />
+        <Card>
+          <EmptyState icon={ShieldOff} title="Super admin access required">
+            Only a super admin can manage administrator accounts.
+          </EmptyState>
+        </Card>
+      </>
     );
   }
 

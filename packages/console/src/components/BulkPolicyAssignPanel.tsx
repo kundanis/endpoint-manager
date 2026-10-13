@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAgents, useAssetGroups } from "../api/hooks";
 import EndpointCheckboxList from "./EndpointCheckboxList";
+import { Alert, Button, Card, Check } from "./ui";
 
 // Shared "assign N selected policies at once" panel for every EPM category page (App
 // Control, Web Block, PII Block, Command Block, IP Block, USB Control). Each of those
@@ -55,36 +56,41 @@ export default function BulkPolicyAssignPanel({
   const plural = policyIds.length === 1 ? "policy" : "policies";
 
   return (
-    <div className="panel card accent-purple">
-      <h2>Assign {policyIds.length} selected {plural}</h2>
+    <Card title={`Assign ${policyIds.length} selected ${plural}`} hint="to groups or individual endpoints">
+      <div className="app-stack">
+        {groups && groups.length > 0 && (
+          <div className="app-stack-sm">
+            <span className="ep-label">Groups</span>
+            <div className="app-check-grid">
+              {groups.map((g) => (
+                <Check
+                  key={g.id}
+                  checked={selectedGroupIds.includes(g.id)}
+                  onChange={() => toggleGroup(g.id)}
+                  label={
+                    <>
+                      {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
+        <EndpointCheckboxList agents={agents} selectedAgentIds={selectedAgentIds} onToggle={toggleAgent} selectedGroupIds={selectedGroupIds} />
 
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-      />
-
-      {error && <p className="error-text">{error}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={isSubmitting || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {isSubmitting ? "Assigning…" : `Assign to selected ${plural}`}
-      </button>
-    </div>
+        {error && <Alert tone="critical">{error}</Alert>}
+        <div className="app-actions-row">
+          <Button
+            variant="primary"
+            onClick={handleAssign}
+            disabled={isSubmitting || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
+          >
+            {isSubmitting ? "Assigning…" : `Assign ${policyIds.length} ${plural}`}
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }

@@ -64,12 +64,12 @@ export function EndpointStatusDot({ hostname, agentId }: { hostname?: string | n
 }
 
 // <option> can only hold plain text, so drop-downs use this instead of <EndpointLabel> -
-// the status dot becomes an emoji prefix.
+// the status becomes a word suffix (status is never colour alone).
 export function EndpointOption({ value, hostname, agentId }: { value: string; hostname: string; agentId?: string | null }) {
   const agent = useEndpointAgent(hostname, agentId);
   const suffix = useEndpointSuffix(hostname, agentId);
-  const dot = agent ? (agent.status === "ONLINE" ? "🟢 " : "🔴 ") : "";
-  return <option value={value}>{dot + hostname + suffix}</option>;
+  const status = agent && agent.status !== "ONLINE" ? " · offline" : "";
+  return <option value={value}>{hostname + suffix + status}</option>;
 }
 
 export default function EndpointLabel({

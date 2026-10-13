@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
+import { Download } from "lucide-react";
 import { useRemoteInstallJob, useStartRemoteInstall } from "../api/hooks";
 import RemoteInstallStatusTable from "./RemoteInstallStatusTable";
+import { Button } from "./ui";
 
 // Per-host "Install agent" on an unmanaged device - same underlying WinRM-based remote
 // install as Enrollment Tokens' "Install on endpoint" panel, just triggered with the target
@@ -34,37 +36,41 @@ export default function InstallAgentAction({ hostname, ipAddress }: { hostname: 
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)}>
+      <Button size="sm" icon={Download} onClick={() => setOpen(true)}>
         Install agent
-      </button>
+      </Button>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.3rem", minWidth: "12rem" }}>
+    <form onSubmit={handleSubmit} className="app-inline-form">
       <input
+        className="ep-input"
         type="text"
         value={username}
         onChange={(e) => setUsername(e.target.value)}
         placeholder="DOMAIN\admin"
+        aria-label={`Admin username for ${target}`}
         required
         autoFocus
       />
       <input
+        className="ep-input"
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="Password"
+        aria-label={`Admin password for ${target}`}
         required
       />
-      {startInstall.isError && <p className="error-text">{(startInstall.error as Error).message}</p>}
-      <div style={{ display: "flex", gap: "0.3rem" }}>
-        <button type="submit" disabled={startInstall.isPending || !username.trim() || !password}>
-          {startInstall.isPending ? "Starting…" : `Install on ${target}`}
-        </button>
-        <button type="button" onClick={() => setOpen(false)}>
+      {startInstall.isError && <span className="ep-error">{(startInstall.error as Error).message}</span>}
+      <div className="app-actions-row">
+        <Button size="sm" onClick={() => setOpen(false)}>
           Cancel
-        </button>
+        </Button>
+        <Button size="sm" variant="primary" type="submit" disabled={startInstall.isPending || !username.trim() || !password}>
+          {startInstall.isPending ? "Starting…" : `Install on ${target}`}
+        </Button>
       </div>
     </form>
   );

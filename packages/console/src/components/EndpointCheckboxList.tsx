@@ -1,15 +1,16 @@
 import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import type { AgentListItem } from "../api/types";
-import Collapsible from "./Collapsible";
 import EndpointLabel from "./EndpointLabel";
 
-// Shared "pick endpoints" checkbox list — used by every "Assign to" / "Target endpoints"
+// Shared "pick endpoints" checklist — used by every "Assign to" / "Target endpoints"
 // panel across the console (policy assignment pages, command/patch/package/agent-update
-// dispatch). Previously each page hand-copied its own <fieldset> of checkboxes showing
-// hostname only; this adds the logged-on user next to each hostname, lets the list be
-// filtered by host or user once the fleet gets large, collapses so a long fleet doesn't
-// dominate the page, and (via `selectedGroupIds`) shows which hosts are already covered
-// by a currently-selected group so it's obvious they don't need picking individually too.
+// dispatch). Shows the logged-on user next to each hostname, filters by host or user once
+// the fleet gets large, can be minimized so a long fleet doesn't dominate the page, and
+// (via `selectedGroupIds`) shows which hosts are already covered by a currently-selected
+// group so it's obvious they don't need picking individually too.
+//
+// Rendered as a bordered picker block (not a card) so it nests inside cards and forms.
 export default function EndpointCheckboxList({
   agents,
   selectedAgentIds,
@@ -37,13 +38,11 @@ export default function EndpointCheckboxList({
   // is shown pre-checked and disabled — it's already covered by the group assignment, so
   // there's nothing to individually toggle.
   selectedGroupIds?: string[];
-  // Collapsed by default is rarely useful here (the whole point is picking something), so
-  // this starts open — the point of wrapping in Collapsible is giving the fleet list a
-  // minimize control once it gets long, not hiding it up front.
   defaultOpen?: boolean;
 }) {
   const [hostFilter, setHostFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
+  const [open, setOpen] = useState(defaultOpen);
 
   const hostTerm = hostFilter.trim().toLowerCase();
   const userTerm = userFilter.trim().toLowerCase();
@@ -56,45 +55,78 @@ export default function EndpointCheckboxList({
     return selectedGroupIdSet.size > 0 && agent.groups.some((g) => selectedGroupIdSet.has(g.id));
   }
 
+  const Chevron = open ? ChevronDown : ChevronRight;
+
   return (
-    <Collapsible title={legend} defaultOpen={defaultOpen}>
-      {agents && agents.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "0.5rem" }}>
-          <label style={{ display: "inline-block" }}>
-            Filter by host
-            <input type="text" value={hostFilter} onChange={(e) => setHostFilter(e.target.value)} placeholder="Hostname…" />
-          </label>
-          <label style={{ display: "inline-block" }}>
-            Filter by user
-            <input type="text" value={userFilter} onChange={(e) => setUserFilter(e.target.value)} placeholder="Logged-on user…" />
-          </label>
-        </div>
-      )}
-      {filteredAgents.map((agent) => {
-        const manuallySelected = selectedAgentIds.includes(agent.id);
-        const implied = !manuallySelected && impliedByGroup(agent);
-        return (
-          <label key={agent.id} className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={manuallySelected || implied}
-              disabled={implied}
-              title={implied ? "Already included via a selected group" : undefined}
-              onChange={() => onToggle(agent.id)}
-            />
-            {renderRow ? (
-              renderRow(agent)
-            ) : (
-              <>
-                <EndpointLabel hostname={agent.hostname} agentId={agent.id} /> {renderExtra?.(agent)}
-              </>
+    <div className="app-picker">
+      <button type="button" className="app-picker-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Chevron size={16} strokeWidth={1.7} className="ep-ic" aria-hidden />
+        <span className="app-picker-title">{legend}</span>
+        <span className="app-picker-count ep-num">
+          {selectedAgentIds.length > 0 ? `${selectedAgentIds.length} selected` : `${agents?.length ?? 0} available`}
+        </span>
+      </button>
+      {open && (
+        <>
+          {agents && agents.length > 0 && (
+            <div className="app-picker-filters">
+              <div className="ep-input-icon">
+                <Search size={16} strokeWidth={1.7} className="ep-ic" aria-hidden />
+                <input
+                  type="search"
+                  className="ep-input"
+                  value={hostFilter}
+                  onChange={(e) => setHostFilter(e.target.value)}
+                  placeholder="Filter by hostname…"
+                  aria-label="Filter by hostname"
+                />
+              </div>
+              <div className="ep-input-icon">
+                <Search size={16} strokeWidth={1.7} className="ep-ic" aria-hidden />
+                <input
+                  type="search"
+                  className="ep-input"
+                  value={userFilter}
+                  onChange={(e) => setUserFilter(e.target.value)}
+                  placeholder="Filter by logged-on user…"
+                  aria-label="Filter by logged-on user"
+                />
+              </div>
+            </div>
+          )}
+          <div className="app-picker-list">
+            {filteredAgents.map((agent) => {
+              const manuallySelected = selectedAgentIds.includes(agent.id);
+              const implied = !manuallySelected && impliedByGroup(agent);
+              return (
+                <label key={agent.id} className="ep-check app-picker-row">
+                  <input
+                    type="checkbox"
+                    checked={manuallySelected || implied}
+                    disabled={implied}
+                    title={implied ? "Already included via a selected group" : undefined}
+                    onChange={() => onToggle(agent.id)}
+                  />
+                  <span>
+                    {renderRow ? (
+                      renderRow(agent)
+                    ) : (
+                      <>
+                        <EndpointLabel hostname={agent.hostname} agentId={agent.id} /> {renderExtra?.(agent)}
+                      </>
+                    )}
+                    {implied && <span className="app-picker-implied"> · via group</span>}
+                  </span>
+                </label>
+              );
+            })}
+            {agents && agents.length === 0 && <span className="ep-nodata">{emptyMessage}</span>}
+            {agents && agents.length > 0 && filteredAgents.length === 0 && (
+              <span className="ep-nodata">No endpoints match this filter.</span>
             )}
-            {implied && <span style={{ color: "var(--text-muted)", fontSize: "0.85em" }}> (via group)</span>}
-          </label>
-        );
-      })}
-      {agents && agents.length === 0 && <p>{emptyMessage}</p>}
-      {agents && agents.length > 0 && filteredAgents.length === 0 && <p>No endpoints match this filter.</p>}
-    </Collapsible>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

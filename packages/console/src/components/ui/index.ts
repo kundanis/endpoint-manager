@@ -5,7 +5,7 @@ export { Badge, Pill, Status, Tag, statusDisplay, type BadgeTone, type PillTone 
 export { Card, KeyValueList, PageHeader, Row, Tabs, type TabItem } from "./layout";
 export { Delta, Kpi, KpiStrip, type KpiBarSegment } from "./Kpi";
 export { Alert, EmptyState, Skeleton, type AlertTone } from "./feedback";
-export { BulkBar, Pagination, SearchInput, Segmented, Toolbar } from "./table";
+export { BulkBar, ColumnPicker, FilterChips, Pagination, SearchInput, Segmented, Toolbar, usePagedList } from "./table";
 export { Check, Field, FormFooter, FormGrid, FormSection, Switch } from "./form";
 export { RowMenu, type MenuItem } from "./Menu";
 export { CoverageTable, Donut, Legend, RankedBars, type ChartDatum, type CoverageRow } from "./charts";

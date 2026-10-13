@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { Lock, ShieldOff } from "lucide-react";
 import { useLicenseStatus, useMe, useModuleVisibility } from "../api/hooks";
 import type { LicenseModuleKey } from "../api/types";
+import { Card, EmptyState, PageHeader, Skeleton } from "./ui";
 
 // Mirrors requireModule.ts's MODULE_LABELS equivalent on the server — kept as a plain
 // local const rather than imported, same as every other module-key label map in this
@@ -25,7 +27,7 @@ export default function RequireModule({ module, children }: { module: LicenseMod
   const { data: visibility, isLoading: visibilityLoading } = useModuleVisibility();
   const location = useLocation();
 
-  if (licenseLoading || meLoading || visibilityLoading) return <div className="page-loading">Loading…</div>;
+  if (licenseLoading || meLoading || visibilityLoading) return <Card><Skeleton /></Card>;
 
   // Most-authoritative check, ahead of license/grant — an org-wide hide overrides both,
   // even a SUPER_ADMIN (see ModuleVisibilitySettings's schema comment). Unlike the locked/
@@ -42,16 +44,15 @@ export default function RequireModule({ module, children }: { module: LicenseMod
   const locked = !!status?.enforcementEnabled && !(status.modules ?? []).includes(module);
   if (locked) {
     return (
-      <div>
-        <h1>{MODULE_LABELS[module]}</h1>
-        <div className="panel">
-          <h2>This module is locked</h2>
-          <p>
+      <>
+        <PageHeader title={MODULE_LABELS[module]} />
+        <Card>
+          <EmptyState icon={Lock} title="This module is locked">
             {MODULE_LABELS[module]} isn't included in your current license. Contact your vendor to add it, then it
             will unlock automatically the next time your license re-validates.
-          </p>
-        </div>
-      </div>
+          </EmptyState>
+        </Card>
+      </>
     );
   }
 
@@ -62,13 +63,14 @@ export default function RequireModule({ module, children }: { module: LicenseMod
   const ungranted = me?.role !== "SUPER_ADMIN" && !me?.moduleGrants.includes(module);
   if (ungranted) {
     return (
-      <div>
-        <h1>{MODULE_LABELS[module]}</h1>
-        <div className="panel">
-          <h2>You don't have access to this module</h2>
-          <p>Ask a super admin to grant you access to {MODULE_LABELS[module]} in Administrators.</p>
-        </div>
-      </div>
+      <>
+        <PageHeader title={MODULE_LABELS[module]} />
+        <Card>
+          <EmptyState icon={ShieldOff} title="You don't have access to this module">
+            Ask a super admin to grant you access to {MODULE_LABELS[module]} in Administrators.
+          </EmptyState>
+        </Card>
+      </>
     );
   }
 

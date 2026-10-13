@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { Children, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 // KPI tile (COMPONENTS.md §8). Every tile answers "how many, out of how many, getting better
@@ -10,8 +10,14 @@ export interface KpiBarSegment {
   color: string;
 }
 
+// Sizes its grid to the tiles actually rendered (hidden modules drop tiles), up to 5 columns.
 export function KpiStrip({ children }: { children: ReactNode }) {
-  return <div className="ep-kpis">{children}</div>;
+  const count = Math.min(Math.max(Children.toArray(children).length, 1), 5);
+  return (
+    <div className="ep-kpis" style={{ "--app-kpi-cols": count } as CSSProperties}>
+      {children}
+    </div>
+  );
 }
 
 export function Kpi({
@@ -23,6 +29,8 @@ export function Kpi({
   footer,
   bar,
   to,
+  onClick,
+  active,
 }: {
   icon?: LucideIcon;
   label: ReactNode;
@@ -34,6 +42,10 @@ export function Kpi({
   bar?: KpiBarSegment[];
   // A tile that links goes to the filtered list.
   to?: string;
+  // In-page action instead of navigation (e.g. apply a filter below). `active` marks the
+  // tile whose filter is currently applied.
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const total = bar?.reduce((sum, s) => sum + s.value, 0) ?? 0;
   const valueColor =
@@ -58,6 +70,13 @@ export function Kpi({
       {footer && <div className="ep-ft">{footer}</div>}
     </>
   );
+  if (onClick) {
+    return (
+      <button type="button" className={`ep-card ep-kpi app-kpi-link ${active ? "app-kpi-active" : ""}`} aria-pressed={active} onClick={onClick}>
+        {body}
+      </button>
+    );
+  }
   return to ? (
     <Link to={to} className="ep-card ep-kpi app-kpi-link">
       {body}
