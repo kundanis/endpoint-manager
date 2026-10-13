@@ -1,10 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
+import { useState, type FormEvent } from "react";
+import { Network, Pencil, Plus, Trash2 } from "lucide-react";
 import BulkPolicyAssignPanel from "../components/BulkPolicyAssignPanel";
 import {
   useAddIpBlockRule,
-  useAgents,
-  useAssetGroups,
   useAssignIpBlockPolicy,
   useCreateIpBlockPolicy,
   useDeleteIpBlockPolicy,
@@ -19,8 +17,29 @@ import {
   type IpBlockRuleInput,
 } from "../api/hooks";
 import type { IpBlockPolicyDetail, IpBlockRuleView } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
-import EndpointLabel, { EndpointStatusDot } from "../components/EndpointLabel";
+import {
+  AssignmentEditor,
+  NewPolicyDialog,
+  PolicyDetail,
+  PolicySettingsForm,
+  SectionHeader,
+  SyncStatusTable,
+} from "../components/policy";
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  FormGrid,
+  IconButton,
+  RowMenu,
+  Skeleton,
+  Switch,
+  useConfirm,
+} from "../components/ui";
+
+// Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
 const BLANK_RULE_FORM: IpBlockRuleInput = { ruleType: "IP_ADDRESS", value: "", label: "" };
 
@@ -34,6 +53,7 @@ function RulesPanel({ policy }: { policy: IpBlockPolicyDetail }) {
   const addRule = useAddIpBlockRule();
   const updateRule = useUpdateIpBlockRule();
   const deleteRule = useDeleteIpBlockRule();
+  const confirm = useConfirm();
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [form, setForm] = useState<IpBlockRuleInput>(BLANK_RULE_FORM);
@@ -52,6 +72,17 @@ function RulesPanel({ policy }: { policy: IpBlockPolicyDetail }) {
   function cancelEdit() {
     setEditingRuleId(null);
     setForm(BLANK_RULE_FORM);
+  }
+
+  async function handleDeleteRule(rule: IpBlockRuleView) {
+    const confirmed = await confirm({
+      title: `Remove ${rule.value}?`,
+      body: "It's unblocked on every assigned endpoint at their next sync.",
+      confirmLabel: "Remove address",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deleteRule.mutate({ policyId: policy.id, ruleId: rule.id });
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -88,277 +119,145 @@ function RulesPanel({ policy }: { policy: IpBlockPolicyDetail }) {
   }
 
   return (
-    <div className="panel">
-      <h2>Blocked addresses ({policy.rules.length})</h2>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>IP / CIDR</th>
-            <th>Label</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policy.rules.map((r) => (
-            <tr key={r.id} className={r.id === editingRuleId ? "selected-row" : ""}>
-              <td className="mono-cell">{r.value}</td>
-              <td>{r.label ?? "—"}</td>
-              <td>
-                <button type="button" onClick={() => startEdit(r)}>
-                  Edit
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() => deleteRule.mutate({ policyId: policy.id, ruleId: r.id })}
-                  disabled={deleteRule.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policy.rules.length === 0 && (
-            <tr>
-              <td colSpan={3}>No addresses yet — add one below. A policy with no addresses never blocks anything.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+    <div className="app-stack">
+      {policy.rules.length === 0 ? (
+        <EmptyState icon={Network} title="No blocked addresses yet">
+          Add an IP address or CIDR range below. A policy with no addresses never blocks anything.
+        </EmptyState>
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">IP / CIDR</th>
+                <th scope="col">Label</th>
+                <th scope="col">
+                  <span className="app-vh">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {policy.rules.map((r) => (
+                <tr key={r.id} className={r.id === editingRuleId ? "ep-sel" : undefined}>
+                  <td className="ep-mono">{r.value}</td>
+                  <td>{r.label ?? <span className="app-muted">—</span>}</td>
+                  <td>
+                    <div className="app-cell-actions">
+                      <IconButton icon={Pencil} label={`Edit ${r.value}`} onClick={() => startEdit(r)} />
+                      <IconButton
+                        icon={Trash2}
+                        label={`Delete ${r.value}`}
+                        onClick={() => handleDeleteRule(r)}
+                        disabled={deleteRule.isPending}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      <div className="card accent-orange">
-        <h3>{isEditing ? "Edit address" : "Add address"}</h3>
-        <form onSubmit={handleSubmit}>
-          <label>
-            IP address or CIDR range{!isEditing && " (comma or semicolon-separate multiple)"}
+      <form onSubmit={handleSubmit} className="app-inset-form">
+        <span className="app-subhead">{isEditing ? "Edit address" : "Add addresses"}</span>
+        <FormGrid>
+          <Field
+            label="IP address or CIDR range"
+            htmlFor="ip-rule-value"
+            required
+            help={
+              isEditing
+                ? "Blocked via two Windows Firewall rules (inbound + outbound) that this tool owns exclusively — they win over the endpoint's general firewall policy regardless of what else it allows."
+                : "Separate several with commas or semicolons. Blocked via two Windows Firewall rules (inbound + outbound) that this tool owns exclusively — they win over the endpoint's general firewall policy regardless of what else it allows."
+            }
+          >
             <input
-              type="text"
+              id="ip-rule-value"
+              className="ep-input ep-mono"
               value={form.value}
               onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))}
               placeholder={isEditing ? "203.0.113.5 or 203.0.113.0/24" : "203.0.113.5, 198.51.100.0/24"}
               required
             />
-          </label>
-          <p className="hint">
-            Blocked via two Windows Firewall rules (inbound + outbound) that this tool owns exclusively — they win
-            over the endpoint's general firewall policy regardless of what else it allows.
-          </p>
-
-          <label>
-            Label (optional)
+          </Field>
+          <Field label="Label" htmlFor="ip-rule-label" help={isEditing ? undefined : "Applied to every address added in this batch."}>
             <input
-              type="text"
+              id="ip-rule-label"
+              className="ep-input"
               value={form.label ?? ""}
               onChange={(e) => setForm((prev) => ({ ...prev, label: e.target.value }))}
-              placeholder={isEditing ? 'Friendly name, e.g. "Known C2 server"' : "Applied to every address added from this batch"}
+              placeholder='Optional, e.g. "Known C2 server"'
             />
-          </label>
-
-          {mutationError && <p className="error-text">{(mutationError as Error).message}</p>}
-          {bulkError && <p className="error-text">{bulkError}</p>}
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="submit" disabled={pending || !form.value.trim()}>
-              {pending ? "Saving…" : isEditing ? "Save changes" : "Add address"}
-            </button>
-            {isEditing && (
-              <button type="button" onClick={cancelEdit}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
+          </Field>
+        </FormGrid>
+        {!!mutationError && <Alert tone="critical">{(mutationError as Error).message}</Alert>}
+        {bulkError && <Alert tone="critical">{bulkError}</Alert>}
+        <div className="app-actions-row app-end">
+          {isEditing && <Button onClick={cancelEdit}>Cancel</Button>}
+          <Button type="submit" variant="primary" disabled={pending || !form.value.trim()}>
+            {pending ? "Saving…" : isEditing ? "Save changes" : "Add addresses"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
 
-function PolicySettingsPanel({ policy }: { policy: IpBlockPolicyDetail }) {
-  const updatePolicy = useUpdateIpBlockPolicy();
-  const [name, setName] = useState(policy.name);
-  const [description, setDescription] = useState(policy.description ?? "");
-
-  useEffect(() => {
-    setName(policy.name);
-    setDescription(policy.description ?? "");
-  }, [policy.id, policy.name, policy.description]);
-
-  function handleSave(e: FormEvent) {
-    e.preventDefault();
-    updatePolicy.mutate({ id: policy.id, name, description: description.trim() || null });
-  }
-
-  return (
-    <form className="card accent-blue" onSubmit={handleSave}>
-      <h2>Policy settings</h2>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      {updatePolicy.isError && <p className="error-text">{(updatePolicy.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="submit" disabled={updatePolicy.isPending || !name.trim()}>
-          {updatePolicy.isPending ? "Saving…" : "Save policy"}
-        </button>
-        {updatePolicy.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
-      </div>
-    </form>
-  );
-}
-
-function AssignmentPanel({ policyId, policyName }: { policyId: string; policyName: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
+function AssignmentPanel({ policyId }: { policyId: string }) {
   const { data: assignments } = useIpBlockAssignments(policyId);
   const assign = useAssignIpBlockPolicy();
   const unassign = useUnassignIpBlockPolicy();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { policyId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="panel">
-      <h2>IP Blocking — {policyName} — Assignment</h2>
-
-      <h3>Currently assigned</h3>
-      <ul>
-        {assignments?.map((a) => (
-          <li key={a.id}>
-            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
-            <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
-              Remove
-            </button>
-          </li>
-        ))}
-        {assignments?.length === 0 && <li>Not assigned to any endpoint or group yet.</li>}
-      </ul>
-
-      <h3>Assign to</h3>
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
-
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-      />
-
-      {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {assign.isPending ? "Assigning…" : "Assign"}
-      </button>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ policyId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+    />
   );
 }
 
-function ActivityPanel({ policyId, policyName }: { policyId: string; policyName: string }) {
+function ActivityPanel({ policyId }: { policyId: string }) {
   const { data: breakdown } = useIpBlockAgentBreakdown(policyId);
-  const agents = breakdown?.agents ?? [];
-  const failedCount = agents.filter((a) => a.lastSyncStatus === "FAILED").length;
-
   return (
-    <div className="panel">
-      <h2>IP Blocking — {policyName} — Sync status</h2>
-      <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-        No block-event log exists for this module — asserting a firewall rule has no convenient "a connection was
-        just blocked" signal. This shows whether each endpoint last applied the current address list successfully.
-      </p>
+    <SyncStatusTable
+      rows={breakdown?.agents ?? []}
+      explanation={
+        'No block-event log exists for this module — asserting a firewall rule has no convenient "a connection was just blocked" signal. This shows whether each endpoint last applied the current address list successfully.'
+      }
+    />
+  );
+}
 
-      <div className="tiles">
-        <div className="tile">
-          <div className="tile-label">Assigned devices</div>
-          <div className="tile-value">{agents.length}</div>
-        </div>
-        <div className="tile accent-critical">
-          <div className="tile-label">Failed to sync</div>
-          <div className="tile-value">{failedCount}</div>
-        </div>
-      </div>
-
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>Group</th>
-            <th>User</th>
-            <th>Status</th>
-            <th>Last synced</th>
-          </tr>
-        </thead>
-        <tbody>
-          {agents.map((a) => (
-            <tr key={a.agentId}>
-              <td>
-                <EndpointStatusDot hostname={a.hostname} agentId={a.agentId} />
-                {a.hostname}
-              </td>
-              <td>{a.groupName ?? "—"}</td>
-              <td>{a.lastLoggedOnUser ?? "—"}</td>
-              <td>
-                {a.lastSyncStatus === "SUCCESS" ? (
-                  <StatusBadge kind="pass" label="Synced" />
-                ) : a.lastSyncStatus === "FAILED" ? (
-                  <StatusBadge kind="fail" label={a.lastSyncError ?? "Failed"} />
-                ) : (
-                  <StatusBadge kind="warn" label="Not synced yet" />
-                )}
-              </td>
-              <td>{a.lastSyncedAt ? new Date(a.lastSyncedAt).toLocaleString() : "—"}</td>
-            </tr>
-          ))}
-          {agents.length === 0 && (
-            <tr>
-              <td colSpan={5}>Not assigned to any endpoint yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+function SettingsPanel({ policy }: { policy: IpBlockPolicyDetail }) {
+  const updatePolicy = useUpdateIpBlockPolicy();
+  return (
+    <PolicySettingsForm
+      policyId={policy.id}
+      name={policy.name}
+      description={policy.description}
+      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values })}
+      pending={updatePolicy.isPending}
+      error={updatePolicy.error}
+      saved={updatePolicy.isSuccess}
+    />
   );
 }
 
 export default function IpBlockPage() {
-  const { data: policies } = useIpBlockPolicies();
+  const { data: policies, isLoading, isError, error, refetch } = useIpBlockPolicies();
   const createPolicy = useCreateIpBlockPolicy();
   const updatePolicy = useUpdateIpBlockPolicy();
   const deletePolicy = useDeleteIpBlockPolicy();
+  const confirm = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignIpBlockPolicy();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
 
   const { data: policy } = useIpBlockPolicy(selectedId);
 
@@ -370,25 +269,14 @@ export default function IpBlockPage() {
     setSelectedPolicyIds((prev) => (policies && prev.length === policies.length ? [] : (policies?.map((p) => p.id) ?? [])));
   }
 
-  function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    createPolicy.mutate(
-      { name, description: description.trim() || null },
-      {
-        onSuccess: (result) => {
-          setSelectedId(result.id);
-          setName("");
-          setDescription("");
-        },
-      },
-    );
-  }
-
-  function toggleEnabled(id: string, enabled: boolean) {
-    updatePolicy.mutate({ id, enabled });
-  }
-
-  function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    const confirmed = await confirm({
+      title: `Delete policy "${name}"?`,
+      body: "Its addresses are unblocked on every assigned endpoint at their next sync. This cannot be undone.",
+      confirmLabel: "Delete policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     deletePolicy.mutate(id, {
       onSuccess: () => {
         if (selectedId === id) setSelectedId(undefined);
@@ -396,72 +284,125 @@ export default function IpBlockPage() {
     });
   }
 
-  return (
-    <div>
-      <h2>IP Blocking</h2>
-      <p>
-        Block specific IP addresses or CIDR ranges on assigned endpoints — regardless of what the endpoint's general
-        firewall policy otherwise allows. Enforced via two dedicated Windows Firewall rules (inbound + outbound)
-        that this tool owns exclusively and re-applies on every sync; an explicit block rule always wins over an
-        allow rule in Windows Firewall, order and specificity aside.
-      </p>
+  const allSelected = !!policies && policies.length > 0 && selectedPolicyIds.length === policies.length;
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "2rem" }}>
-              <input
-                type="checkbox"
-                checked={!!policies && policies.length > 0 && selectedPolicyIds.length === policies.length}
-                onChange={toggleSelectAllPolicies}
-                title="Select all"
-              />
-            </th>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Name</th>
-            <th>Addresses</th>
-            <th>Assigned endpoints</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input type="checkbox" checked={selectedPolicyIds.includes(p.id)} onChange={() => togglePolicySelect(p.id)} />
-              </td>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => toggleEnabled(p.id, e.target.checked)}
-                  title="Enabled — paused policies are skipped entirely and don't affect any device"
-                />
-              </td>
-              <td>{p.name}</td>
-              <td>{p.ruleCount}</td>
-              <td>{p.assignedAgentCount}</td>
-              <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p.id);
-                  }}
-                  disabled={deletePolicy.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={6}>No policies yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  return (
+    <>
+      <SectionHeader
+        title="IP blocking"
+        description="Block specific IP addresses or CIDR ranges on assigned endpoints — regardless of what the endpoint's general firewall policy otherwise allows. Enforced via two dedicated Windows Firewall rules (inbound + outbound) that this tool owns exclusively and re-applies on every sync; an explicit block rule always wins over an allow rule in Windows Firewall, order and specificity aside."
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New policy
+          </Button>
+        }
+      />
+
+      <Card flush title="Policies" hint={policies ? `${policies.length} total` : undefined}>
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : isError ? (
+          <div className="ep-cb">
+            <Alert
+              tone="critical"
+              title="Couldn't load IP blocking policies"
+              action={
+                <Button size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            >
+              {(error as Error).message}
+            </Alert>
+          </div>
+        ) : !policies || policies.length === 0 ? (
+          <EmptyState
+            icon={Network}
+            title="No IP blocking policies yet"
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+                New policy
+              </Button>
+            }
+          >
+            Create a policy, add the addresses to block, then assign it to groups or endpoints.
+          </EmptyState>
+        ) : (
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th className="ep-cb" scope="col">
+                    <input type="checkbox" checked={allSelected} onChange={toggleSelectAllPolicies} aria-label="Select all policies" />
+                  </th>
+                  <th scope="col">Policy</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Addresses
+                  </th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Assigned endpoints
+                  </th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policies.map((p) => (
+                  <tr
+                    key={p.id}
+                    className={`app-clickable ${selectedPolicyIds.includes(p.id) || p.id === selectedId ? "ep-sel" : ""}`}
+                    onClick={() => setSelectedId(p.id)}
+                  >
+                    <td className="ep-cb" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPolicyIds.includes(p.id)}
+                        onChange={() => togglePolicySelect(p.id)}
+                        aria-label={`Select ${p.name}`}
+                      />
+                    </td>
+                    <td className="ep-host">
+                      <b>{p.name}</b>
+                      {p.description && <span className="app-row-sub">{p.description}</span>}
+                    </td>
+                    <td
+                      onClick={(e) => e.stopPropagation()}
+                      title="Paused policies are skipped entirely and don't affect any device"
+                    >
+                      <Switch
+                        checked={p.enabled}
+                        onChange={(enabled) => updatePolicy.mutate({ id: p.id, enabled })}
+                        label={p.enabled ? "Enabled" : "Paused"}
+                      />
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.ruleCount}
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.assignedAgentCount}
+                    </td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <RowMenu
+                          label={`Actions for ${p.name}`}
+                          items={[
+                            { label: "Open policy", icon: Pencil, onSelect: () => setSelectedId(p.id) },
+                            { label: "Delete policy", icon: Trash2, danger: true, dividerBefore: true, disabled: deletePolicy.isPending, onSelect: () => handleDelete(p.id, p.name) },
+                          ]}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <BulkPolicyAssignPanel
         policyIds={selectedPolicyIds}
@@ -469,30 +410,30 @@ export default function IpBlockPage() {
         onDone={() => setSelectedPolicyIds([])}
       />
 
-      <form className="panel" onSubmit={handleCreate}>
-        <h2>New policy</h2>
-        <label>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Description
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending || !name.trim()}>
-          {createPolicy.isPending ? "Creating…" : "Create policy"}
-        </button>
-      </form>
-
       {policy && (
-        <>
-          <PolicySettingsPanel policy={policy} />
-          <RulesPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} policyName={policy.name} />
-          <ActivityPanel policyId={policy.id} policyName={policy.name} />
-        </>
+        <PolicyDetail
+          policyId={policy.id}
+          name={policy.name}
+          enabled={policy.enabled}
+          meta={`${policy.rules.length} ${policy.rules.length === 1 ? "address" : "addresses"}`}
+          onClose={() => setSelectedId(undefined)}
+          tabs={[
+            { value: "rules", label: "Blocked addresses", content: <RulesPanel policy={policy} /> },
+            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+            { value: "activity", label: "Sync status", content: <ActivityPanel policyId={policy.id} /> },
+            { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
+          ]}
+        />
       )}
-    </div>
+
+      {creating && (
+        <NewPolicyDialog
+          onClose={() => setCreating(false)}
+          pending={createPolicy.isPending}
+          error={createPolicy.error}
+          onCreate={(values) => createPolicy.mutateAsync(values).then((result) => setSelectedId(result.id))}
+        />
+      )}
+    </>
   );
 }

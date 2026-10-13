@@ -1,4 +1,28 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Download, FileDown, KeyRound, Pencil, Plus, SearchX, Trash2, TriangleAlert, Upload, Users, Wallet } from "lucide-react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  FormFooter,
+  FormGrid,
+  FormSection,
+  Kpi,
+  KpiStrip,
+  PageHeader,
+  Pagination,
+  RowMenu,
+  SearchInput,
+  Segmented,
+  Skeleton,
+  Toolbar,
+  useConfirm,
+  usePagedList,
+} from "../components/ui";
+import { CHART_SEMANTIC } from "../chartTheme";
 import type {
   LicenseType,
   SoftwareLicenseAccessType,
@@ -229,15 +253,30 @@ function formatExpiryDate(expiryDate: string | null): string {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
+// Display labels for the license-type enum; the stored/exported value is unchanged.
+const LICENSE_TYPE_LABELS: Record<LicenseType, string> = {
+  PERPETUAL: "Perpetual",
+  SUBSCRIPTION: "Subscription",
+  VOLUME: "Volume",
+  OEM: "OEM",
+};
+
+type ComplianceFilter = "all" | "over" | "compliant";
+
 export default function SoftwareLicensesPage() {
-  const { data: licenses } = useSoftwareLicenses();
+  const { data: licenses, isLoading, error, refetch } = useSoftwareLicenses();
   const createLicense = useCreateSoftwareLicense();
   const updateLicense = useUpdateSoftwareLicense();
   const deleteLicense = useDeleteSoftwareLicense();
   const importLicenses = useImportSoftwareLicenses();
+  const confirm = useConfirm();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [importMessage, setImportMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [complianceFilter, setComplianceFilter] = useState<ComplianceFilter>("all");
 
   async function handleImportFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -292,6 +331,12 @@ export default function SoftwareLicensesPage() {
     setUserDepartment("");
   }
 
+  // The form sits under the table; bring it into view and focus its first field.
+  function focusForm() {
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    formRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+  }
+
   function startEdit(license: SoftwareLicenseView) {
     setEditingId(license.id);
     setSoftwareName(license.softwareName);
@@ -307,6 +352,18 @@ export default function SoftwareLicensesPage() {
     setDeploymentType(license.deploymentType ?? "");
     setAccessType(license.accessType ?? "");
     setUserDepartment(license.userDepartment ?? "");
+    focusForm();
+  }
+
+  async function handleDelete(license: SoftwareLicenseView) {
+    const confirmed = await confirm({
+      title: `Delete license "${license.softwareName}"?`,
+      body: "Its seat, cost and expiry details are removed from the license register. This cannot be undone.",
+      confirmLabel: "Delete license",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deleteLicense.mutate(license.id);
   }
 
   function handleSubmit(e: FormEvent) {
@@ -333,224 +390,412 @@ export default function SoftwareLicensesPage() {
     }
   }
 
-  return (
-    <div>
-      <h1>Software licenses</h1>
+  const all = licenses ?? [];
+  const term = search.trim().toLowerCase();
+  const filtered = all
+    .filter((l) => complianceFilter === "all" || (complianceFilter === "over" ? l.overCompliance : !l.overCompliance))
+    .filter(
+      (l) =>
+        !term ||
+        l.softwareName.toLowerCase().includes(term) ||
+        (l.vendor ?? "").toLowerCase().includes(term) ||
+        (l.version ?? "").toLowerCase().includes(term) ||
+        (l.userDepartment ?? "").toLowerCase().includes(term),
+    );
+  const paged = usePagedList(filtered, 25);
 
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
-        <button
-          type="button"
-          onClick={() => downloadTextFile("software-licenses.csv", buildLicensesCsv(licenses ?? []))}
-          disabled={!licenses || licenses.length === 0}
-        >
-          Export to CSV
-        </button>
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importLicenses.isPending}>
-          {importLicenses.isPending ? "Importing…" : "Import from CSV"}
-        </button>
-        <button type="button" onClick={() => downloadTextFile("software-licenses-template.csv", buildLicensesCsvTemplate())}>
-          Download template
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          onChange={handleImportFile}
-          style={{ display: "none" }}
-        />
-      </div>
-      {importMessage && (
-        <p className={importMessage.kind === "error" ? "error-text" : "hint"}>{importMessage.text}</p>
+  const overCount = all.filter((l) => l.overCompliance).length;
+  const seatsPurchasedTotal = all.reduce((s, l) => s + l.seatsPurchased, 0);
+  const seatsInUseTotal = all.reduce((s, l) => s + l.seatsInUse, 0);
+  const yearlyTotal = all.reduce((s, l) => s + (l.annualCost ?? 0), 0);
+
+  function clearFilters() {
+    setSearch("");
+    setComplianceFilter("all");
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Software licenses"
+        description="Purchased licenses, seats in use across the fleet, renewal dates and cost."
+        actions={
+          <>
+            <Button icon={FileDown} onClick={() => downloadTextFile("software-licenses-template.csv", buildLicensesCsvTemplate())}>
+              Download template
+            </Button>
+            <Button icon={Upload} onClick={() => fileInputRef.current?.click()} disabled={importLicenses.isPending}>
+              {importLicenses.isPending ? "Importing…" : "Import from CSV"}
+            </Button>
+            <Button
+              icon={Download}
+              onClick={() => downloadTextFile("software-licenses.csv", buildLicensesCsv(licenses ?? []))}
+              disabled={!licenses || licenses.length === 0}
+            >
+              Export to CSV
+            </Button>
+            <Button
+              variant="primary"
+              icon={Plus}
+              onClick={() => {
+                resetForm();
+                focusForm();
+              }}
+            >
+              Add license
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleImportFile}
+              style={{ display: "none" }}
+              aria-label="CSV file to import"
+            />
+          </>
+        }
+      />
+
+      {importMessage && <Alert tone={importMessage.kind === "error" ? "critical" : "success"}>{importMessage.text}</Alert>}
+
+      {isLoading ? (
+        <Card>
+          <Skeleton lines={6} />
+        </Card>
+      ) : error && !licenses ? (
+        <Alert tone="critical" title="Couldn't load software licenses" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+          {(error as Error).message}
+        </Alert>
+      ) : (
+        <>
+          {all.length > 0 && (
+            <KpiStrip>
+              <Kpi
+                icon={KeyRound}
+                label="Licenses"
+                value={all.length}
+                suffix="recorded"
+                active={complianceFilter === "all"}
+                onClick={() => setComplianceFilter("all")}
+              />
+              <Kpi
+                icon={Users}
+                label="Seats in use"
+                value={seatsInUseTotal}
+                suffix={`of ${seatsPurchasedTotal} purchased`}
+                bar={[
+                  { value: Math.min(seatsInUseTotal, seatsPurchasedTotal), color: CHART_SEMANTIC.ok },
+                  { value: Math.max(seatsPurchasedTotal - seatsInUseTotal, 0), color: CHART_SEMANTIC.neutral },
+                ]}
+              />
+              <Kpi
+                icon={TriangleAlert}
+                label="Over-deployed"
+                value={overCount}
+                valueTone={overCount > 0 ? "critical" : undefined}
+                suffix={`of ${all.length}`}
+                footer="more seats in use than purchased"
+                active={complianceFilter === "over"}
+                onClick={() => setComplianceFilter("over")}
+              />
+              <Kpi icon={Wallet} label="Yearly cost" value={formatCost(yearlyTotal)} suffix="all licenses" />
+            </KpiStrip>
+          )}
+
+          <Card flush>
+            {all.length > 0 && (
+              <Toolbar
+                right={
+                  <Segmented
+                    label="Compliance"
+                    value={complianceFilter}
+                    onChange={setComplianceFilter}
+                    options={[
+                      { value: "all", label: `All ${all.length}` },
+                      { value: "compliant", label: `Compliant ${all.length - overCount}` },
+                      { value: "over", label: `Over-deployed ${overCount}` },
+                    ]}
+                  />
+                }
+              >
+                <div style={{ width: 320 }}>
+                  <SearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search software, vendor, version, department…" />
+                </div>
+              </Toolbar>
+            )}
+
+            {all.length === 0 ? (
+              <EmptyState
+                icon={KeyRound}
+                title="No software licenses recorded yet"
+                action={
+                  <Button size="sm" icon={Upload} onClick={() => fileInputRef.current?.click()} disabled={importLicenses.isPending}>
+                    Import from CSV
+                  </Button>
+                }
+              >
+                Add a license with the form below, or import a CSV built from the template.
+              </EmptyState>
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                icon={SearchX}
+                title="No licenses match"
+                action={
+                  <Button size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                }
+              >
+                {term ? `Nothing matches "${search}" with the current filters.` : "No licenses match the current filter."}
+              </EmptyState>
+            ) : (
+              <>
+                <div className="app-table-scroll">
+                  <table className="ep-tbl">
+                    <thead>
+                      <tr>
+                        <th scope="col">Software</th>
+                        <th scope="col">Version</th>
+                        <th scope="col">Vendor</th>
+                        <th scope="col">Type</th>
+                        <th scope="col" style={{ textAlign: "right" }}>
+                          Seats (purchased / in use)
+                        </th>
+                        <th scope="col">Compliance</th>
+                        <th scope="col">Expiry (dd/mm/yyyy)</th>
+                        <th scope="col" style={{ textAlign: "right" }}>
+                          Cost
+                        </th>
+                        <th scope="col" style={{ textAlign: "right" }}>
+                          Yearly cost
+                        </th>
+                        <th scope="col">Deployment type</th>
+                        <th scope="col">Access type</th>
+                        <th scope="col">User department</th>
+                        <th scope="col">
+                          <span className="app-vh">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paged.pageItems.map((l) => (
+                        <tr key={l.id} className={l.id === editingId ? "ep-sel" : undefined}>
+                          <td className="ep-host">
+                            <b>{l.softwareName}</b>
+                          </td>
+                          <td className="ep-mono">{l.version ?? <span className="app-muted">—</span>}</td>
+                          <td>{l.vendor ?? <span className="app-muted">—</span>}</td>
+                          <td>{LICENSE_TYPE_LABELS[l.licenseType] ?? l.licenseType}</td>
+                          <td className="ep-num" style={{ textAlign: "right" }}>
+                            <span title={l.seatsInUseOverride != null ? "Manually set" : "Auto-detected from installed software"}>
+                              {l.seatsPurchased} / {l.seatsInUse}
+                            </span>
+                          </td>
+                          <td>{l.overCompliance ? <Badge tone="crit">Over-deployed</Badge> : <Badge tone="ok">Compliant</Badge>}</td>
+                          <td className="ep-num">{formatExpiryDate(l.expiryDate)}</td>
+                          <td className="ep-num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                            {formatCost(l.cost)}
+                            {l.cost != null && <span className="app-muted"> / {BILLING_CYCLE_LABELS[l.billingCycle]}</span>}
+                          </td>
+                          <td className="ep-num" style={{ textAlign: "right" }}>
+                            {formatCost(l.annualCost)}
+                          </td>
+                          <td>{l.deploymentType ? DEPLOYMENT_TYPE_LABELS[l.deploymentType] : <span className="app-muted">—</span>}</td>
+                          <td>{l.accessType ? ACCESS_TYPE_LABELS[l.accessType] : <span className="app-muted">—</span>}</td>
+                          <td>{l.userDepartment ?? <span className="app-muted">—</span>}</td>
+                          <td>
+                            <div className="app-cell-actions">
+                              <RowMenu
+                                label={`Actions for ${l.softwareName}`}
+                                items={[
+                                  { label: "Edit license", icon: Pencil, onSelect: () => startEdit(l) },
+                                  {
+                                    label: "Delete license",
+                                    icon: Trash2,
+                                    danger: true,
+                                    dividerBefore: true,
+                                    disabled: deleteLicense.isPending,
+                                    onSelect: () => handleDelete(l),
+                                  },
+                                ]}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={paged.page}
+                  pageSize={paged.pageSize}
+                  total={paged.total}
+                  noun="licenses"
+                  onPageChange={paged.setPage}
+                  onPageSizeChange={paged.setPageSize}
+                />
+              </>
+            )}
+          </Card>
+        </>
       )}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Software</th>
-            <th>Version</th>
-            <th>Vendor</th>
-            <th>Type</th>
-            <th>Seats (purchased / in use)</th>
-            <th>EXPIRY (dd/mm/yyyy)</th>
-            <th>Cost</th>
-            <th>Yearly cost</th>
-            <th>Deployment type</th>
-            <th>Access type</th>
-            <th>User department</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {licenses?.map((l) => (
-            <tr key={l.id} className={l.id === editingId ? "selected-row" : ""}>
-              <td>{l.softwareName}</td>
-              <td>{l.version ?? "—"}</td>
-              <td>{l.vendor ?? "—"}</td>
-              <td>{l.licenseType}</td>
-              <td>
-                <span title={l.seatsInUseOverride != null ? "Manually set" : "Auto-detected from installed software"}>
-                  {l.seatsPurchased}/{l.seatsInUse}
-                </span>{" "}
-                {l.overCompliance && <span className="status-badge danger">Over</span>}
-              </td>
-              <td>{formatExpiryDate(l.expiryDate)}</td>
-              <td>
-                {formatCost(l.cost)}
-                {l.cost != null && ` / ${BILLING_CYCLE_LABELS[l.billingCycle]}`}
-              </td>
-              <td>{formatCost(l.annualCost)}</td>
-              <td>{l.deploymentType ? DEPLOYMENT_TYPE_LABELS[l.deploymentType] : "—"}</td>
-              <td>{l.accessType ? ACCESS_TYPE_LABELS[l.accessType] : "—"}</td>
-              <td>{l.userDepartment ?? "—"}</td>
-              <td>
-                <button type="button" onClick={() => startEdit(l)}>
-                  Edit
-                </button>{" "}
-                <button type="button" onClick={() => deleteLicense.mutate(l.id)} disabled={deleteLicense.isPending}>
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {licenses?.length === 0 && (
-            <tr>
-              <td colSpan={12}>No software licenses recorded yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <form ref={formRef} className="ep-card" onSubmit={handleSubmit} style={{ scrollMarginTop: 16 }}>
+        <FormSection
+          title={isEditing ? "Edit license" : "Add license"}
+          description="Name the software as it appears in installed-software inventory so seats in use can be matched automatically."
+        >
+          <FormGrid>
+            <Field label="Software name" htmlFor="lic-name" required>
+              <input id="lic-name" className="ep-input" type="text" value={softwareName} onChange={(e) => setSoftwareName(e.target.value)} required />
+            </Field>
+            <Field label="Version" htmlFor="lic-version">
+              <input
+                id="lic-version"
+                className="ep-input ep-mono"
+                type="text"
+                value={version}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="e.g. 2024, 16.0.1"
+              />
+            </Field>
+            <Field label="Vendor" htmlFor="lic-vendor">
+              <input id="lic-vendor" className="ep-input" type="text" value={vendor} onChange={(e) => setVendor(e.target.value)} />
+            </Field>
+            <Field label="License key" htmlFor="lic-key">
+              <input id="lic-key" className="ep-input ep-mono" type="text" value={licenseKey} onChange={(e) => setLicenseKey(e.target.value)} />
+            </Field>
+            <Field label="License type" htmlFor="lic-type">
+              <select id="lic-type" className="ep-select" value={licenseType} onChange={(e) => setLicenseType(e.target.value as LicenseType)}>
+                {LICENSE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {LICENSE_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Seats purchased" htmlFor="lic-seats">
+              <input
+                id="lic-seats"
+                className="ep-input ep-num"
+                type="number"
+                min={0}
+                value={seatsPurchased}
+                onChange={(e) => setSeatsPurchased(Number(e.target.value))}
+              />
+            </Field>
+            <Field
+              label="Seats in use (optional override)"
+              htmlFor="lic-inuse"
+              span2
+              help="Leave blank to keep the automatic estimate (matched against installed software across the fleet). Set a number here to use that instead — useful when the automatic match doesn't fit, or this license's usage isn't tracked via installed software at all. Clear it later to go back to automatic."
+            >
+              <input
+                id="lic-inuse"
+                className="ep-input ep-num"
+                type="number"
+                min={0}
+                value={seatsInUseOverride}
+                onChange={(e) => setSeatsInUseOverride(e.target.value)}
+                placeholder="Auto-detected from installed software"
+              />
+            </Field>
+          </FormGrid>
+        </FormSection>
 
-      <form className="panel" onSubmit={handleSubmit}>
-        <h2>{isEditing ? "Edit license" : "Add license"}</h2>
-        <label>
-          Software name
-          <input type="text" value={softwareName} onChange={(e) => setSoftwareName(e.target.value)} required />
-        </label>
-        <label>
-          Version
-          <input
-            type="text"
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            placeholder="e.g. 2024, 16.0.1"
-          />
-        </label>
-        <label>
-          Vendor
-          <input type="text" value={vendor} onChange={(e) => setVendor(e.target.value)} />
-        </label>
-        <label>
-          License key
-          <input type="text" value={licenseKey} onChange={(e) => setLicenseKey(e.target.value)} />
-        </label>
-        <label>
-          License type
-          <select value={licenseType} onChange={(e) => setLicenseType(e.target.value as LicenseType)}>
-            {LICENSE_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Seats purchased
-          <input
-            type="number"
-            min={0}
-            value={seatsPurchased}
-            onChange={(e) => setSeatsPurchased(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Seats in use (optional override)
-          <input
-            type="number"
-            min={0}
-            value={seatsInUseOverride}
-            onChange={(e) => setSeatsInUseOverride(e.target.value)}
-            placeholder="Auto-detected from installed software"
-          />
-        </label>
-        <p className="hint">
-          Leave blank to keep the automatic estimate (matched against installed software across the fleet). Set a
-          number here to use that instead — useful when the automatic match doesn't fit, or this license's usage
-          isn't tracked via installed software at all. Clear it later to go back to automatic.
-        </p>
-        <label>
-          Expiry date
-          <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-        </label>
-        <label>
-          Cost (₹)
-          <input type="number" min={0} step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} />
-        </label>
-        <label>
-          Billing cycle
-          <select
-            value={billingCycle}
-            onChange={(e) => setBillingCycle(e.target.value as SoftwareLicenseBillingCycle)}
-          >
-            {BILLING_CYCLES.map((c) => (
-              <option key={c} value={c}>
-                {BILLING_CYCLE_LABELS[c]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="hint">
-          Enter the cost for one billing cycle (e.g. one month if Monthly) — the yearly total is calculated
-          automatically.
-        </p>
-        <label>
-          Deployment type
-          <select
-            value={deploymentType}
-            onChange={(e) => setDeploymentType(e.target.value as SoftwareLicenseDeploymentType | "")}
-          >
-            <option value="">—</option>
-            {DEPLOYMENT_TYPES.map((d) => (
-              <option key={d} value={d}>
-                {DEPLOYMENT_TYPE_LABELS[d]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Access type
-          <select
-            value={accessType}
-            onChange={(e) => setAccessType(e.target.value as SoftwareLicenseAccessType | "")}
-          >
-            <option value="">—</option>
-            {ACCESS_TYPES.map((a) => (
-              <option key={a} value={a}>
-                {ACCESS_TYPE_LABELS[a]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          User department
-          <input
-            type="text"
-            value={userDepartment}
-            onChange={(e) => setUserDepartment(e.target.value)}
-            placeholder="e.g. Finance, IT, Sales"
-          />
-        </label>
-        {mutationError && <p className="error-text">{(mutationError as Error).message}</p>}
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button type="submit" disabled={pending || !softwareName.trim()}>
-            {pending ? "Saving…" : isEditing ? "Save changes" : "Add license"}
-          </button>
-          {isEditing && (
-            <button type="button" onClick={resetForm}>
-              Cancel
-            </button>
+        <FormSection
+          title="Cost and renewal"
+          description="Enter the cost for one billing cycle (e.g. one month if Monthly) — the yearly total is calculated automatically."
+        >
+          <FormGrid>
+            <Field label="Expiry date" htmlFor="lic-expiry">
+              <input id="lic-expiry" className="ep-input" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+            </Field>
+            <Field label="Cost (₹)" htmlFor="lic-cost">
+              <input
+                id="lic-cost"
+                className="ep-input ep-num"
+                type="number"
+                min={0}
+                step="0.01"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+              />
+            </Field>
+            <Field label="Billing cycle" htmlFor="lic-cycle">
+              <select
+                id="lic-cycle"
+                className="ep-select"
+                value={billingCycle}
+                onChange={(e) => setBillingCycle(e.target.value as SoftwareLicenseBillingCycle)}
+              >
+                {BILLING_CYCLES.map((c) => (
+                  <option key={c} value={c}>
+                    {BILLING_CYCLE_LABELS[c]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </FormGrid>
+        </FormSection>
+
+        <FormSection title="Deployment" description="Where the software runs, how it's reached and who uses it.">
+          <FormGrid>
+            <Field label="Deployment type" htmlFor="lic-deploy">
+              <select
+                id="lic-deploy"
+                className="ep-select"
+                value={deploymentType}
+                onChange={(e) => setDeploymentType(e.target.value as SoftwareLicenseDeploymentType | "")}
+              >
+                <option value="">—</option>
+                {DEPLOYMENT_TYPES.map((d) => (
+                  <option key={d} value={d}>
+                    {DEPLOYMENT_TYPE_LABELS[d]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Access type" htmlFor="lic-access">
+              <select
+                id="lic-access"
+                className="ep-select"
+                value={accessType}
+                onChange={(e) => setAccessType(e.target.value as SoftwareLicenseAccessType | "")}
+              >
+                <option value="">—</option>
+                {ACCESS_TYPES.map((a) => (
+                  <option key={a} value={a}>
+                    {ACCESS_TYPE_LABELS[a]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="User department" htmlFor="lic-dept">
+              <input
+                id="lic-dept"
+                className="ep-input"
+                type="text"
+                value={userDepartment}
+                onChange={(e) => setUserDepartment(e.target.value)}
+                placeholder="e.g. Finance, IT, Sales"
+              />
+            </Field>
+          </FormGrid>
+          {!!mutationError && (
+            <div style={{ marginTop: 12 }}>
+              <Alert tone="critical">{(mutationError as Error).message}</Alert>
+            </div>
           )}
-        </div>
+        </FormSection>
+
+        <FormFooter>
+          {isEditing && <Button onClick={resetForm}>Cancel</Button>}
+          <Button type="submit" variant="primary" disabled={pending || !softwareName.trim()}>
+            {pending ? "Saving…" : isEditing ? "Save changes" : "Add license"}
+          </Button>
+        </FormFooter>
       </form>
-    </div>
+    </>
   );
 }

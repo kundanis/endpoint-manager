@@ -86,3 +86,29 @@ export function Status({ value, label }: { value: string; label?: ReactNode }) {
 export function Tag({ children }: { children: ReactNode }) {
   return <span className="ep-tag">{children}</span>;
 }
+
+// Job/task lifecycle states (commands, package deployments, agent updates, patches).
+// In-flight states are a warn pill; outcomes are badges.
+const TASK_IN_FLIGHT = new Set(["PENDING", "DISPATCHED", "DOWNLOADING", "INSTALLING", "APPLYING", "RUNNING", "QUEUED"]);
+
+export function TaskStatus({ status, count }: { status: string; count?: number }) {
+  const key = status.toUpperCase();
+  const word = sentenceCase(key);
+  const text = count === undefined ? word : `${word} · ${count}`;
+  if (TASK_IN_FLIGHT.has(key)) return <Pill tone="warn">{text}</Pill>;
+  if (key === "SUCCESS" || key === "COMPLETED" || key === "INSTALLED") return <Badge tone="ok">{text}</Badge>;
+  if (key === "FAILED" || key === "TIMEOUT" || key === "ERROR") return <Badge tone="crit">{text}</Badge>;
+  return <Badge tone="neu">{text}</Badge>;
+}
+
+export function TaskCounts({ counts }: { counts: Record<string, number> }) {
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return <span className="app-muted">—</span>;
+  return (
+    <div className="app-badge-row">
+      {entries.map(([status, count]) => (
+        <TaskStatus key={status} status={status} count={count} />
+      ))}
+    </div>
+  );
+}

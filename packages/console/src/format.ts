@@ -13,6 +13,12 @@ export function formatDate(iso: string | null | undefined, fallback = "—"): st
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
+// Time of day only, for values already scoped to one day ("today's first login").
+export function formatTime(iso: string | null | undefined, fallback = "—"): string {
+  if (!iso) return fallback;
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
 // "just now", "4 min ago", "3 h ago" within a day; an absolute date-time after that.
 export function formatRelative(iso: string | null | undefined, fallback = "never", now = Date.now()): string {
   if (!iso) return fallback;

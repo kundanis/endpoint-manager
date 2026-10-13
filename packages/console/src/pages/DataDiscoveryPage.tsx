@@ -1,10 +1,8 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { ChevronDown, ChevronRight, FileSearch, FolderSearch, Monitor, Pencil, Plus, Radar, SearchX, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import type { DataDiscoveryRegulation } from "@em/shared";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
-  useAgents,
   useAgentDataDiscoveryFindings,
-  useAssetGroups,
   useAssignDataDiscoveryPolicy,
   useCreateDataDiscoveryPolicy,
   useDataDiscoveryAgentBreakdown,
@@ -17,8 +15,28 @@ import {
   useUpdateDataDiscoveryPolicy,
 } from "../api/hooks";
 import type { DataDiscoveryPolicyDetail } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
 import EndpointLabel from "../components/EndpointLabel";
+import { AssignmentEditor, NewPolicyDialog, PolicyDetail } from "../components/policy";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  FormFooter,
+  IconButton,
+  Kpi,
+  KpiStrip,
+  PageHeader,
+  Pagination,
+  RowMenu,
+  Skeleton,
+  Switch,
+  useConfirm,
+  usePagedList,
+} from "../components/ui";
+import { formatDateTime } from "../format";
 
 const REGULATIONS: DataDiscoveryRegulation[] = ["DPDP", "GDPR", "BOTH"];
 
@@ -30,6 +48,8 @@ const REGULATION_LABEL: Record<DataDiscoveryRegulation, string> = {
 
 const DEFAULT_TARGET_PATHS = ["%USERPROFILE%\\Documents", "%USERPROFILE%\\Desktop", "%USERPROFILE%\\Downloads"];
 
+const TARGET_PATHS_HELP = "One per line. %ENV_VAR% placeholders are expanded on each endpoint.";
+
 function pathsToText(paths: string[]): string {
   return paths.join("\n");
 }
@@ -39,6 +59,51 @@ function textToPaths(text: string): string[] {
     .split("\n")
     .map((p) => p.trim())
     .filter(Boolean);
+}
+
+// Regulation + target paths: the scan-specific fields shared by the create dialog and the
+// settings tab.
+function ScanFields({
+  idPrefix,
+  regulation,
+  onRegulationChange,
+  pathsText,
+  onPathsTextChange,
+}: {
+  idPrefix: string;
+  regulation: DataDiscoveryRegulation;
+  onRegulationChange: (value: DataDiscoveryRegulation) => void;
+  pathsText: string;
+  onPathsTextChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <Field label="Regulation" htmlFor={`${idPrefix}-regulation`}>
+        <select
+          id={`${idPrefix}-regulation`}
+          className="ep-select"
+          value={regulation}
+          onChange={(e) => onRegulationChange(e.target.value as DataDiscoveryRegulation)}
+        >
+          {REGULATIONS.map((r) => (
+            <option key={r} value={r}>
+              {REGULATION_LABEL[r]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Target paths" htmlFor={`${idPrefix}-paths`} required help={TARGET_PATHS_HELP}>
+        <textarea
+          id={`${idPrefix}-paths`}
+          className="ep-textarea ep-mono"
+          rows={4}
+          value={pathsText}
+          onChange={(e) => onPathsTextChange(e.target.value)}
+          required
+        />
+      </Field>
+    </>
+  );
 }
 
 function PolicySettingsPanel({ policy }: { policy: DataDiscoveryPolicyDetail }) {
@@ -67,112 +132,46 @@ function PolicySettingsPanel({ policy }: { policy: DataDiscoveryPolicyDetail }) 
   }
 
   return (
-    <form className="card accent-blue" onSubmit={handleSave}>
-      <h2>Policy settings</h2>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <label>
-        Regulation
-        <select value={regulation} onChange={(e) => setRegulation(e.target.value as DataDiscoveryRegulation)}>
-          {REGULATIONS.map((r) => (
-            <option key={r} value={r}>
-              {REGULATION_LABEL[r]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Target paths (one per line — %ENV_VAR% placeholders are expanded on each endpoint)
-        <textarea rows={4} className="mono-cell" value={pathsText} onChange={(e) => setPathsText(e.target.value)} required />
-      </label>
-      {updatePolicy.isError && <p className="error-text">{(updatePolicy.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="submit" disabled={updatePolicy.isPending || !name.trim() || textToPaths(pathsText).length === 0}>
-          {updatePolicy.isPending ? "Saving…" : "Save policy"}
-        </button>
-        {updatePolicy.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
+    <form onSubmit={handleSave} className="app-settings-form">
+      <div className="app-stack" style={{ maxWidth: 640 }}>
+        <Field label="Name" htmlFor={`dd-name-${policy.id}`} required>
+          <input id={`dd-name-${policy.id}`} className="ep-input" value={name} onChange={(e) => setName(e.target.value)} required />
+        </Field>
+        <Field label="Description" htmlFor={`dd-desc-${policy.id}`}>
+          <textarea id={`dd-desc-${policy.id}`} className="ep-textarea" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <ScanFields
+          idPrefix={`dd-${policy.id}`}
+          regulation={regulation}
+          onRegulationChange={setRegulation}
+          pathsText={pathsText}
+          onPathsTextChange={setPathsText}
+        />
+        {updatePolicy.isError && <Alert tone="critical">{(updatePolicy.error as Error).message}</Alert>}
       </div>
+      <FormFooter>
+        {updatePolicy.isSuccess && !updatePolicy.isPending && <span className="app-saved">Saved</span>}
+        <Button variant="primary" type="submit" disabled={updatePolicy.isPending || !name.trim() || textToPaths(pathsText).length === 0}>
+          {updatePolicy.isPending ? "Saving…" : "Save policy"}
+        </Button>
+      </FormFooter>
     </form>
   );
 }
 
 function AssignmentPanel({ policyId }: { policyId: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
   const { data: assignments } = useDataDiscoveryAssignments(policyId);
   const assign = useAssignDataDiscoveryPolicy();
   const unassign = useUnassignDataDiscoveryPolicy();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { policyId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="panel">
-      <h2>Assignment</h2>
-
-      <h3>Currently assigned</h3>
-      <ul>
-        {assignments?.map((a) => (
-          <li key={a.id}>
-            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
-            <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
-              Remove
-            </button>
-          </li>
-        ))}
-        {assignments?.length === 0 && <li>Not assigned to any endpoint or group yet.</li>}
-      </ul>
-
-      <h3>Assign to</h3>
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
-
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-      />
-
-      {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {assign.isPending ? "Assigning…" : "Assign"}
-      </button>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ policyId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+    />
   );
 }
 
@@ -184,48 +183,54 @@ type ResultsFilter = "all" | "flagged" | "clean" | "nothing-scanned";
 // the endpoint detail page uses.
 function AgentFindingsDetail({ agentId, policyId }: { agentId: string; policyId: string }) {
   const { data: findings } = useAgentDataDiscoveryFindings(agentId);
-  if (!findings) return <p style={{ color: "var(--text-muted)" }}>Loading findings…</p>;
+  if (!findings) return <Skeleton lines={3} />;
   const forPolicy = findings.filter((f) => f.policyId === policyId);
-  if (forPolicy.length === 0) return <p style={{ color: "var(--text-muted)" }}>No file-level findings recorded for this endpoint yet.</p>;
+  if (forPolicy.length === 0) return <p className="app-muted">No file-level findings recorded for this endpoint yet.</p>;
 
   return (
-    <table className="data-table" style={{ margin: "0.25rem 0" }}>
-      <thead>
-        <tr>
-          <th>File path</th>
-          <th>Category of data found</th>
-          <th>Last seen</th>
-        </tr>
-      </thead>
-      <tbody>
-        {forPolicy.map((f) => (
-          <tr key={f.id}>
-            <td className="mono-cell">{f.filePath}</td>
-            <td>
-              {f.matches.map((m) => (
-                <div key={m.label} style={{ marginBottom: "0.4rem" }}>
-                  <span className="status-badge danger">
-                    {m.label} ({m.count})
-                  </span>
-                  {m.samples.length > 0 && (
-                    <div className="mono-cell" style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
-                      {m.samples.join(", ")}
-                      {m.count > m.samples.length ? ` (+${m.count - m.samples.length} more)` : ""}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </td>
-            <td>{new Date(f.lastSeenAt).toLocaleString()}</td>
+    <div className="app-table-wrap">
+      <table className="ep-tbl">
+        <thead>
+          <tr>
+            <th scope="col">File path</th>
+            <th scope="col">Category of data found</th>
+            <th scope="col">Last seen</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {forPolicy.map((f) => (
+            <tr key={f.id}>
+              <td className="ep-mono" style={{ overflowWrap: "anywhere" }}>
+                {f.filePath}
+              </td>
+              <td>
+                <div className="app-stack-sm">
+                  {f.matches.map((m) => (
+                    <div key={m.label}>
+                      <Badge tone="crit">
+                        {m.label} <span className="ep-num">({m.count})</span>
+                      </Badge>
+                      {m.samples.length > 0 && (
+                        <span className="app-cell-note app-muted ep-mono">
+                          {m.samples.join(", ")}
+                          {m.count > m.samples.length ? ` (+${m.count - m.samples.length} more)` : ""}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </td>
+              <td className="app-muted">{formatDateTime(f.lastSeenAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function ResultsPanel({ policyId }: { policyId: string }) {
-  const { data: breakdown } = useDataDiscoveryAgentBreakdown(policyId);
+  const { data: breakdown, isLoading } = useDataDiscoveryAgentBreakdown(policyId);
   const scanNow = useRequestDataDiscoveryScanNow();
   const [filter, setFilter] = useState<ResultsFilter>("all");
   // Which endpoint's file-level findings are expanded, if any.
@@ -244,162 +249,206 @@ function ResultsPanel({ policyId }: { policyId: string }) {
     if (filter === "nothing-scanned") return readNothing(a);
     return true;
   });
+  const paged = usePagedList(filtered, 25);
 
   return (
-    <div className="panel">
-      <h2>Discovery results</h2>
-      <p>
-        <button
-          type="button"
-          onClick={() => scanNow.mutate({ policyId })}
-          disabled={scanNow.isPending || agents.length === 0}
-        >
+    <div className="app-stack">
+      <div className="app-actions-row">
+        <Button icon={Radar} onClick={() => scanNow.mutate({ policyId })} disabled={scanNow.isPending || agents.length === 0}>
           {scanNow.isPending ? "Requesting…" : "Scan all assigned now"}
-        </button>{" "}
-        <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-          Reaches each endpoint on its next check-in (usually within ~30s) rather than waiting for the normal scan
-          interval.
+        </Button>
+        <span className="app-muted" style={{ fontSize: 12.5 }}>
+          Reaches each endpoint on its next check-in (usually within ~30s) rather than waiting for the normal scan interval.
         </span>
-        {scanNow.isSuccess && (
-          <span style={{ marginLeft: "0.5rem", color: "var(--online)" }}>
-            Requested for {scanNow.data.requestedCount} endpoint(s).
-          </span>
-        )}
-        {scanNow.isError && <span className="error-text"> {(scanNow.error as Error).message}</span>}
-      </p>
-
-      <div className="tiles">
-        <div className={`tile ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
-          <div className="tile-label">Total devices</div>
-          <div className="tile-value">{agents.length}</div>
-        </div>
-        <div className={`tile accent-critical ${filter === "flagged" ? "active" : ""}`} onClick={() => setFilter("flagged")}>
-          <div className="tile-label">Files with personal data</div>
-          <div className="tile-value">{flaggedCount}</div>
-        </div>
-        <div className={`tile accent-good ${filter === "clean" ? "active" : ""}`} onClick={() => setFilter("clean")}>
-          <div className="tile-label">Clean (scanned, none found)</div>
-          <div className="tile-value">{cleanCount}</div>
-        </div>
-        <div
-          className={`tile accent-warn ${filter === "nothing-scanned" ? "active" : ""}`}
-          onClick={() => setFilter("nothing-scanned")}
-          title="The last scan read 0 files — the target folders don't exist on these endpoints, or hold no supported files"
-        >
-          <div className="tile-label">Nothing scanned (0 files read)</div>
-          <div className="tile-value">{nothingScannedCount}</div>
-        </div>
       </div>
+      {scanNow.isSuccess && <Alert tone="success">Requested for {scanNow.data.requestedCount} endpoint(s).</Alert>}
+      {scanNow.isError && <Alert tone="critical">{(scanNow.error as Error).message}</Alert>}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>Scanned</th>
-            <th>Files read</th>
-            <th>Files with personal data</th>
-            <th>Last scan</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((a) => {
-            const canExpand = a.fileCount > 0;
-            const isExpanded = expandedAgentId === a.agentId;
-            return (
-              <Fragment key={a.agentId}>
-                <tr
-                  className={canExpand ? "clickable-row" : undefined}
-                  onClick={canExpand ? () => setExpandedAgentId(isExpanded ? null : a.agentId) : undefined}
-                  title={canExpand ? "Click to show the files and the type of data found" : undefined}
-                >
-                  <td>
-                    {canExpand && <span style={{ marginRight: "0.4rem", color: "var(--text-muted)" }}>{isExpanded ? "▾" : "▸"}</span>}
-                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-                  </td>
-                  <td>{a.scanned ? "Yes" : "Pending first scan"}</td>
-                  <td>{a.filesScanned ?? "—"}</td>
-                  <td>
-                    {a.fileCount > 0 ? (
-                      <StatusBadge kind="fail" label={`${a.fileCount} file${a.fileCount === 1 ? "" : "s"}`} />
-                    ) : readNothing(a) ? (
-                      <StatusBadge kind="warn" label="Nothing scanned — check target paths" />
-                    ) : a.scanned ? (
-                      <StatusBadge kind="pass" label="None found" />
-                    ) : (
-                      "—"
+      <KpiStrip>
+        <Kpi icon={Monitor} label="Total devices" value={agents.length} suffix="assigned" active={filter === "all"} onClick={() => setFilter("all")} />
+        <Kpi
+          icon={FileSearch}
+          label="Files with personal data"
+          value={flaggedCount}
+          suffix="devices"
+          valueTone={flaggedCount > 0 ? "critical" : undefined}
+          active={filter === "flagged"}
+          onClick={() => setFilter("flagged")}
+        />
+        <Kpi
+          icon={ShieldCheck}
+          label="Clean"
+          value={cleanCount}
+          suffix="scanned, none found"
+          active={filter === "clean"}
+          onClick={() => setFilter("clean")}
+        />
+        <Kpi
+          icon={TriangleAlert}
+          label="Nothing scanned"
+          value={nothingScannedCount}
+          suffix="0 files read"
+          valueTone={nothingScannedCount > 0 ? "warning" : undefined}
+          footer="The target folders don't exist on these endpoints, or hold no supported files"
+          active={filter === "nothing-scanned"}
+          onClick={() => setFilter("nothing-scanned")}
+        />
+      </KpiStrip>
+
+      {isLoading ? (
+        <Skeleton />
+      ) : agents.length === 0 ? (
+        <EmptyState icon={Monitor} title="Not assigned to any endpoint yet">
+          Assign the policy in the Assignment tab to start scanning.
+        </EmptyState>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="No devices match this filter"
+          action={
+            <Button size="sm" onClick={() => setFilter("all")}>
+              Show all devices
+            </Button>
+          }
+        />
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Endpoint</th>
+                <th scope="col">Scanned</th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Files read
+                </th>
+                <th scope="col">Files with personal data</th>
+                <th scope="col">Last scan</th>
+                <th scope="col">
+                  <span className="app-vh">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {paged.pageItems.map((a) => {
+                const canExpand = a.fileCount > 0;
+                const isExpanded = expandedAgentId === a.agentId;
+                const toggle = () => setExpandedAgentId(isExpanded ? null : a.agentId);
+                return (
+                  <Fragment key={a.agentId}>
+                    <tr
+                      className={`${canExpand ? "app-clickable" : ""} ${isExpanded ? "ep-sel" : ""}`}
+                      onClick={canExpand ? toggle : undefined}
+                      title={canExpand ? "Click to show the files and the type of data found" : undefined}
+                    >
+                      <td>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {canExpand && (
+                            <IconButton
+                              icon={isExpanded ? ChevronDown : ChevronRight}
+                              label={isExpanded ? `Hide files on ${a.hostname}` : `Show files on ${a.hostname}`}
+                              aria-expanded={isExpanded}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggle();
+                              }}
+                            />
+                          )}
+                          <span>
+                            <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                          </span>
+                        </span>
+                      </td>
+                      <td>{a.scanned ? "Yes" : <span className="app-muted">Pending first scan</span>}</td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {a.filesScanned ?? "—"}
+                      </td>
+                      <td>
+                        {a.fileCount > 0 ? (
+                          <Badge tone="crit">{`${a.fileCount} file${a.fileCount === 1 ? "" : "s"}`}</Badge>
+                        ) : readNothing(a) ? (
+                          <Badge tone="med">Nothing scanned — check target paths</Badge>
+                        ) : a.scanned ? (
+                          <Badge tone="ok">None found</Badge>
+                        ) : (
+                          <span className="app-muted">—</span>
+                        )}
+                      </td>
+                      <td className="app-muted">{formatDateTime(a.lastScanAt)}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="app-cell-actions">
+                          {a.scanPending ? (
+                            <span className="app-muted" style={{ fontSize: 12.5 }}>
+                              Scan requested…
+                            </span>
+                          ) : (
+                            <Button size="sm" onClick={() => scanNow.mutate({ policyId, agentId: a.agentId })} disabled={scanNow.isPending}>
+                              Scan now
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={6} style={{ background: "var(--ep-surface-2)" }}>
+                          <AgentFindingsDetail agentId={a.agentId} policyId={policyId} />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td>{a.lastScanAt ? new Date(a.lastScanAt).toLocaleString() : "—"}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    {a.scanPending ? (
-                      <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Scan requested…</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => scanNow.mutate({ policyId, agentId: a.agentId })}
-                        disabled={scanNow.isPending}
-                      >
-                        Scan now
-                      </button>
-                    )}
-                  </td>
-                </tr>
-                {isExpanded && (
-                  <tr>
-                    <td colSpan={6} style={{ background: "var(--stripe)" }}>
-                      <AgentFindingsDetail agentId={a.agentId} policyId={policyId} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
-          {filtered.length === 0 && (
-            <tr>
-              <td colSpan={6}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <Pagination
+            page={paged.page}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            noun="devices"
+            onPageChange={paged.setPage}
+            onPageSizeChange={paged.setPageSize}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 export default function DataDiscoveryPage() {
-  const { data: policies } = useDataDiscoveryPolicies();
+  const { data: policies, isLoading, error, refetch } = useDataDiscoveryPolicies();
   const createPolicy = useCreateDataDiscoveryPolicy();
   const updatePolicy = useUpdateDataDiscoveryPolicy();
   const deletePolicy = useDeleteDataDiscoveryPolicy();
+  const confirm = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
   const [regulation, setRegulation] = useState<DataDiscoveryRegulation>("DPDP");
   const [pathsText, setPathsText] = useState(pathsToText(DEFAULT_TARGET_PATHS));
 
   const { data: policy } = useDataDiscoveryPolicy(selectedId);
 
-  function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    createPolicy.mutate(
-      { name, description: description.trim() || null, regulation, targetPaths: textToPaths(pathsText) },
-      {
-        onSuccess: (result) => {
-          setSelectedId(result.id);
-          setName("");
-          setDescription("");
-          setPathsText(pathsToText(DEFAULT_TARGET_PATHS));
-        },
-      },
-    );
+  function handleCreate(values: { name: string; description: string | null }) {
+    return createPolicy
+      .mutateAsync({ name: values.name, description: values.description, regulation, targetPaths: textToPaths(pathsText) })
+      .then((result) => {
+        setSelectedId(result.id);
+        setPathsText(pathsToText(DEFAULT_TARGET_PATHS));
+      });
   }
 
   function toggleEnabled(id: string, enabled: boolean) {
     updatePolicy.mutate({ id, enabled });
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    const confirmed = await confirm({
+      title: `Delete policy "${name}"?`,
+      body: "Assigned endpoints stop scanning for it. This cannot be undone.",
+      confirmLabel: "Delete policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     deletePolicy.mutate(id, {
       onSuccess: () => {
         if (selectedId === id) setSelectedId(undefined);
@@ -408,103 +457,145 @@ export default function DataDiscoveryPage() {
   }
 
   return (
-    <div>
-      <h1>Data Discovery</h1>
-      <p>
-        Find where personal data lives across your endpoints — each policy scans a set of folders on assigned
-        endpoints for patterns relevant to DPDP (India's Digital Personal Data Protection Act) and/or GDPR (Aadhaar,
-        PAN, email, phone numbers, card numbers, IP addresses, and more). Findings report the file path, match
-        counts, and a handful of <em>masked</em> previews per pattern (e.g. "••••••••6789") — enough to confirm a
-        real match, but the unmasked value never leaves the endpoint.
-      </p>
+    <>
+      <PageHeader
+        title="Data discovery"
+        description="Find where personal data lives across your endpoints, for DPDP (India's Digital Personal Data Protection Act) and GDPR"
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New policy
+          </Button>
+        }
+      />
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Name</th>
-            <th>Regulation</th>
-            <th>Target paths</th>
-            <th>Assigned endpoints</th>
-            <th>Files with personal data</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => toggleEnabled(p.id, e.target.checked)}
-                  title="Enabled — paused policies are skipped entirely and don't scan any device"
-                />
-              </td>
-              <td>{p.name}</td>
-              <td>{REGULATION_LABEL[p.regulation]}</td>
-              <td className="mono-cell">{p.targetPaths.join(", ")}</td>
-              <td>{p.assignedAgentCount}</td>
-              <td>{p.filesWithFindingsCount}</td>
-              <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p.id);
-                  }}
-                  disabled={deletePolicy.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={7}>No policies yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <Alert tone="info" title="Only masked previews leave the endpoint">
+        Each policy scans a set of folders on assigned endpoints for patterns relevant to DPDP and/or GDPR (Aadhaar,
+        PAN, email, phone numbers, card numbers, IP addresses, and more). Findings report the file path, match counts,
+        and a handful of <em>masked</em> previews per pattern (e.g. "••••••••6789") — enough to confirm a real match,
+        but the unmasked value never leaves the endpoint.
+      </Alert>
 
-      <form className="panel" onSubmit={handleCreate}>
-        <h2>New policy</h2>
-        <label>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Description
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        <label>
-          Regulation
-          <select value={regulation} onChange={(e) => setRegulation(e.target.value as DataDiscoveryRegulation)}>
-            {REGULATIONS.map((r) => (
-              <option key={r} value={r}>
-                {REGULATION_LABEL[r]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Target paths (one per line — %ENV_VAR% placeholders are expanded on each endpoint)
-          <textarea rows={4} className="mono-cell" value={pathsText} onChange={(e) => setPathsText(e.target.value)} required />
-        </label>
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending || !name.trim() || textToPaths(pathsText).length === 0}>
-          {createPolicy.isPending ? "Creating…" : "Create policy"}
-        </button>
-      </form>
+      <Card flush title="Policies" hint={policies ? `${policies.length} total · paused policies are skipped entirely and don't scan any device` : undefined}>
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : error ? (
+          <div className="ep-cb">
+            <Alert tone="critical" title="Couldn't load policies" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+              {(error as Error).message}
+            </Alert>
+          </div>
+        ) : !policies || policies.length === 0 ? (
+          <EmptyState
+            icon={FolderSearch}
+            title="No data discovery policies yet"
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+                New policy
+              </Button>
+            }
+          >
+            Create a policy, choose the folders to scan, then assign it to groups or endpoints.
+          </EmptyState>
+        ) : (
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Policy</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Regulation</th>
+                  <th scope="col">Target paths</th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Assigned endpoints
+                  </th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Files with personal data
+                  </th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policies.map((p) => (
+                  <tr key={p.id} className={`app-clickable ${p.id === selectedId ? "ep-sel" : ""}`} onClick={() => setSelectedId(p.id)}>
+                    <td className="ep-host">
+                      <b>{p.name}</b>
+                      {p.description && <span className="app-row-sub">{p.description}</span>}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <Switch checked={p.enabled} onChange={(enabled) => toggleEnabled(p.id, enabled)} label={p.enabled ? "Enabled" : "Paused"} />
+                    </td>
+                    <td>{REGULATION_LABEL[p.regulation]}</td>
+                    <td className="ep-mono" style={{ overflowWrap: "anywhere" }}>
+                      {p.targetPaths.join(", ")}
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.assignedAgentCount}
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.filesWithFindingsCount > 0 ? <Badge tone="crit">{p.filesWithFindingsCount}</Badge> : p.filesWithFindingsCount}
+                    </td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <RowMenu
+                          label={`Actions for ${p.name}`}
+                          items={[
+                            { label: "Open policy", icon: Pencil, onSelect: () => setSelectedId(p.id) },
+                            {
+                              label: "Delete policy",
+                              icon: Trash2,
+                              danger: true,
+                              dividerBefore: true,
+                              disabled: deletePolicy.isPending,
+                              onSelect: () => handleDelete(p.id, p.name),
+                            },
+                          ]}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {policy && (
-        <>
-          <PolicySettingsPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} />
-          <ResultsPanel policyId={policy.id} />
-        </>
+        <PolicyDetail
+          policyId={policy.id}
+          name={policy.name}
+          enabled={policy.enabled}
+          meta={`${REGULATION_LABEL[policy.regulation]} · ${policy.assignedAgentCount} ${policy.assignedAgentCount === 1 ? "endpoint" : "endpoints"}`}
+          onClose={() => setSelectedId(undefined)}
+          tabs={[
+            { value: "results", label: "Discovery results", content: <ResultsPanel policyId={policy.id} /> },
+            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+            { value: "settings", label: "Settings", content: <PolicySettingsPanel policy={policy} /> },
+          ]}
+        />
       )}
-    </div>
+
+      {creating && (
+        <NewPolicyDialog
+          onClose={() => setCreating(false)}
+          pending={createPolicy.isPending}
+          error={createPolicy.error}
+          extraValid={textToPaths(pathsText).length > 0}
+          onCreate={handleCreate}
+        >
+          <ScanFields
+            idPrefix="dd-new"
+            regulation={regulation}
+            onRegulationChange={setRegulation}
+            pathsText={pathsText}
+            onPathsTextChange={setPathsText}
+          />
+        </NewPolicyDialog>
+      )}
+    </>
   );
 }

@@ -53,6 +53,7 @@ function RulesPanel({ policy }: { policy: WebBlockPolicyDetail }) {
   const addRule = useAddWebBlockRule();
   const updateRule = useUpdateWebBlockRule();
   const deleteRule = useDeleteWebBlockRule();
+  const confirmDelete = useConfirm();
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [form, setForm] = useState<WebBlockRuleInput>(BLANK_RULE_FORM);
@@ -135,7 +136,15 @@ function RulesPanel({ policy }: { policy: WebBlockPolicyDetail }) {
                       <IconButton
                         icon={Trash2}
                         label={`Delete ${r.value}`}
-                        onClick={() => deleteRule.mutate({ policyId: policy.id, ruleId: r.id })}
+                        onClick={async () => {
+                          const ok = await confirmDelete({
+                            title: `Remove ${r.value}?`,
+                            body: "Endpoints assigned to this policy stop enforcing it at their next sync.",
+                            confirmLabel: "Remove rule",
+                            tone: "danger",
+                          });
+                          if (ok) deleteRule.mutate({ policyId: policy.id, ruleId: r.id });
+                        }}
                         disabled={deleteRule.isPending}
                       />
                     </div>

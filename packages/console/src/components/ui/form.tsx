@@ -63,14 +63,17 @@ export function Switch({
   onChange,
   label,
   disabled,
+  title,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: ReactNode;
   disabled?: boolean;
+  // Tooltip explaining what the toggle does.
+  title?: string;
 }) {
   return (
-    <label className={`ep-switch ${checked ? "ep-on" : ""}`} style={disabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
+    <label className={`ep-switch ${checked ? "ep-on" : ""}`} title={title} style={disabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
       <input type="checkbox" className="app-vh" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <i aria-hidden />
       {label}

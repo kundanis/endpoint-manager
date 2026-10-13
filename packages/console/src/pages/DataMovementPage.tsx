@@ -1,8 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
+import { useEffect, useState } from "react";
+import { ArrowRightLeft, Cloud, Monitor, Network, Pencil, Plus, SearchX, Trash2, Usb } from "lucide-react";
 import {
-  useAgents,
-  useAssetGroups,
   useAssignDataMovementPolicy,
   useCreateDataMovementPolicy,
   useDataMovementAgentBreakdown,
@@ -14,8 +12,28 @@ import {
   useUpdateDataMovementPolicy,
 } from "../api/hooks";
 import type { DataMovementPolicyDetail } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
 import EndpointLabel from "../components/EndpointLabel";
+import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm } from "../components/policy";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Check,
+  EmptyState,
+  Field,
+  Kpi,
+  KpiStrip,
+  PageHeader,
+  Pagination,
+  RowMenu,
+  Skeleton,
+  Switch,
+  Tag,
+  useConfirm,
+  usePagedList,
+} from "../components/ui";
+import { formatDateTime } from "../format";
 
 function pathsToText(paths: string[]): string {
   return paths.join("\n");
@@ -40,78 +58,70 @@ function ChannelToggles({
   onChange: (next: { monitorUsb: boolean; monitorCloudSync: boolean; monitorNetworkShare: boolean }) => void;
 }) {
   return (
-    <fieldset>
-      <legend>Channels to monitor</legend>
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={monitorUsb}
-          onChange={(e) => onChange({ monitorUsb: e.target.checked, monitorCloudSync, monitorNetworkShare })}
-        />
-        USB / removable media
-      </label>
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={monitorCloudSync}
-          onChange={(e) => onChange({ monitorUsb, monitorCloudSync: e.target.checked, monitorNetworkShare })}
-        />
-        Cloud sync folders (OneDrive, Dropbox, Google Drive)
-      </label>
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={monitorNetworkShare}
-          onChange={(e) => onChange({ monitorUsb, monitorCloudSync, monitorNetworkShare: e.target.checked })}
-        />
-        Mapped network drives
-      </label>
-    </fieldset>
+    <div className="app-stack-sm" role="group" aria-label="Channels to monitor">
+      <span className="app-subhead">Channels to monitor</span>
+      <Check
+        checked={monitorUsb}
+        onChange={(checked) => onChange({ monitorUsb: checked, monitorCloudSync, monitorNetworkShare })}
+        label="USB / removable media"
+      />
+      <Check
+        checked={monitorCloudSync}
+        onChange={(checked) => onChange({ monitorUsb, monitorCloudSync: checked, monitorNetworkShare })}
+        label="Cloud sync folders (OneDrive, Dropbox, Google Drive)"
+      />
+      <Check
+        checked={monitorNetworkShare}
+        onChange={(checked) => onChange({ monitorUsb, monitorCloudSync, monitorNetworkShare: checked })}
+        label="Mapped network drives"
+      />
+    </div>
+  );
+}
+
+function ExtraPathsField({ id, value, onChange, help }: { id: string; value: string; onChange: (value: string) => void; help: string }) {
+  return (
+    <Field label="Extra cloud-sync paths" htmlFor={id} help={help}>
+      <textarea id={id} className="ep-textarea ep-mono" rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
+    </Field>
   );
 }
 
 function PolicySettingsPanel({ policy }: { policy: DataMovementPolicyDetail }) {
   const updatePolicy = useUpdateDataMovementPolicy();
-  const [name, setName] = useState(policy.name);
-  const [description, setDescription] = useState(policy.description ?? "");
   const [monitorUsb, setMonitorUsb] = useState(policy.monitorUsb);
   const [monitorCloudSync, setMonitorCloudSync] = useState(policy.monitorCloudSync);
   const [monitorNetworkShare, setMonitorNetworkShare] = useState(policy.monitorNetworkShare);
   const [pathsText, setPathsText] = useState(pathsToText(policy.extraCloudSyncPaths));
 
+  // Name/description are reset by PolicySettingsForm itself.
   useEffect(() => {
-    setName(policy.name);
-    setDescription(policy.description ?? "");
     setMonitorUsb(policy.monitorUsb);
     setMonitorCloudSync(policy.monitorCloudSync);
     setMonitorNetworkShare(policy.monitorNetworkShare);
     setPathsText(pathsToText(policy.extraCloudSyncPaths));
   }, [policy.id, policy.name, policy.description, policy.monitorUsb, policy.monitorCloudSync, policy.monitorNetworkShare, policy.extraCloudSyncPaths]);
 
-  function handleSave(e: FormEvent) {
-    e.preventDefault();
-    updatePolicy.mutate({
-      id: policy.id,
-      name,
-      description: description.trim() || null,
-      monitorUsb,
-      monitorCloudSync,
-      monitorNetworkShare,
-      extraCloudSyncPaths: textToPaths(pathsText),
-    });
-  }
-
   return (
-    <form className="card accent-blue" onSubmit={handleSave}>
-      <h2>Policy settings</h2>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
+    <PolicySettingsForm
+      policyId={policy.id}
+      name={policy.name}
+      description={policy.description}
+      onSave={(values) =>
+        updatePolicy.mutate({
+          id: policy.id,
+          name: values.name,
+          description: values.description,
+          monitorUsb,
+          monitorCloudSync,
+          monitorNetworkShare,
+          extraCloudSyncPaths: textToPaths(pathsText),
+        })
+      }
+      pending={updatePolicy.isPending}
+      error={updatePolicy.error}
+      saved={updatePolicy.isSuccess}
+    >
       <ChannelToggles
         monitorUsb={monitorUsb}
         monitorCloudSync={monitorCloudSync}
@@ -122,100 +132,44 @@ function PolicySettingsPanel({ policy }: { policy: DataMovementPolicyDetail }) {
           setMonitorNetworkShare(next.monitorNetworkShare);
         }}
       />
-      <label>
-        Extra cloud-sync paths (one per line, optional — %ENV_VAR% expanded on each endpoint; OneDrive/Dropbox/Google
-        Drive are already covered automatically)
-        <textarea rows={3} className="mono-cell" value={pathsText} onChange={(e) => setPathsText(e.target.value)} />
-      </label>
-      {updatePolicy.isError && <p className="error-text">{(updatePolicy.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="submit" disabled={updatePolicy.isPending || !name.trim()}>
-          {updatePolicy.isPending ? "Saving…" : "Save policy"}
-        </button>
-        {updatePolicy.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
-      </div>
-    </form>
+      <ExtraPathsField
+        id={`dm-paths-${policy.id}`}
+        value={pathsText}
+        onChange={setPathsText}
+        help="Optional, one per line. %ENV_VAR% is expanded on each endpoint; OneDrive, Dropbox and Google Drive are already covered automatically."
+      />
+    </PolicySettingsForm>
   );
 }
 
 function AssignmentPanel({ policyId }: { policyId: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
   const { data: assignments } = useDataMovementAssignments(policyId);
   const assign = useAssignDataMovementPolicy();
   const unassign = useUnassignDataMovementPolicy();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { policyId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="panel">
-      <h2>Assignment</h2>
-
-      <h3>Currently assigned</h3>
-      <ul>
-        {assignments?.map((a) => (
-          <li key={a.id}>
-            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
-            <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
-              Remove
-            </button>
-          </li>
-        ))}
-        {assignments?.length === 0 && <li>Not assigned to any endpoint or group yet.</li>}
-      </ul>
-
-      <h3>Assign to</h3>
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
-
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-      />
-
-      {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {assign.isPending ? "Assigning…" : "Assign"}
-      </button>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ policyId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+    />
   );
 }
 
 type ActivityFilter = "all" | "usb" | "cloud" | "network";
 
+function CountCell({ count }: { count: number }) {
+  return (
+    <td className="ep-num" style={{ textAlign: "right" }}>
+      {count > 0 ? <Badge tone="med">{count}</Badge> : <span className="app-muted">—</span>}
+    </td>
+  );
+}
+
 function ActivityPanel({ policyId }: { policyId: string }) {
-  const { data: breakdown } = useDataMovementAgentBreakdown(policyId);
+  const { data: breakdown, isLoading } = useDataMovementAgentBreakdown(policyId);
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
   const agents = breakdown?.agents ?? [];
@@ -228,72 +182,96 @@ function ActivityPanel({ policyId }: { policyId: string }) {
     if (filter === "network") return a.networkShareCount > 0;
     return true;
   });
+  const paged = usePagedList(filtered, 25);
 
   return (
-    <div className="panel">
-      <h2>Activity</h2>
+    <div className="app-stack">
+      <KpiStrip>
+        <Kpi icon={Monitor} label="Total devices" value={agents.length} suffix="assigned" active={filter === "all"} onClick={() => setFilter("all")} />
+        <Kpi
+          icon={Usb}
+          label="USB copies"
+          value={usbTotal}
+          suffix="files"
+          valueTone={usbTotal > 0 ? "critical" : undefined}
+          active={filter === "usb"}
+          onClick={() => setFilter("usb")}
+        />
+        <Kpi icon={Cloud} label="Cloud sync" value={cloudTotal} suffix="files" active={filter === "cloud"} onClick={() => setFilter("cloud")} />
+        <Kpi icon={Network} label="Network share" value={networkTotal} suffix="files" active={filter === "network"} onClick={() => setFilter("network")} />
+      </KpiStrip>
 
-      <div className="tiles">
-        <div className={`tile ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
-          <div className="tile-label">Total devices</div>
-          <div className="tile-value">{agents.length}</div>
+      {isLoading ? (
+        <Skeleton />
+      ) : agents.length === 0 ? (
+        <EmptyState icon={Monitor} title="Not assigned to any endpoint yet">
+          Assign the policy in the Assignment tab to start tracking data movement.
+        </EmptyState>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="No devices match this filter"
+          action={
+            <Button size="sm" onClick={() => setFilter("all")}>
+              Show all devices
+            </Button>
+          }
+        />
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Endpoint</th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  USB
+                </th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Cloud sync
+                </th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Network share
+                </th>
+                <th scope="col">Last event</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paged.pageItems.map((a) => (
+                <tr key={a.agentId}>
+                  <td>
+                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                  </td>
+                  <CountCell count={a.usbCount} />
+                  <CountCell count={a.cloudSyncCount} />
+                  <CountCell count={a.networkShareCount} />
+                  <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <Pagination
+            page={paged.page}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            noun="devices"
+            onPageChange={paged.setPage}
+            onPageSizeChange={paged.setPageSize}
+          />
         </div>
-        <div className={`tile accent-critical ${filter === "usb" ? "active" : ""}`} onClick={() => setFilter("usb")}>
-          <div className="tile-label">USB copies</div>
-          <div className="tile-value">{usbTotal}</div>
-        </div>
-        <div className={`tile ${filter === "cloud" ? "active" : ""}`} onClick={() => setFilter("cloud")}>
-          <div className="tile-label">Cloud sync</div>
-          <div className="tile-value">{cloudTotal}</div>
-        </div>
-        <div className={`tile ${filter === "network" ? "active" : ""}`} onClick={() => setFilter("network")}>
-          <div className="tile-label">Network share</div>
-          <div className="tile-value">{networkTotal}</div>
-        </div>
-      </div>
-
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>USB</th>
-            <th>Cloud sync</th>
-            <th>Network share</th>
-            <th>Last event</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((a) => (
-            <tr key={a.agentId}>
-              <td>
-                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-              </td>
-              <td>{a.usbCount > 0 ? <StatusBadge kind="warn" label={String(a.usbCount)} /> : "—"}</td>
-              <td>{a.cloudSyncCount > 0 ? <StatusBadge kind="warn" label={String(a.cloudSyncCount)} /> : "—"}</td>
-              <td>{a.networkShareCount > 0 ? <StatusBadge kind="warn" label={String(a.networkShareCount)} /> : "—"}</td>
-              <td>{a.lastEventAt ? new Date(a.lastEventAt).toLocaleString() : "—"}</td>
-            </tr>
-          ))}
-          {filtered.length === 0 && (
-            <tr>
-              <td colSpan={5}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      )}
     </div>
   );
 }
 
 export default function DataMovementPage() {
-  const { data: policies } = useDataMovementPolicies();
+  const { data: policies, isLoading, error, refetch } = useDataMovementPolicies();
   const createPolicy = useCreateDataMovementPolicy();
   const updatePolicy = useUpdateDataMovementPolicy();
   const deletePolicy = useDeleteDataMovementPolicy();
+  const confirm = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
   const [monitorUsb, setMonitorUsb] = useState(true);
   const [monitorCloudSync, setMonitorCloudSync] = useState(true);
   const [monitorNetworkShare, setMonitorNetworkShare] = useState(true);
@@ -301,33 +279,34 @@ export default function DataMovementPage() {
 
   const { data: policy } = useDataMovementPolicy(selectedId);
 
-  function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    createPolicy.mutate(
-      {
-        name,
-        description: description.trim() || null,
+  function handleCreate(values: { name: string; description: string | null }) {
+    return createPolicy
+      .mutateAsync({
+        name: values.name,
+        description: values.description,
         monitorUsb,
         monitorCloudSync,
         monitorNetworkShare,
         extraCloudSyncPaths: textToPaths(pathsText),
-      },
-      {
-        onSuccess: (result) => {
-          setSelectedId(result.id);
-          setName("");
-          setDescription("");
-          setPathsText("");
-        },
-      },
-    );
+      })
+      .then((result) => {
+        setSelectedId(result.id);
+        setPathsText("");
+      });
   }
 
   function toggleEnabled(id: string, enabled: boolean) {
     updatePolicy.mutate({ id, enabled });
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    const confirmed = await confirm({
+      title: `Delete policy "${name}"?`,
+      body: "Assigned endpoints stop tracking data movement for it. This cannot be undone.",
+      confirmLabel: "Delete policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     deletePolicy.mutate(id, {
       onSuccess: () => {
         if (selectedId === id) setSelectedId(undefined);
@@ -336,105 +315,165 @@ export default function DataMovementPage() {
   }
 
   return (
-    <div>
-      <h1>Data Movement</h1>
-      <p>
-        Track where data is leaving an endpoint through — files recently copied to a USB/removable drive, written
-        into a cloud-sync folder (OneDrive, Dropbox, Google Drive), or copied onto a mapped network drive. This is a
-        lightweight, agent-side heuristic (recently-modified files in monitored locations on a periodic scan), not a
-        real-time kernel-level interception — it can miss a very fast copy-then-move, or occasionally flag a file
-        that was just edited in place rather than copied.
-      </p>
+    <>
+      <PageHeader
+        title="Data movement"
+        description="Track files leaving an endpoint via USB or removable drives, cloud-sync folders and mapped network drives"
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New policy
+          </Button>
+        }
+      />
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Name</th>
-            <th>Channels</th>
-            <th>Assigned endpoints</th>
-            <th>Events</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => toggleEnabled(p.id, e.target.checked)}
-                  title="Enabled — paused policies are skipped entirely and don't scan any device"
-                />
-              </td>
-              <td>{p.name}</td>
-              <td>
-                {[p.monitorUsb && "USB", p.monitorCloudSync && "Cloud sync", p.monitorNetworkShare && "Network share"]
-                  .filter(Boolean)
-                  .join(", ") || "None"}
-              </td>
-              <td>{p.assignedAgentCount}</td>
-              <td>{p.eventCount}</td>
-              <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p.id);
-                  }}
-                  disabled={deletePolicy.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={6}>No policies yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <Alert tone="info" title="Periodic heuristic, not real-time interception">
+        Files recently copied to a USB/removable drive, written into a cloud-sync folder (OneDrive, Dropbox, Google
+        Drive), or copied onto a mapped network drive are detected by a lightweight, agent-side heuristic
+        (recently-modified files in monitored locations on a periodic scan), not a real-time kernel-level interception
+        — it can miss a very fast copy-then-move, or occasionally flag a file that was just edited in place rather than
+        copied.
+      </Alert>
 
-      <form className="panel" onSubmit={handleCreate}>
-        <h2>New policy</h2>
-        <label>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Description
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        <ChannelToggles
-          monitorUsb={monitorUsb}
-          monitorCloudSync={monitorCloudSync}
-          monitorNetworkShare={monitorNetworkShare}
-          onChange={(next) => {
-            setMonitorUsb(next.monitorUsb);
-            setMonitorCloudSync(next.monitorCloudSync);
-            setMonitorNetworkShare(next.monitorNetworkShare);
-          }}
-        />
-        <label>
-          Extra cloud-sync paths (one per line, optional — %ENV_VAR% expanded on each endpoint)
-          <textarea rows={3} className="mono-cell" value={pathsText} onChange={(e) => setPathsText(e.target.value)} />
-        </label>
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending || !name.trim()}>
-          {createPolicy.isPending ? "Creating…" : "Create policy"}
-        </button>
-      </form>
+      <Card flush title="Policies" hint={policies ? `${policies.length} total · paused policies are skipped entirely and don't scan any device` : undefined}>
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : error ? (
+          <div className="ep-cb">
+            <Alert tone="critical" title="Couldn't load policies" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+              {(error as Error).message}
+            </Alert>
+          </div>
+        ) : !policies || policies.length === 0 ? (
+          <EmptyState
+            icon={ArrowRightLeft}
+            title="No data movement policies yet"
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+                New policy
+              </Button>
+            }
+          >
+            Create a policy, choose the channels to monitor, then assign it to groups or endpoints.
+          </EmptyState>
+        ) : (
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Policy</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Channels</th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Assigned endpoints
+                  </th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Events
+                  </th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policies.map((p) => {
+                  const channels = [p.monitorUsb && "USB", p.monitorCloudSync && "Cloud sync", p.monitorNetworkShare && "Network share"].filter(
+                    (c): c is string => !!c,
+                  );
+                  return (
+                    <tr key={p.id} className={`app-clickable ${p.id === selectedId ? "ep-sel" : ""}`} onClick={() => setSelectedId(p.id)}>
+                      <td className="ep-host">
+                        <b>{p.name}</b>
+                        {p.description && <span className="app-row-sub">{p.description}</span>}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Switch checked={p.enabled} onChange={(enabled) => toggleEnabled(p.id, enabled)} label={p.enabled ? "Enabled" : "Paused"} />
+                      </td>
+                      <td>
+                        {channels.length > 0 ? (
+                          <div className="app-badge-row">
+                            {channels.map((c) => (
+                              <Tag key={c}>{c}</Tag>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="app-muted">None</span>
+                        )}
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {p.assignedAgentCount}
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {p.eventCount}
+                      </td>
+                      <td>
+                        <div className="app-cell-actions">
+                          <RowMenu
+                            label={`Actions for ${p.name}`}
+                            items={[
+                              { label: "Open policy", icon: Pencil, onSelect: () => setSelectedId(p.id) },
+                              {
+                                label: "Delete policy",
+                                icon: Trash2,
+                                danger: true,
+                                dividerBefore: true,
+                                disabled: deletePolicy.isPending,
+                                onSelect: () => handleDelete(p.id, p.name),
+                              },
+                            ]}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {policy && (
-        <>
-          <PolicySettingsPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} />
-          <ActivityPanel policyId={policy.id} />
-        </>
+        <PolicyDetail
+          policyId={policy.id}
+          name={policy.name}
+          enabled={policy.enabled}
+          meta={`${policy.eventCount} ${policy.eventCount === 1 ? "event" : "events"} · ${policy.assignedAgentCount} ${policy.assignedAgentCount === 1 ? "endpoint" : "endpoints"}`}
+          onClose={() => setSelectedId(undefined)}
+          tabs={[
+            { value: "activity", label: "Activity", content: <ActivityPanel policyId={policy.id} /> },
+            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+            { value: "settings", label: "Settings", content: <PolicySettingsPanel policy={policy} /> },
+          ]}
+        />
       )}
-    </div>
+
+      {creating && (
+        <NewPolicyDialog
+          onClose={() => setCreating(false)}
+          pending={createPolicy.isPending}
+          error={createPolicy.error}
+          onCreate={handleCreate}
+        >
+          <ChannelToggles
+            monitorUsb={monitorUsb}
+            monitorCloudSync={monitorCloudSync}
+            monitorNetworkShare={monitorNetworkShare}
+            onChange={(next) => {
+              setMonitorUsb(next.monitorUsb);
+              setMonitorCloudSync(next.monitorCloudSync);
+              setMonitorNetworkShare(next.monitorNetworkShare);
+            }}
+          />
+          <ExtraPathsField
+            id="dm-new-paths"
+            value={pathsText}
+            onChange={setPathsText}
+            help="Optional, one per line. %ENV_VAR% is expanded on each endpoint."
+          />
+        </NewPolicyDialog>
+      )}
+    </>
   );
 }

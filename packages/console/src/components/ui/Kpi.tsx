@@ -31,6 +31,7 @@ export function Kpi({
   to,
   onClick,
   active,
+  title,
 }: {
   icon?: LucideIcon;
   label: ReactNode;
@@ -46,6 +47,8 @@ export function Kpi({
   // tile whose filter is currently applied.
   onClick?: () => void;
   active?: boolean;
+  // Tooltip with the tile's definition (e.g. what "Unmanaged" counts).
+  title?: string;
 }) {
   const total = bar?.reduce((sum, s) => sum + s.value, 0) ?? 0;
   const valueColor =
@@ -72,17 +75,19 @@ export function Kpi({
   );
   if (onClick) {
     return (
-      <button type="button" className={`ep-card ep-kpi app-kpi-link ${active ? "app-kpi-active" : ""}`} aria-pressed={active} onClick={onClick}>
+      <button type="button" className={`ep-card ep-kpi app-kpi-link ${active ? "app-kpi-active" : ""}`} aria-pressed={active} onClick={onClick} title={title}>
         {body}
       </button>
     );
   }
   return to ? (
-    <Link to={to} className="ep-card ep-kpi app-kpi-link">
+    <Link to={to} className="ep-card ep-kpi app-kpi-link" title={title}>
       {body}
     </Link>
   ) : (
-    <div className="ep-card ep-kpi">{body}</div>
+    <div className="ep-card ep-kpi" title={title}>
+      {body}
+    </div>
   );
 }
 

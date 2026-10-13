@@ -9,6 +9,8 @@ export interface MenuItem {
   disabled?: boolean;
   // Draw a divider above this item (destructive items usually sit last, after a divider).
   dividerBefore?: boolean;
+  // Tooltip, e.g. why an item is disabled.
+  title?: string;
 }
 
 // Row-actions menu (COMPONENTS.md §16): an ellipsis button that opens an ep-menu. Esc or a
@@ -70,6 +72,7 @@ export function RowMenu({ label, items }: { label: string; items: MenuItem[] }) 
                 role="menuitem"
                 className={item.danger ? "ep-danger" : undefined}
                 disabled={item.disabled}
+                title={item.title}
                 onClick={() => {
                   setOpen(false);
                   item.onSelect();

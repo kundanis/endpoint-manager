@@ -1,10 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Activity, ListChecks, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import type { DlpEnforcementMode, DlpRuleType } from "@em/shared";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAddDlpRule,
-  useAgents,
-  useAssetGroups,
   useAssignDlpPolicy,
   useCreateDlpPolicy,
   useDeleteDlpPolicy,
@@ -19,8 +17,30 @@ import {
   type DlpRuleInput,
 } from "../api/hooks";
 import type { DlpPolicyDetail, DlpRuleView } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
 import EndpointLabel from "../components/EndpointLabel";
+import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm, SectionHeader } from "../components/policy";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Check,
+  EmptyState,
+  Field,
+  FormGrid,
+  IconButton,
+  Kpi,
+  KpiStrip,
+  Pagination,
+  RowMenu,
+  Skeleton,
+  Switch,
+  useConfirm,
+  usePagedList,
+} from "../components/ui";
+import { formatDateTime } from "../format";
+
+// Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
 const ENFORCEMENT_MODES: DlpEnforcementMode[] = ["ALERT_ONLY", "BLOCK"];
 const ENFORCEMENT_LABEL: Record<DlpEnforcementMode, string> = {
@@ -79,6 +99,7 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
   const addRule = useAddDlpRule();
   const updateRule = useUpdateDlpRule();
   const deleteRule = useDeleteDlpRule();
+  const confirm = useConfirm();
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [form, setForm] = useState<DlpRuleInput>(BLANK_RULE_FORM);
@@ -107,60 +128,73 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
     }
   }
 
-  return (
-    <div className="panel">
-      <h2>Rules ({policy.rules.length})</h2>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Value</th>
-            <th>Label</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policy.rules.map((r) => (
-            <tr key={r.id} className={r.id === editingRuleId ? "selected-row" : ""}>
-              <td>{RULE_TYPE_LABEL[r.ruleType]}</td>
-              <td className="mono-cell">
-                {r.ruleType === "CONTENT_PATTERN"
-                  ? (PII_PATTERN_OPTIONS.find((p) => p.key === r.value)?.label ?? r.value)
-                  : r.value}
-              </td>
-              <td>{r.label ?? "—"}</td>
-              <td>
-                <button type="button" onClick={() => startEdit(r)}>
-                  Edit
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() => deleteRule.mutate({ policyId: policy.id, ruleId: r.id })}
-                  disabled={deleteRule.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policy.rules.length === 0 && (
-            <tr>
-              <td colSpan={4}>No rules yet — add one below. A policy with no rules never triggers.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  function displayValue(r: DlpRuleView) {
+    return r.ruleType === "CONTENT_PATTERN" ? (PII_PATTERN_OPTIONS.find((p) => p.key === r.value)?.label ?? r.value) : r.value;
+  }
 
-      <div className="card accent-orange">
-        <h3>{isEditing ? "Edit rule" : "Add rule"}</h3>
-        <form onSubmit={handleSubmit}>
-          <label>
-            Rule type
+  async function handleDeleteRule(r: DlpRuleView) {
+    const confirmed = await confirm({
+      title: `Delete rule "${r.label ?? displayValue(r)}"?`,
+      body: "Assigned endpoints stop applying it at their next sync.",
+      confirmLabel: "Delete rule",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deleteRule.mutate({ policyId: policy.id, ruleId: r.id });
+  }
+
+  return (
+    <div className="app-stack">
+      {policy.rules.length === 0 ? (
+        <EmptyState icon={ListChecks} title="No rules yet">
+          Add one below. A policy with no rules never triggers.
+        </EmptyState>
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Type</th>
+                <th scope="col">Value</th>
+                <th scope="col">Label</th>
+                <th scope="col">
+                  <span className="app-vh">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {policy.rules.map((r) => (
+                <tr key={r.id} className={r.id === editingRuleId ? "ep-sel" : undefined}>
+                  <td>{RULE_TYPE_LABEL[r.ruleType]}</td>
+                  <td className={r.ruleType === "CONTENT_PATTERN" ? undefined : "ep-mono"}>{displayValue(r)}</td>
+                  <td>{r.label ?? <span className="app-muted">—</span>}</td>
+                  <td>
+                    <div className="app-cell-actions">
+                      <IconButton icon={Pencil} label={`Edit ${displayValue(r)}`} onClick={() => startEdit(r)} />
+                      <IconButton
+                        icon={Trash2}
+                        label={`Delete ${displayValue(r)}`}
+                        onClick={() => handleDeleteRule(r)}
+                        disabled={deleteRule.isPending}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="app-inset-form">
+        <span className="app-subhead">{isEditing ? "Edit rule" : "Add rule"}</span>
+        <FormGrid>
+          <Field label="Rule type" htmlFor="dlp-rule-type" help={RULE_TYPE_HINT[form.ruleType]}>
             <select
+              id="dlp-rule-type"
+              className="ep-select"
               value={form.ruleType}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, ruleType: e.target.value as DlpRuleType, value: "" }))
-              }
+              onChange={(e) => setForm((prev) => ({ ...prev, ruleType: e.target.value as DlpRuleType, value: "" }))}
             >
               {RULE_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -168,13 +202,17 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
                 </option>
               ))}
             </select>
-          </label>
-          <p className="hint">{RULE_TYPE_HINT[form.ruleType]}</p>
+          </Field>
 
           {form.ruleType === "CONTENT_PATTERN" ? (
-            <label>
-              Identifier type
-              <select value={form.value} onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))} required>
+            <Field label="Identifier type" htmlFor="dlp-rule-value" required>
+              <select
+                id="dlp-rule-value"
+                className="ep-select"
+                value={form.value}
+                onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))}
+                required
+              >
                 <option value="" disabled>
                   Select...
                 </option>
@@ -184,179 +222,138 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
           ) : (
-            <label>
-              Value
+            <Field label="Value" htmlFor="dlp-rule-value" required>
               <input
+                id="dlp-rule-value"
                 type="text"
+                className="ep-input ep-mono"
                 value={form.value}
                 onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))}
                 required
               />
-            </label>
+            </Field>
           )}
 
-          <label>
-            Label (optional)
+          <Field label="Label" htmlFor="dlp-rule-label" help="Optional. Friendly name shown on events.">
             <input
+              id="dlp-rule-label"
               type="text"
+              className="ep-input"
               value={form.label ?? ""}
               onChange={(e) => setForm((prev) => ({ ...prev, label: e.target.value }))}
               placeholder='Friendly name shown on events, e.g. "Codename"'
             />
-          </label>
+          </Field>
+        </FormGrid>
 
-          {mutationError && <p className="error-text">{(mutationError as Error).message}</p>}
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="submit" disabled={pending || !form.value.trim()}>
-              {pending ? "Saving…" : isEditing ? "Save changes" : "Add rule"}
-            </button>
-            {isEditing && (
-              <button type="button" onClick={cancelEdit}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
+        {!!mutationError && <Alert tone="critical">{(mutationError as Error).message}</Alert>}
+        <div className="app-actions-row app-end">
+          {isEditing && <Button onClick={cancelEdit}>Cancel</Button>}
+          <Button type="submit" variant="primary" disabled={pending || !form.value.trim()}>
+            {pending ? "Saving…" : isEditing ? "Save changes" : "Add rule"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
 
-function PolicySettingsPanel({ policy }: { policy: DlpPolicyDetail }) {
-  const updatePolicy = useUpdateDlpPolicy();
-  const [name, setName] = useState(policy.name);
-  const [description, setDescription] = useState(policy.description ?? "");
-  const [enforcementMode, setEnforcementMode] = useState<DlpEnforcementMode>(policy.enforcementMode);
-  const [removableMediaOnly, setRemovableMediaOnly] = useState(policy.removableMediaOnly);
-
-  useEffect(() => {
-    setName(policy.name);
-    setDescription(policy.description ?? "");
-    setEnforcementMode(policy.enforcementMode);
-    setRemovableMediaOnly(policy.removableMediaOnly);
-  }, [policy.id, policy.name, policy.description, policy.enforcementMode, policy.removableMediaOnly]);
-
-  function handleSave(e: FormEvent) {
-    e.preventDefault();
-    updatePolicy.mutate({ id: policy.id, name, description: description.trim() || null, enforcementMode, removableMediaOnly });
-  }
-
+// Enforcement mode + scope fields, shared by the settings form and the new-policy dialog.
+function EnforcementFields({
+  idPrefix,
+  enforcementMode,
+  onEnforcementModeChange,
+  removableMediaOnly,
+  onRemovableMediaOnlyChange,
+  removableHint,
+}: {
+  idPrefix: string;
+  enforcementMode: DlpEnforcementMode;
+  onEnforcementModeChange: (mode: DlpEnforcementMode) => void;
+  removableMediaOnly: boolean;
+  onRemovableMediaOnlyChange: (value: boolean) => void;
+  removableHint: string;
+}) {
   return (
-    <form className="card accent-blue" onSubmit={handleSave}>
-      <h2>Policy settings</h2>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <label>
-        Enforcement mode
-        <select value={enforcementMode} onChange={(e) => setEnforcementMode(e.target.value as DlpEnforcementMode)}>
+    <>
+      <Field label="Enforcement mode" htmlFor={`${idPrefix}-mode`}>
+        <select
+          id={`${idPrefix}-mode`}
+          className="ep-select"
+          value={enforcementMode}
+          onChange={(e) => onEnforcementModeChange(e.target.value as DlpEnforcementMode)}
+        >
           {ENFORCEMENT_MODES.map((m) => (
             <option key={m} value={m}>
               {ENFORCEMENT_LABEL[m]}
             </option>
           ))}
         </select>
-      </label>
-      <label className="checkbox-row">
-        <input type="checkbox" checked={removableMediaOnly} onChange={(e) => setRemovableMediaOnly(e.target.checked)} />
-        Removable media only (USB drives etc.) — off applies to all file writes
-      </label>
-      {updatePolicy.isError && <p className="error-text">{(updatePolicy.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="submit" disabled={updatePolicy.isPending || !name.trim()}>
-          {updatePolicy.isPending ? "Saving…" : "Save policy"}
-        </button>
-        {updatePolicy.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
-      </div>
-    </form>
+      </Field>
+      <Check
+        checked={removableMediaOnly}
+        onChange={onRemovableMediaOnlyChange}
+        label="Removable media only (USB drives etc.)"
+        hint={removableHint}
+      />
+    </>
+  );
+}
+
+function SettingsPanel({ policy }: { policy: DlpPolicyDetail }) {
+  const updatePolicy = useUpdateDlpPolicy();
+  const [enforcementMode, setEnforcementMode] = useState<DlpEnforcementMode>(policy.enforcementMode);
+  const [removableMediaOnly, setRemovableMediaOnly] = useState(policy.removableMediaOnly);
+
+  useEffect(() => {
+    setEnforcementMode(policy.enforcementMode);
+    setRemovableMediaOnly(policy.removableMediaOnly);
+  }, [policy.id, policy.enforcementMode, policy.removableMediaOnly]);
+
+  return (
+    <PolicySettingsForm
+      policyId={policy.id}
+      name={policy.name}
+      description={policy.description}
+      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values, enforcementMode, removableMediaOnly })}
+      pending={updatePolicy.isPending}
+      error={updatePolicy.error}
+      saved={updatePolicy.isSuccess}
+    >
+      <EnforcementFields
+        idPrefix={`dlp-settings-${policy.id}`}
+        enforcementMode={enforcementMode}
+        onEnforcementModeChange={setEnforcementMode}
+        removableMediaOnly={removableMediaOnly}
+        onRemovableMediaOnlyChange={setRemovableMediaOnly}
+        removableHint="Off applies to all file writes."
+      />
+    </PolicySettingsForm>
   );
 }
 
 function AssignmentPanel({ policyId }: { policyId: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
   const { data: assignments } = useDlpAssignments(policyId);
   const assign = useAssignDlpPolicy();
   const unassign = useUnassignDlpPolicy();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { policyId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="panel">
-      <h2>Assignment</h2>
-
-      <h3>Currently assigned</h3>
-      <ul>
-        {assignments?.map((a) => (
-          <li key={a.id}>
-            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
-            <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
-              Remove
-            </button>
-          </li>
-        ))}
-        {assignments?.length === 0 && <li>Not assigned to any endpoint or group yet.</li>}
-      </ul>
-
-      <h3>Assign to</h3>
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
-
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-      />
-
-      {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {assign.isPending ? "Assigning…" : "Assign"}
-      </button>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ policyId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+    />
   );
 }
 
 type ActivityFilter = "all" | "blocked" | "alerted";
 
 function ActivityPanel({ policyId }: { policyId: string }) {
-  const { data: breakdown } = useDlpAgentBreakdown(policyId);
+  const { data: breakdown, isLoading } = useDlpAgentBreakdown(policyId);
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
   const agents = breakdown?.agents ?? [];
@@ -367,98 +364,124 @@ function ActivityPanel({ policyId }: { policyId: string }) {
     if (filter === "alerted") return a.eventCount - a.blockedCount > 0;
     return true;
   });
+  const paged = usePagedList(filtered, 25);
+
+  if (isLoading) return <Skeleton />;
 
   return (
-    <div className="panel">
-      <h2>Activity</h2>
+    <div className="app-stack">
+      <KpiStrip>
+        <Kpi label="Total devices" value={<span className="ep-num">{agents.length}</span>} onClick={() => setFilter("all")} active={filter === "all"} />
+        <Kpi
+          label="Blocked events"
+          value={<span className="ep-num">{blockedTotal}</span>}
+          valueTone={blockedTotal > 0 ? "critical" : undefined}
+          onClick={() => setFilter("blocked")}
+          active={filter === "blocked"}
+        />
+        <Kpi
+          label="Alerted events"
+          value={<span className="ep-num">{alertedTotal}</span>}
+          valueTone={alertedTotal > 0 ? "warning" : undefined}
+          onClick={() => setFilter("alerted")}
+          active={filter === "alerted"}
+        />
+      </KpiStrip>
 
-      <div className="tiles">
-        <div className={`tile ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
-          <div className="tile-label">Total devices</div>
-          <div className="tile-value">{agents.length}</div>
-        </div>
-        <div className={`tile accent-critical ${filter === "blocked" ? "active" : ""}`} onClick={() => setFilter("blocked")}>
-          <div className="tile-label">Blocked events</div>
-          <div className="tile-value">{blockedTotal}</div>
-        </div>
-        <div className={`tile ${filter === "alerted" ? "active" : ""}`} onClick={() => setFilter("alerted")}>
-          <div className="tile-label">Alerted events</div>
-          <div className="tile-value">{alertedTotal}</div>
-        </div>
-      </div>
-
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>Events</th>
-            <th>Blocked</th>
-            <th>Last event</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((a) => (
-            <tr key={a.agentId}>
-              <td>
-                <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-              </td>
-              <td>{a.eventCount}</td>
-              <td>
-                {a.blockedCount > 0 ? (
-                  <StatusBadge kind="fail" label={`${a.blockedCount} blocked`} />
-                ) : a.eventCount > 0 ? (
-                  <StatusBadge kind="warn" label="Alerted only" />
-                ) : (
-                  <StatusBadge kind="pass" label="No activity" />
-                )}
-              </td>
-              <td>{a.lastEventAt ? new Date(a.lastEventAt).toLocaleString() : "—"}</td>
-            </tr>
-          ))}
-          {filtered.length === 0 && (
-            <tr>
-              <td colSpan={4}>{agents.length === 0 ? "Not assigned to any endpoint yet." : "No devices match this filter."}</td>
-            </tr>
+      {filtered.length === 0 ? (
+        agents.length === 0 ? (
+          <EmptyState icon={Activity} title="Not assigned to any endpoint yet">
+            Assign the policy on the Assignment tab to see each endpoint's events here.
+          </EmptyState>
+        ) : (
+          <EmptyState
+            icon={Activity}
+            title="No devices match this filter"
+            action={
+              <Button size="sm" onClick={() => setFilter("all")}>
+                Show all devices
+              </Button>
+            }
+          />
+        )
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Endpoint</th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Events
+                </th>
+                <th scope="col">Blocked</th>
+                <th scope="col">Last event</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paged.pageItems.map((a) => (
+                <tr key={a.agentId}>
+                  <td>
+                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                  </td>
+                  <td className="ep-num" style={{ textAlign: "right" }}>
+                    {a.eventCount}
+                  </td>
+                  <td>
+                    {a.blockedCount > 0 ? (
+                      <Badge tone="crit">{`${a.blockedCount} blocked`}</Badge>
+                    ) : a.eventCount > 0 ? (
+                      <Badge tone="med">Alerted only</Badge>
+                    ) : (
+                      <Badge tone="ok">No activity</Badge>
+                    )}
+                  </td>
+                  <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {paged.total > paged.pageSize && (
+            <Pagination
+              page={paged.page}
+              pageSize={paged.pageSize}
+              total={paged.total}
+              noun="devices"
+              onPageChange={paged.setPage}
+              onPageSizeChange={paged.setPageSize}
+            />
           )}
-        </tbody>
-      </table>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function DlpContentPoliciesPage() {
-  const { data: policies } = useDlpPolicies();
+  const { data: policies, isLoading, error, refetch } = useDlpPolicies();
   const createPolicy = useCreateDlpPolicy();
   const updatePolicy = useUpdateDlpPolicy();
   const deletePolicy = useDeleteDlpPolicy();
+  const confirm = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
   const [enforcementMode, setEnforcementMode] = useState<DlpEnforcementMode>("ALERT_ONLY");
   const [removableMediaOnly, setRemovableMediaOnly] = useState(true);
 
   const { data: policy } = useDlpPolicy(selectedId);
 
-  function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    createPolicy.mutate(
-      { name, description: description.trim() || null, enforcementMode, removableMediaOnly },
-      {
-        onSuccess: (result) => {
-          setSelectedId(result.id);
-          setName("");
-          setDescription("");
-        },
-      },
-    );
-  }
-
   function toggleEnabled(id: string, enabled: boolean) {
     updatePolicy.mutate({ id, enabled });
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    const confirmed = await confirm({
+      title: `Delete policy "${name}"?`,
+      body: "Its rules stop applying on every assigned endpoint at their next sync. This cannot be undone.",
+      confirmLabel: "Delete policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     deletePolicy.mutate(id, {
       onSuccess: () => {
         if (selectedId === id) setSelectedId(undefined);
@@ -467,111 +490,166 @@ export default function DlpContentPoliciesPage() {
   }
 
   return (
-    <div>
-      <h2>Content &amp; File Policies</h2>
-      <p>
-        Real-time data loss prevention — each policy is a set of rules you define (content keywords/patterns to
-        detect, destination paths to always block, trusted processes to exempt, file types to restrict to) and can
-        alert or block matching writes on assigned endpoints. Content matches only ever report masked previews, never
-        the raw matched value.
-      </p>
-      <p className="error-text" style={{ fontSize: "0.85rem" }}>
-        Note: Block mode requires the native enforcement component to be installed on an endpoint. Until then,
-        policies can be authored and assigned, but nothing is actually intercepted yet.
-      </p>
+    <>
+      <SectionHeader
+        title="Content & file policies"
+        description="Real-time data loss prevention — each policy is a set of rules you define (content keywords/patterns to detect, destination paths to always block, trusted processes to exempt, file types to restrict to) and can alert or block matching writes on assigned endpoints. Content matches only ever report masked previews, never the raw matched value."
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New policy
+          </Button>
+        }
+      />
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Name</th>
-            <th>Mode</th>
-            <th>Scope</th>
-            <th>Rules</th>
-            <th>Assigned endpoints</th>
-            <th>Events</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => toggleEnabled(p.id, e.target.checked)}
-                  title="Enabled — paused policies are skipped entirely and don't affect any device"
-                />
-              </td>
-              <td>{p.name}</td>
-              <td>
-                <StatusBadge kind={p.enforcementMode === "BLOCK" ? "fail" : "warn"} label={ENFORCEMENT_LABEL[p.enforcementMode]} />
-              </td>
-              <td>{p.removableMediaOnly ? "Removable media" : "All writes"}</td>
-              <td>{p.ruleCount}</td>
-              <td>{p.assignedAgentCount}</td>
-              <td>{p.eventCount}</td>
-              <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p.id);
-                  }}
-                  disabled={deletePolicy.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={8}>No policies yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <Alert tone="warn">
+        Block mode requires the native enforcement component to be installed on an endpoint. Until then, policies can
+        be authored and assigned, but nothing is actually intercepted yet.
+      </Alert>
 
-      <form className="panel" onSubmit={handleCreate}>
-        <h2>New policy</h2>
-        <label>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Description
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        <label>
-          Enforcement mode
-          <select value={enforcementMode} onChange={(e) => setEnforcementMode(e.target.value as DlpEnforcementMode)}>
-            {ENFORCEMENT_MODES.map((m) => (
-              <option key={m} value={m}>
-                {ENFORCEMENT_LABEL[m]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={removableMediaOnly} onChange={(e) => setRemovableMediaOnly(e.target.checked)} />
-          Removable media only (USB drives etc.) — uncheck to apply to all file writes
-        </label>
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending || !name.trim()}>
-          {createPolicy.isPending ? "Creating…" : "Create policy"}
-        </button>
-      </form>
+      <Card flush title="Policies" hint={policies ? `${policies.length} total` : undefined}>
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : error ? (
+          <div className="ep-cb">
+            <Alert
+              tone="critical"
+              title="Couldn't load policies"
+              action={
+                <Button size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            >
+              {(error as Error).message}
+            </Alert>
+          </div>
+        ) : !policies || policies.length === 0 ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title="No content policies yet"
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+                New policy
+              </Button>
+            }
+          >
+            Create a policy, add the rules to detect or block, then assign it to groups or endpoints.
+          </EmptyState>
+        ) : (
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Policy</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Mode</th>
+                  <th scope="col">Scope</th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Rules
+                  </th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Assigned endpoints
+                  </th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Events
+                  </th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policies.map((p) => (
+                  <tr key={p.id} className={`app-clickable ${p.id === selectedId ? "ep-sel" : ""}`} onClick={() => setSelectedId(p.id)}>
+                    <td className="ep-host">
+                      <b>{p.name}</b>
+                      {p.description && <span className="app-row-sub">{p.description}</span>}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <span title="Enabled — paused policies are skipped entirely and don't affect any device">
+                        <Switch
+                          checked={p.enabled}
+                          onChange={(enabled) => toggleEnabled(p.id, enabled)}
+                          label={p.enabled ? "Enabled" : "Paused"}
+                        />
+                      </span>
+                    </td>
+                    <td>
+                      <Badge tone={p.enforcementMode === "BLOCK" ? "crit" : "med"}>{ENFORCEMENT_LABEL[p.enforcementMode]}</Badge>
+                    </td>
+                    <td>{p.removableMediaOnly ? "Removable media" : "All writes"}</td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.ruleCount}
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.assignedAgentCount}
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.eventCount}
+                    </td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <RowMenu
+                          label={`Actions for ${p.name}`}
+                          items={[
+                            { label: "Open policy", icon: Pencil, onSelect: () => setSelectedId(p.id) },
+                            {
+                              label: "Delete policy",
+                              icon: Trash2,
+                              danger: true,
+                              dividerBefore: true,
+                              disabled: deletePolicy.isPending,
+                              onSelect: () => handleDelete(p.id, p.name),
+                            },
+                          ]}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {policy && (
-        <>
-          <PolicySettingsPanel policy={policy} />
-          <RulesPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} />
-          <ActivityPanel policyId={policy.id} />
-        </>
+        <PolicyDetail
+          policyId={policy.id}
+          name={policy.name}
+          enabled={policy.enabled}
+          meta={`${ENFORCEMENT_LABEL[policy.enforcementMode]} · ${policy.removableMediaOnly ? "Removable media" : "All writes"} · ${policy.rules.length} ${policy.rules.length === 1 ? "rule" : "rules"}`}
+          onClose={() => setSelectedId(undefined)}
+          tabs={[
+            { value: "rules", label: "Rules", content: <RulesPanel policy={policy} /> },
+            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+            { value: "activity", label: "Activity", content: <ActivityPanel policyId={policy.id} /> },
+            { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
+          ]}
+        />
       )}
-    </div>
+
+      {creating && (
+        <NewPolicyDialog
+          onClose={() => setCreating(false)}
+          pending={createPolicy.isPending}
+          error={createPolicy.error}
+          onCreate={(values) =>
+            createPolicy.mutateAsync({ ...values, enforcementMode, removableMediaOnly }).then((result) => setSelectedId(result.id))
+          }
+        >
+          <EnforcementFields
+            idPrefix="dlp-new"
+            enforcementMode={enforcementMode}
+            onEnforcementModeChange={setEnforcementMode}
+            removableMediaOnly={removableMediaOnly}
+            onRemovableMediaOnlyChange={setRemovableMediaOnly}
+            removableHint="Uncheck to apply to all file writes."
+          />
+        </NewPolicyDialog>
+      )}
+    </>
   );
 }

@@ -1,7 +1,7 @@
 // Meridian component wrappers. Each renders the exact ep-* markup from
 // design-system/docs/COMPONENTS.md — use these instead of hand-writing the classes.
 export { Button, IconButton, type ButtonVariant } from "./Button";
-export { Badge, Pill, Status, Tag, statusDisplay, type BadgeTone, type PillTone } from "./status";
+export { Badge, Pill, Status, Tag, TaskCounts, TaskStatus, statusDisplay, type BadgeTone, type PillTone } from "./status";
 export { Card, KeyValueList, PageHeader, Row, Tabs, type TabItem } from "./layout";
 export { Delta, Kpi, KpiStrip, type KpiBarSegment } from "./Kpi";
 export { Alert, EmptyState, Skeleton, type AlertTone } from "./feedback";

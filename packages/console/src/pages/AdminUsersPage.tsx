@@ -1,7 +1,31 @@
 import { useState, type FormEvent } from "react";
+import { KeyRound, Pencil, Trash2, UserPlus, Users } from "lucide-react";
 import type { AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
 import { useAdminUsers, useCreateAdminUser, useDeleteAdminUser, useMe, useUpdateAdminUser } from "../api/hooks";
-import { useConfirm, usePrompt } from "../components/ui";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Check,
+  EmptyState,
+  Field,
+  FormGrid,
+  FormSection,
+  Modal,
+  PageHeader,
+  Pagination,
+  RowMenu,
+  Skeleton,
+  Tag,
+  useConfirm,
+  usePagedList,
+  usePrompt,
+} from "../components/ui";
+import { formatDate, formatDateTime, formatRelative } from "../format";
+
+// Pattern B (administrator list) + a Pattern C form in a modal for invite/edit
+// (design-system/docs/PAGE_PATTERNS.md).
 
 const MODULE_KEYS: LicenseModuleKey[] = [
   "ENDPOINT_MANAGER",
@@ -20,15 +44,18 @@ const MODULE_LABELS: Record<LicenseModuleKey, string> = {
   USER_MANAGER: "User Manager",
 };
 
+const ADMIN_FORM_ID = "admin-user-form";
+
 export default function AdminUsersPage() {
   const { data: me } = useMe();
-  const { data: admins } = useAdminUsers();
+  const { data: admins, isLoading, error: loadError, refetch } = useAdminUsers();
   const create = useCreateAdminUser();
   const update = useUpdateAdminUser();
   const del = useDeleteAdminUser();
   const confirm = useConfirm();
   const prompt = usePrompt();
 
+  const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingEmail, setEditingEmail] = useState("");
   const [email, setEmail] = useState("");
@@ -36,7 +63,10 @@ export default function AdminUsersPage() {
   const [role, setRole] = useState<AdminRole>("ADMIN");
   const [moduleGrants, setModuleGrants] = useState<Set<LicenseModuleKey>>(new Set());
 
+  const paged = usePagedList(admins ?? [], 25);
+
   const isEditing = editingId !== null;
+  const formOpen = creating || isEditing;
   const pending = isEditing ? update.isPending : create.isPending;
   const mutationError = isEditing ? update.error : create.error;
   const superAdminCount = admins?.filter((a) => a.role === "SUPER_ADMIN").length ?? 0;
@@ -50,6 +80,7 @@ export default function AdminUsersPage() {
     admins?.find((a) => a.id === editingId)?.role === "SUPER_ADMIN";
 
   function resetForm() {
+    setCreating(false);
     setEditingId(null);
     setEditingEmail("");
     setEmail("");
@@ -58,7 +89,13 @@ export default function AdminUsersPage() {
     setModuleGrants(new Set());
   }
 
+  function startCreate() {
+    resetForm();
+    setCreating(true);
+  }
+
   function startEdit(admin: AdminUserListItem) {
+    setCreating(false);
     setEditingId(admin.id);
     setEditingEmail(admin.email);
     setRole(admin.role);
@@ -107,131 +144,235 @@ export default function AdminUsersPage() {
     del.mutate(admin.id);
   }
 
+  const submitDisabled = pending || wouldRemoveLastSuperAdmin || (!isEditing && (!email.trim() || password.length < 8));
+
   return (
-    <div>
-      <h1>Administrators</h1>
-      <p>
-        Manage who can log in to this console and which modules they can access. Only super admins can see or change
-        this page — a super admin has access to every module and can create other super admins.
-      </p>
+    <>
+      <PageHeader
+        title="Administrators"
+        description="Manage who can log in to this console and which modules they can access."
+        actions={
+          <Button variant="primary" icon={UserPlus} onClick={startCreate}>
+            Add administrator
+          </Button>
+        }
+      />
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Module access</th>
-            <th>Last login</th>
-            <th>Created</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {admins?.map((admin) => {
-            const isLastSuperAdmin = admin.role === "SUPER_ADMIN" && superAdminCount <= 1;
-            const isSelf = admin.id === me?.id;
-            return (
-              <tr key={admin.id} className={admin.id === editingId ? "selected-row" : ""}>
-                <td>
-                  {admin.email}
-                  {isSelf && " (you)"}
-                </td>
-                <td>{admin.role === "SUPER_ADMIN" ? "Super Admin" : "Admin"}</td>
-                <td>
-                  {admin.role === "SUPER_ADMIN"
-                    ? "All (super admin)"
-                    : admin.moduleGrants.map((m) => MODULE_LABELS[m]).join(", ") || "None"}
-                </td>
-                <td>{admin.lastLoginAt ? new Date(admin.lastLoginAt).toLocaleString() : "Never"}</td>
-                <td>{new Date(admin.createdAt).toLocaleDateString()}</td>
-                <td style={{ display: "flex", gap: "0.4rem" }}>
-                  <button type="button" onClick={() => startEdit(admin)}>
-                    Edit
-                  </button>
-                  <button type="button" onClick={() => handleResetPassword(admin)} disabled={update.isPending}>
-                    Reset password
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(admin)}
-                    disabled={del.isPending || isSelf || isLastSuperAdmin}
-                    title={isSelf ? "You can't delete your own account" : isLastSuperAdmin ? "Promote another admin to super admin first" : undefined}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-          {admins?.length === 0 && (
-            <tr>
-              <td colSpan={6}>No administrators yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      {del.isError && <p className="error-text">{(del.error as Error).message}</p>}
-
-      <form className="panel" onSubmit={handleSubmit}>
-        <h2>{isEditing ? `Edit ${editingEmail}` : "Add administrator"}</h2>
-        {!isEditing && (
+      <Card
+        flush
+        title="Console administrators"
+        hint="only super admins can see or change this page — a super admin has access to every module and can create other super admins"
+      >
+        {del.isError && (
+          <div className="ep-cb">
+            <Alert tone="critical">{(del.error as Error).message}</Alert>
+          </div>
+        )}
+        {update.isError && !formOpen && (
+          <div className="ep-cb">
+            <Alert tone="critical">{(update.error as Error).message}</Alert>
+          </div>
+        )}
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : loadError ? (
+          <div className="ep-cb">
+            <Alert
+              tone="critical"
+              title="Couldn't load administrators"
+              action={
+                <Button size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            >
+              {(loadError as Error).message}
+            </Alert>
+          </div>
+        ) : !admins || admins.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No administrators yet"
+            action={
+              <Button size="sm" icon={UserPlus} onClick={startCreate}>
+                Add administrator
+              </Button>
+            }
+          >
+            Add an administrator so someone else can sign in to this console.
+          </EmptyState>
+        ) : (
           <>
-            <label>
-              Email
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={8}
-                required
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Administrator</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Module access</th>
+                    <th scope="col">Last login</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">
+                      <span className="app-vh">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.pageItems.map((admin) => {
+                    const isLastSuperAdmin = admin.role === "SUPER_ADMIN" && superAdminCount <= 1;
+                    const isSelf = admin.id === me?.id;
+                    const isSuper = admin.role === "SUPER_ADMIN";
+                    const deleteLabel = isSelf
+                      ? "Delete — you can't delete your own account"
+                      : isLastSuperAdmin
+                        ? "Delete — promote another admin to super admin first"
+                        : "Delete";
+                    return (
+                      <tr key={admin.id} className={admin.id === editingId ? "ep-sel" : undefined}>
+                        <td className="ep-host">
+                          <b>
+                            {admin.email}
+                            {isSelf && <span className="app-muted"> (you)</span>}
+                          </b>
+                          <span className="app-row-sub">{isSuper ? "Super admin" : "Admin"}</span>
+                        </td>
+                        <td>{isSuper ? <Badge tone="low">Super admin</Badge> : <Badge tone="neu">Admin</Badge>}</td>
+                        <td>
+                          {isSuper ? (
+                            <span className="app-muted">All (super admin)</span>
+                          ) : admin.moduleGrants.length === 0 ? (
+                            <span className="app-muted">None</span>
+                          ) : (
+                            <div className="app-badge-row">
+                              {admin.moduleGrants.map((m) => (
+                                <Tag key={m}>{MODULE_LABELS[m]}</Tag>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="app-muted" title={formatDateTime(admin.lastLoginAt, "Never")}>
+                          {formatRelative(admin.lastLoginAt, "Never")}
+                        </td>
+                        <td className="app-muted">{formatDate(admin.createdAt)}</td>
+                        <td>
+                          <div className="app-cell-actions">
+                            <RowMenu
+                              label={`Actions for ${admin.email}`}
+                              items={[
+                                { label: "Edit", icon: Pencil, onSelect: () => startEdit(admin) },
+                                {
+                                  label: "Reset password",
+                                  icon: KeyRound,
+                                  disabled: update.isPending,
+                                  onSelect: () => handleResetPassword(admin),
+                                },
+                                {
+                                  label: deleteLabel,
+                                  icon: Trash2,
+                                  danger: true,
+                                  dividerBefore: true,
+                                  disabled: del.isPending || isSelf || isLastSuperAdmin,
+                                  onSelect: () => handleDelete(admin),
+                                },
+                              ]}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {paged.total > paged.pageSize && (
+              <Pagination
+                page={paged.page}
+                pageSize={paged.pageSize}
+                total={paged.total}
+                noun="administrators"
+                onPageChange={paged.setPage}
+                onPageSizeChange={paged.setPageSize}
               />
-            </label>
+            )}
           </>
         )}
-        <label>
-          Role
-          <select value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
-            <option value="ADMIN">Admin</option>
-            <option value="SUPER_ADMIN">Super Admin</option>
-          </select>
-        </label>
-        {role === "ADMIN" ? (
-          <fieldset>
-            <legend>Module access</legend>
-            {MODULE_KEYS.map((key) => (
-              <label key={key} style={{ display: "block", fontWeight: "normal" }}>
-                <input type="checkbox" checked={moduleGrants.has(key)} onChange={() => toggleModule(key)} />{" "}
-                {MODULE_LABELS[key]}
-              </label>
-            ))}
-          </fieldset>
-        ) : (
-          <p className="hint">Super admins have access to every module automatically.</p>
-        )}
-        {wouldRemoveLastSuperAdmin && (
-          <p className="error-text">
-            This is the last super admin — promote another admin to Super Admin before demoting this one.
-          </p>
-        )}
-        {mutationError && <p className="error-text">{(mutationError as Error).message}</p>}
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            type="submit"
-            disabled={pending || wouldRemoveLastSuperAdmin || (!isEditing && (!email.trim() || password.length < 8))}
-          >
-            {pending ? "Saving…" : isEditing ? "Save changes" : "Add administrator"}
-          </button>
-          {isEditing && (
-            <button type="button" onClick={resetForm}>
-              Cancel
-            </button>
-          )}
-        </div>
-      </form>
-    </div>
+      </Card>
+
+      {formOpen && (
+        <Modal
+          title={isEditing ? `Edit ${editingEmail}` : "Add administrator"}
+          description={
+            isEditing
+              ? "Change this administrator's role and the modules they can access."
+              : "The new administrator signs in with this email and password."
+          }
+          onClose={resetForm}
+          footer={
+            <>
+              <Button onClick={resetForm}>Cancel</Button>
+              <Button variant="primary" type="submit" form={ADMIN_FORM_ID} disabled={submitDisabled}>
+                {pending ? "Saving…" : isEditing ? "Save changes" : "Add administrator"}
+              </Button>
+            </>
+          }
+        >
+          <form id={ADMIN_FORM_ID} onSubmit={handleSubmit} className="app-stack">
+            <FormSection title="Account">
+              <FormGrid>
+                {!isEditing && (
+                  <>
+                    <Field label="Email" htmlFor="admin-email" required span2>
+                      <input
+                        id="admin-email"
+                        className="ep-input"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                      />
+                    </Field>
+                    <Field label="Password" htmlFor="admin-password" required help="At least 8 characters.">
+                      <input
+                        id="admin-password"
+                        className="ep-input"
+                        type="password"
+                        autoComplete="new-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        minLength={8}
+                        required
+                      />
+                    </Field>
+                  </>
+                )}
+                <Field label="Role" htmlFor="admin-role">
+                  <select id="admin-role" className="ep-select" value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
+                    <option value="ADMIN">Admin</option>
+                    <option value="SUPER_ADMIN">Super admin</option>
+                  </select>
+                </Field>
+              </FormGrid>
+            </FormSection>
+            <FormSection title="Module access" description={role === "ADMIN" ? "Choose which modules this admin can open." : undefined}>
+              {role === "ADMIN" ? (
+                <div className="app-check-grid">
+                  {MODULE_KEYS.map((key) => (
+                    <Check key={key} checked={moduleGrants.has(key)} onChange={() => toggleModule(key)} label={MODULE_LABELS[key]} />
+                  ))}
+                </div>
+              ) : (
+                <p className="app-muted">Super admins have access to every module automatically.</p>
+              )}
+            </FormSection>
+            {wouldRemoveLastSuperAdmin && (
+              <Alert tone="warn">This is the last super admin — promote another admin to super admin before demoting this one.</Alert>
+            )}
+            {!!mutationError && <Alert tone="critical">{(mutationError as Error).message}</Alert>}
+          </form>
+        </Modal>
+      )}
+    </>
   );
 }

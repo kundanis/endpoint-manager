@@ -1,19 +1,36 @@
 import { useState } from "react";
+import { Lock, LockOpen, Monitor, ShieldAlert } from "lucide-react";
 import { useEdrAgents, useEdrEvents, useQuarantineAgent, useReleaseAgent, useSetEdrEnabled } from "../api/hooks";
 import type { EdrAgentSummaryView } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
-import { useConfirm } from "../components/ui";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  PageHeader,
+  Pagination,
+  RowMenu,
+  Skeleton,
+  Switch,
+  Toolbar,
+  useConfirm,
+  usePagedList,
+} from "../components/ui";
+import { formatDateTime } from "../format";
 
 const CATEGORY_LABEL: Record<string, string> = {
   PROCESS: "Suspicious process",
   PERSISTENCE: "New persistence entry",
 };
 
+const RIGHT = { textAlign: "right" } as const;
+
 function DetailSummary({ category, detail }: { category: string; detail: Record<string, unknown> }) {
   if (category === "PROCESS") {
     return (
-      <span className="mono-cell">
+      <span className="ep-mono" style={{ overflowWrap: "anywhere" }}>
         {String(detail.processName)} (pid {String(detail.processId)})
         {detail.parentProcessName ? ` ← ${detail.parentProcessName}` : ""}
         {detail.commandLine ? `: ${detail.commandLine}` : ""}
@@ -21,7 +38,7 @@ function DetailSummary({ category, detail }: { category: string; detail: Record<
     );
   }
   return (
-    <span className="mono-cell">
+    <span className="ep-mono" style={{ overflowWrap: "anywhere" }}>
       {String(detail.location)} — {String(detail.name)}
       {detail.command ? `: ${detail.command}` : ""}
     </span>
@@ -66,123 +83,189 @@ function AgentRow({ agent }: { agent: EdrAgentSummaryView }) {
         <EndpointLabel hostname={agent.hostname} agentId={agent.agentId} />
       </td>
       <td>
-        <input
-          type="checkbox"
+        <Switch
           checked={agent.edrEnabled}
-          onChange={(e) => setEnabled.mutate({ agentId: agent.agentId, enabled: e.target.checked })}
-          title="EDR-lite detection enabled on this endpoint"
+          onChange={(enabled) => setEnabled.mutate({ agentId: agent.agentId, enabled })}
+          label={agent.edrEnabled ? "Enabled" : "Off"}
         />
       </td>
-      <td>{agent.eventCount}</td>
-      <td>{agent.lastDetectedAt ? new Date(agent.lastDetectedAt).toLocaleString() : "—"}</td>
-      <td>
-        {agent.quarantined ? (
-          <StatusBadge kind="lock" label="Quarantined" />
-        ) : (
-          <span style={{ color: "var(--text-muted)" }}>Normal</span>
-        )}
+      <td className="ep-num" style={RIGHT}>
+        {agent.eventCount}
       </td>
+      <td className="app-muted">{formatDateTime(agent.lastDetectedAt)}</td>
+      <td>{agent.quarantined ? <Badge tone="crit">Quarantined</Badge> : <span className="app-muted">Normal</span>}</td>
       <td>
-        <button type="button" onClick={handleIsolateToggle} disabled={pending}>
-          {pending ? "…" : agent.quarantined ? "Release" : "Isolate endpoint"}
-        </button>
+        <div className="app-cell-actions">
+          <RowMenu
+            label={`Actions for ${agent.hostname}`}
+            items={[
+              {
+                label: pending ? "Working…" : agent.quarantined ? "Release from quarantine" : "Isolate endpoint",
+                icon: agent.quarantined ? LockOpen : Lock,
+                danger: !agent.quarantined,
+                disabled: pending,
+                onSelect: handleIsolateToggle,
+              },
+            ]}
+          />
+        </div>
       </td>
     </tr>
   );
 }
 
 export default function EdrPage() {
-  const { data: agents } = useEdrAgents();
+  const { data: agents, isLoading, error, refetch } = useEdrAgents();
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
-  const { data: events } = useEdrEvents(selectedAgentId);
+  const { data: events, isLoading: eventsLoading } = useEdrEvents(selectedAgentId);
+
+  const agentsPaged = usePagedList(agents ?? [], 25);
+  const eventsPaged = usePagedList(events ?? [], 25);
 
   return (
-    <div>
-      <h2>EDR (Lite)</h2>
-      <p>
-        Built-in process-tree and command-line heuristics (Office/PDF/script apps spawning a command interpreter,
-        LOLBin abuse patterns) plus a new-persistence-entry watch (Run keys, services, scheduled tasks), scanned
-        every 30 seconds. <strong>This is poll-based detection, not real-time kernel/ETW interception</strong> — it
-        can catch persistent or sloppy malware but will miss anything that finishes between scans. High-confidence
-        process-tree matches are killed automatically; command-line heuristics are alert-only (a legitimate script
-        can occasionally match one of these patterns).
-      </p>
+    <>
+      <PageHeader
+        title="EDR (lite)"
+        description="Process-tree and command-line heuristics plus a new-persistence-entry watch, scanned every 30 seconds on each endpoint"
+      />
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>EDR enabled</th>
-            <th>Events</th>
-            <th>Last detection</th>
-            <th>Network status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {agents?.map((a) => <AgentRow key={a.agentId} agent={a} />)}
-          {agents?.length === 0 && (
-            <tr>
-              <td colSpan={6}>No endpoints enrolled yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <Alert tone="warn" title="This is poll-based detection, not real-time kernel/ETW interception">
+        Built-in process-tree and command-line heuristics (Office/PDF/script apps spawning a command interpreter, LOLBin
+        abuse patterns) plus a new-persistence-entry watch (Run keys, services, scheduled tasks), scanned every 30
+        seconds. It can catch persistent or sloppy malware but will miss anything that finishes between scans.
+        High-confidence process-tree matches are killed automatically; command-line heuristics are alert-only (a
+        legitimate script can occasionally match one of these patterns).
+      </Alert>
 
-      <div className="panel">
-        <h2>Events</h2>
-        <label>
-          Filter by endpoint
-          <select value={selectedAgentId ?? ""} onChange={(e) => setSelectedAgentId(e.target.value || undefined)}>
-            <option value="">All endpoints</option>
+      <Card flush title="Endpoints" hint="EDR-lite detection and network isolation per endpoint">
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : error ? (
+          <div className="ep-cb">
+            <Alert tone="critical" title="Couldn't load endpoints" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+              {(error as Error).message}
+            </Alert>
+          </div>
+        ) : !agents || agents.length === 0 ? (
+          <EmptyState icon={Monitor} title="No endpoints enrolled yet">
+            Enroll an endpoint with an enrollment token; it appears here with EDR-lite detection controls.
+          </EmptyState>
+        ) : (
+          <>
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Endpoint</th>
+                    <th scope="col">EDR detection</th>
+                    <th scope="col" style={RIGHT}>
+                      Events
+                    </th>
+                    <th scope="col">Last detection</th>
+                    <th scope="col">Network status</th>
+                    <th scope="col">
+                      <span className="app-vh">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agentsPaged.pageItems.map((a) => (
+                    <AgentRow key={a.agentId} agent={a} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={agentsPaged.page}
+              pageSize={agentsPaged.pageSize}
+              total={agentsPaged.total}
+              noun="endpoints"
+              onPageChange={agentsPaged.setPage}
+              onPageSizeChange={agentsPaged.setPageSize}
+            />
+          </>
+        )}
+      </Card>
+
+      <Card flush title="Events" hint={events ? `${events.length} ${events.length === 1 ? "detection" : "detections"}` : undefined}>
+        <Toolbar>
+          <select
+            className="ep-select"
+            aria-label="Filter by endpoint"
+            value={selectedAgentId ?? ""}
+            onChange={(e) => setSelectedAgentId(e.target.value || undefined)}
+          >
+            <option value="">Endpoint: All</option>
             {agents?.map((a) => (
               <EndpointOption key={a.agentId} value={a.agentId} hostname={a.hostname} agentId={a.agentId} />
             ))}
           </select>
-        </label>
-
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Endpoint</th>
-              <th>Category</th>
-              <th>Severity</th>
-              <th>Summary</th>
-              <th>Detail</th>
-              <th>Killed</th>
-              <th>Detected</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events?.map((e) => (
-              <tr key={e.id}>
-                <td>
-                  <EndpointLabel hostname={e.hostname} agentId={e.agentId} />
-                </td>
-                <td>{CATEGORY_LABEL[e.category] ?? e.category}</td>
-                <td>
-                  {e.severity === "HIGH" ? (
-                    <StatusBadge kind="fail" label="High" />
-                  ) : (
-                    <StatusBadge kind="warn" label="Medium" />
-                  )}
-                </td>
-                <td>{e.summary}</td>
-                <td>
-                  <DetailSummary category={e.category} detail={e.detail} />
-                </td>
-                <td>{e.killed ? <StatusBadge kind="pass" label="Killed" /> : "—"}</td>
-                <td>{new Date(e.detectedAt).toLocaleString()}</td>
-              </tr>
-            ))}
-            {events?.length === 0 && (
-              <tr>
-                <td colSpan={7}>No detections yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+        </Toolbar>
+        {eventsLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : !events || events.length === 0 ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title={selectedAgentId ? "No detections on this endpoint yet" : "No detections yet"}
+            action={
+              selectedAgentId && (
+                <Button size="sm" onClick={() => setSelectedAgentId(undefined)}>
+                  Show all endpoints
+                </Button>
+              )
+            }
+          >
+            Detections appear here within about 30 seconds of a match on an endpoint with EDR detection enabled.
+          </EmptyState>
+        ) : (
+          <>
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Endpoint</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Summary</th>
+                    <th scope="col">Detail</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">Killed</th>
+                    <th scope="col">Detected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventsPaged.pageItems.map((e) => (
+                    <tr key={e.id}>
+                      <td>
+                        <EndpointLabel hostname={e.hostname} agentId={e.agentId} />
+                      </td>
+                      <td>{CATEGORY_LABEL[e.category] ?? e.category}</td>
+                      <td>{e.summary}</td>
+                      <td style={{ maxWidth: 420 }}>
+                        <DetailSummary category={e.category} detail={e.detail} />
+                      </td>
+                      <td>{e.severity === "HIGH" ? <Badge tone="high">High</Badge> : <Badge tone="med">Medium</Badge>}</td>
+                      <td>{e.killed ? <Badge tone="ok">Killed</Badge> : <span className="app-muted">—</span>}</td>
+                      <td className="app-muted">{formatDateTime(e.detectedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={eventsPaged.page}
+              pageSize={eventsPaged.pageSize}
+              total={eventsPaged.total}
+              noun="events"
+              onPageChange={eventsPaged.setPage}
+              onPageSizeChange={eventsPaged.setPageSize}
+            />
+          </>
+        )}
+      </Card>
+    </>
   );
 }

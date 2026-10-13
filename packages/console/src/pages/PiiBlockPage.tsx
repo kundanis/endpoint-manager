@@ -1,11 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { IdCard, Pencil, Plus, Trash2 } from "lucide-react";
 import type { PiiPatternKey } from "@em/shared";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import BulkPolicyAssignPanel from "../components/BulkPolicyAssignPanel";
 import {
   useAddPiiBlockRule,
-  useAgents,
-  useAssetGroups,
   useAssignPiiBlockPolicy,
   useCreatePiiBlockPolicy,
   useDeletePiiBlockPolicy,
@@ -18,8 +16,29 @@ import {
   useUpdatePiiBlockPolicy,
 } from "../api/hooks";
 import type { PiiBlockPolicyDetail } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
-import EndpointLabel, { EndpointStatusDot } from "../components/EndpointLabel";
+import {
+  AssignmentEditor,
+  NewPolicyDialog,
+  PolicyDetail,
+  PolicySettingsForm,
+  SectionHeader,
+  SyncStatusTable,
+} from "../components/policy";
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  IconButton,
+  RowMenu,
+  Skeleton,
+  Switch,
+  Tag,
+  useConfirm,
+} from "../components/ui";
+
+// Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
 // Display-only copy of the built-in identifier catalog (packages/shared/src/data/
 // piiPatterns.ts) — duplicated here rather than importing the runtime array from
@@ -42,6 +61,7 @@ const PII_PATTERN_OPTIONS: { key: PiiPatternKey; label: string; regulations: str
 function RulesPanel({ policy }: { policy: PiiBlockPolicyDetail }) {
   const addRule = useAddPiiBlockRule();
   const deleteRule = useDeletePiiBlockRule();
+  const confirm = useConfirm();
 
   const usedKeys = new Set(policy.rules.map((r) => r.value));
   const availablePatterns = PII_PATTERN_OPTIONS.filter((p) => !usedKeys.has(p.key));
@@ -62,263 +82,161 @@ function RulesPanel({ policy }: { policy: PiiBlockPolicyDetail }) {
     addRule.mutate({ policyId: policy.id, ruleType: "PII_PATTERN", value: selectedKey });
   }
 
-  return (
-    <div className="panel">
-      <h2>Blocked PII categories ({policy.rules.length})</h2>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Regulations</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policy.rules.map((r) => {
-            const def = PII_PATTERN_OPTIONS.find((p) => p.key === r.value);
-            return (
-              <tr key={r.id}>
-                <td>{def?.label ?? r.value}</td>
-                <td>{def?.regulations.join(", ") ?? "—"}</td>
-                <td>
-                  <button
-                    type="button"
-                    onClick={() => deleteRule.mutate({ policyId: policy.id, ruleId: r.id })}
-                    disabled={deleteRule.isPending}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-          {policy.rules.length === 0 && (
-            <tr>
-              <td colSpan={3}>No PII categories yet — add one below. A policy with no categories never blocks anything.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  async function handleDeleteRule(ruleId: string, label: string) {
+    const confirmed = await confirm({
+      title: `Remove "${label}"?`,
+      body: "Assigned endpoints stop blocking this category of personal data at their next sync.",
+      confirmLabel: "Remove category",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deleteRule.mutate({ policyId: policy.id, ruleId });
+  }
 
-      <div className="card accent-orange">
-        <h3>Add PII category</h3>
+  return (
+    <div className="app-stack">
+      {policy.rules.length === 0 ? (
+        <EmptyState icon={IdCard} title="No PII categories yet">
+          Add a category below. A policy with no categories never blocks anything.
+        </EmptyState>
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Category</th>
+                <th scope="col">Regulations</th>
+                <th scope="col">
+                  <span className="app-vh">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {policy.rules.map((r) => {
+                const def = PII_PATTERN_OPTIONS.find((p) => p.key === r.value);
+                const label = def?.label ?? r.value;
+                return (
+                  <tr key={r.id}>
+                    <td>{def ? def.label : <span className="ep-mono">{r.value}</span>}</td>
+                    <td>
+                      {def ? (
+                        <div className="app-badge-row">
+                          {def.regulations.map((reg) => (
+                            <Tag key={reg}>{reg}</Tag>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="app-muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <IconButton
+                          icon={Trash2}
+                          label={`Delete ${label}`}
+                          onClick={() => handleDeleteRule(r.id, label)}
+                          disabled={deleteRule.isPending}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <form onSubmit={handleAdd} className="app-inset-form">
+        <span className="app-subhead">Add PII category</span>
         {availablePatterns.length > 0 ? (
-          <form onSubmit={handleAdd}>
-            <label>
-              Category
-              <select value={selectedKey} onChange={(e) => setSelectedKey(e.target.value as PiiPatternKey)}>
+          <>
+            <Field
+              label="Category"
+              htmlFor="pii-rule-category"
+              required
+              help="Blocks file writes, clipboard copies, and uploads containing this category of personal data on assigned endpoints."
+            >
+              <select
+                id="pii-rule-category"
+                className="ep-select"
+                value={selectedKey}
+                onChange={(e) => setSelectedKey(e.target.value as PiiPatternKey)}
+              >
                 {availablePatterns.map((p) => (
                   <option key={p.key} value={p.key}>
                     {p.label} ({p.regulations.join("/")})
                   </option>
                 ))}
               </select>
-            </label>
-            <p className="hint">
-              Blocks file writes, clipboard copies, and uploads containing this category of personal data on
-              assigned endpoints.
-            </p>
-            {addRule.isError && <p className="error-text">{(addRule.error as Error).message}</p>}
-            <button type="submit" disabled={addRule.isPending || !selectedKey}>
-              {addRule.isPending ? "Adding…" : "Add category"}
-            </button>
-          </form>
+            </Field>
+            {addRule.isError && <Alert tone="critical">{(addRule.error as Error).message}</Alert>}
+            <div className="app-actions-row app-end">
+              <Button type="submit" variant="primary" disabled={addRule.isPending || !selectedKey}>
+                {addRule.isPending ? "Adding…" : "Add category"}
+              </Button>
+            </div>
+          </>
         ) : (
-          <p>Every PII category is already covered by this policy.</p>
+          <p className="app-muted">Every PII category is already covered by this policy.</p>
         )}
-      </div>
+      </form>
     </div>
   );
 }
 
-function PolicySettingsPanel({ policy }: { policy: PiiBlockPolicyDetail }) {
-  const updatePolicy = useUpdatePiiBlockPolicy();
-  const [name, setName] = useState(policy.name);
-  const [description, setDescription] = useState(policy.description ?? "");
-
-  useEffect(() => {
-    setName(policy.name);
-    setDescription(policy.description ?? "");
-  }, [policy.id, policy.name, policy.description]);
-
-  function handleSave(e: FormEvent) {
-    e.preventDefault();
-    updatePolicy.mutate({ id: policy.id, name, description: description.trim() || null });
-  }
-
-  return (
-    <form className="card accent-blue" onSubmit={handleSave}>
-      <h2>Policy settings</h2>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      {updatePolicy.isError && <p className="error-text">{(updatePolicy.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="submit" disabled={updatePolicy.isPending || !name.trim()}>
-          {updatePolicy.isPending ? "Saving…" : "Save policy"}
-        </button>
-        {updatePolicy.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
-      </div>
-    </form>
-  );
-}
-
-function AssignmentPanel({ policyId, policyName }: { policyId: string; policyName: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
+function AssignmentPanel({ policyId }: { policyId: string }) {
   const { data: assignments } = usePiiBlockAssignments(policyId);
   const assign = useAssignPiiBlockPolicy();
   const unassign = useUnassignPiiBlockPolicy();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { policyId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="panel">
-      <h2>PII Data Blocking — {policyName} — Assignment</h2>
-
-      <h3>Currently assigned</h3>
-      <ul>
-        {assignments?.map((a) => (
-          <li key={a.id}>
-            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
-            <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
-              Remove
-            </button>
-          </li>
-        ))}
-        {assignments?.length === 0 && <li>Not assigned to any endpoint or group yet.</li>}
-      </ul>
-
-      <h3>Assign to</h3>
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
-
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-      />
-
-      {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {assign.isPending ? "Assigning…" : "Assign"}
-      </button>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ policyId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+    />
   );
 }
 
-function ActivityPanel({ policyId, policyName }: { policyId: string; policyName: string }) {
+function ActivityPanel({ policyId }: { policyId: string }) {
   const { data: breakdown } = usePiiBlockAgentBreakdown(policyId);
-  const agents = breakdown?.agents ?? [];
-  const failedCount = agents.filter((a) => a.lastSyncStatus === "FAILED").length;
-
   return (
-    <div className="panel">
-      <h2>PII Data Blocking — {policyName} — Sync status</h2>
-      <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-        No block-event log exists for this module — this shows whether each endpoint last applied the current PII
-        category list successfully.
-      </p>
+    <SyncStatusTable
+      rows={breakdown?.agents ?? []}
+      explanation="No block-event log exists for this module — this shows whether each endpoint last applied the current PII category list successfully."
+    />
+  );
+}
 
-      <div className="tiles">
-        <div className="tile">
-          <div className="tile-label">Assigned devices</div>
-          <div className="tile-value">{agents.length}</div>
-        </div>
-        <div className="tile accent-critical">
-          <div className="tile-label">Failed to sync</div>
-          <div className="tile-value">{failedCount}</div>
-        </div>
-      </div>
-
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>Group</th>
-            <th>User</th>
-            <th>Status</th>
-            <th>Last synced</th>
-          </tr>
-        </thead>
-        <tbody>
-          {agents.map((a) => (
-            <tr key={a.agentId}>
-              <td>
-                <EndpointStatusDot hostname={a.hostname} agentId={a.agentId} />
-                {a.hostname}
-              </td>
-              <td>{a.groupName ?? "—"}</td>
-              <td>{a.lastLoggedOnUser ?? "—"}</td>
-              <td>
-                {a.lastSyncStatus === "SUCCESS" ? (
-                  <StatusBadge kind="pass" label="Synced" />
-                ) : a.lastSyncStatus === "FAILED" ? (
-                  <StatusBadge kind="fail" label={a.lastSyncError ?? "Failed"} />
-                ) : (
-                  <StatusBadge kind="warn" label="Not synced yet" />
-                )}
-              </td>
-              <td>{a.lastSyncedAt ? new Date(a.lastSyncedAt).toLocaleString() : "—"}</td>
-            </tr>
-          ))}
-          {agents.length === 0 && (
-            <tr>
-              <td colSpan={5}>Not assigned to any endpoint yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+function SettingsPanel({ policy }: { policy: PiiBlockPolicyDetail }) {
+  const updatePolicy = useUpdatePiiBlockPolicy();
+  return (
+    <PolicySettingsForm
+      policyId={policy.id}
+      name={policy.name}
+      description={policy.description}
+      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values })}
+      pending={updatePolicy.isPending}
+      error={updatePolicy.error}
+      saved={updatePolicy.isSuccess}
+    />
   );
 }
 
 export default function PiiBlockPage() {
-  const { data: policies } = usePiiBlockPolicies();
+  const { data: policies, isLoading, isError, error, refetch } = usePiiBlockPolicies();
   const createPolicy = useCreatePiiBlockPolicy();
   const updatePolicy = useUpdatePiiBlockPolicy();
   const deletePolicy = useDeletePiiBlockPolicy();
+  const confirm = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignPiiBlockPolicy();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
 
   const { data: policy } = usePiiBlockPolicy(selectedId);
 
@@ -330,25 +248,14 @@ export default function PiiBlockPage() {
     setSelectedPolicyIds((prev) => (policies && prev.length === policies.length ? [] : (policies?.map((p) => p.id) ?? [])));
   }
 
-  function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    createPolicy.mutate(
-      { name, description: description.trim() || null },
-      {
-        onSuccess: (result) => {
-          setSelectedId(result.id);
-          setName("");
-          setDescription("");
-        },
-      },
-    );
-  }
-
-  function toggleEnabled(id: string, enabled: boolean) {
-    updatePolicy.mutate({ id, enabled });
-  }
-
-  function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    const confirmed = await confirm({
+      title: `Delete policy "${name}"?`,
+      body: "Its PII categories stop being blocked on every assigned endpoint at their next sync. This cannot be undone.",
+      confirmLabel: "Delete policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     deletePolicy.mutate(id, {
       onSuccess: () => {
         if (selectedId === id) setSelectedId(undefined);
@@ -356,77 +263,131 @@ export default function PiiBlockPage() {
     });
   }
 
-  return (
-    <div>
-      <h2>PII Data Blocking</h2>
-      <p>
-        Block file writes, clipboard copies, and uploads containing selected categories of personal data — email
-        addresses, card numbers, government IDs, and similar — on assigned endpoints. Each policy is a list of PII
-        categories from the same catalog Data Discovery and DLP already use, so a category means the same thing
-        everywhere in this product.
-      </p>
-      <p className="hint">
-        Note: agent-side enforcement for this module isn't wired up yet — policies can be authored and assigned now,
-        ready for when it ships, but assigned endpoints won't actually block anything yet (same phased rollout as
-        DLP's Block mode).
-      </p>
+  const allSelected = !!policies && policies.length > 0 && selectedPolicyIds.length === policies.length;
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "2rem" }}>
-              <input
-                type="checkbox"
-                checked={!!policies && policies.length > 0 && selectedPolicyIds.length === policies.length}
-                onChange={toggleSelectAllPolicies}
-                title="Select all"
-              />
-            </th>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Name</th>
-            <th>Categories</th>
-            <th>Assigned endpoints</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input type="checkbox" checked={selectedPolicyIds.includes(p.id)} onChange={() => togglePolicySelect(p.id)} />
-              </td>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => toggleEnabled(p.id, e.target.checked)}
-                  title="Enabled — paused policies are skipped entirely and don't affect any device"
-                />
-              </td>
-              <td>{p.name}</td>
-              <td>{p.ruleCount}</td>
-              <td>{p.assignedAgentCount}</td>
-              <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p.id);
-                  }}
-                  disabled={deletePolicy.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={6}>No policies yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  return (
+    <>
+      <SectionHeader
+        title="PII data blocking"
+        description="Block file writes, clipboard copies, and uploads containing selected categories of personal data — email addresses, card numbers, government IDs, and similar — on assigned endpoints. Each policy is a list of PII categories from the same catalog Data Discovery and DLP already use, so a category means the same thing everywhere in this product."
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New policy
+          </Button>
+        }
+      />
+
+      <Alert tone="warn" title="Enforcement isn't live yet">
+        Agent-side enforcement for this module isn't wired up yet — policies can be authored and assigned now, ready
+        for when it ships, but assigned endpoints won't actually block anything yet (same phased rollout as DLP's Block
+        mode).
+      </Alert>
+
+      <Card flush title="Policies" hint={policies ? `${policies.length} total` : undefined}>
+        {isLoading ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : isError ? (
+          <div className="ep-cb">
+            <Alert
+              tone="critical"
+              title="Couldn't load PII blocking policies"
+              action={
+                <Button size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            >
+              {(error as Error).message}
+            </Alert>
+          </div>
+        ) : !policies || policies.length === 0 ? (
+          <EmptyState
+            icon={IdCard}
+            title="No PII blocking policies yet"
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+                New policy
+              </Button>
+            }
+          >
+            Create a policy, add the PII categories to block, then assign it to groups or endpoints.
+          </EmptyState>
+        ) : (
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th className="ep-cb" scope="col">
+                    <input type="checkbox" checked={allSelected} onChange={toggleSelectAllPolicies} aria-label="Select all policies" />
+                  </th>
+                  <th scope="col">Policy</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Categories
+                  </th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Assigned endpoints
+                  </th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policies.map((p) => (
+                  <tr
+                    key={p.id}
+                    className={`app-clickable ${selectedPolicyIds.includes(p.id) || p.id === selectedId ? "ep-sel" : ""}`}
+                    onClick={() => setSelectedId(p.id)}
+                  >
+                    <td className="ep-cb" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPolicyIds.includes(p.id)}
+                        onChange={() => togglePolicySelect(p.id)}
+                        aria-label={`Select ${p.name}`}
+                      />
+                    </td>
+                    <td className="ep-host">
+                      <b>{p.name}</b>
+                      {p.description && <span className="app-row-sub">{p.description}</span>}
+                    </td>
+                    <td
+                      onClick={(e) => e.stopPropagation()}
+                      title="Paused policies are skipped entirely and don't affect any device"
+                    >
+                      <Switch
+                        checked={p.enabled}
+                        onChange={(enabled) => updatePolicy.mutate({ id: p.id, enabled })}
+                        label={p.enabled ? "Enabled" : "Paused"}
+                      />
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.ruleCount}
+                    </td>
+                    <td className="ep-num" style={{ textAlign: "right" }}>
+                      {p.assignedAgentCount}
+                    </td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <RowMenu
+                          label={`Actions for ${p.name}`}
+                          items={[
+                            { label: "Open policy", icon: Pencil, onSelect: () => setSelectedId(p.id) },
+                            { label: "Delete policy", icon: Trash2, danger: true, dividerBefore: true, disabled: deletePolicy.isPending, onSelect: () => handleDelete(p.id, p.name) },
+                          ]}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <BulkPolicyAssignPanel
         policyIds={selectedPolicyIds}
@@ -434,30 +395,30 @@ export default function PiiBlockPage() {
         onDone={() => setSelectedPolicyIds([])}
       />
 
-      <form className="panel" onSubmit={handleCreate}>
-        <h2>New policy</h2>
-        <label>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Description
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending || !name.trim()}>
-          {createPolicy.isPending ? "Creating…" : "Create policy"}
-        </button>
-      </form>
-
       {policy && (
-        <>
-          <PolicySettingsPanel policy={policy} />
-          <RulesPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} policyName={policy.name} />
-          <ActivityPanel policyId={policy.id} policyName={policy.name} />
-        </>
+        <PolicyDetail
+          policyId={policy.id}
+          name={policy.name}
+          enabled={policy.enabled}
+          meta={`${policy.rules.length} ${policy.rules.length === 1 ? "category" : "categories"}`}
+          onClose={() => setSelectedId(undefined)}
+          tabs={[
+            { value: "rules", label: "Blocked categories", content: <RulesPanel policy={policy} /> },
+            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+            { value: "activity", label: "Sync status", content: <ActivityPanel policyId={policy.id} /> },
+            { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
+          ]}
+        />
       )}
-    </div>
+
+      {creating && (
+        <NewPolicyDialog
+          onClose={() => setCreating(false)}
+          pending={createPolicy.isPending}
+          error={createPolicy.error}
+          onCreate={(values) => createPolicy.mutateAsync(values).then((result) => setSelectedId(result.id))}
+        />
+      )}
+    </>
   );
 }

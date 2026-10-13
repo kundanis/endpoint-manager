@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Network, Pencil, Plus, Radar, SearchX, Server, Trash2, TriangleAlert } from "lucide-react";
 import {
   useAgents,
   useCreateNetworkVlan,
@@ -15,12 +16,45 @@ import {
 import type { NetworkScanRunDetail, NetworkScanRunListItem, NetworkVlanListItem } from "../api/types";
 import Collapsible from "../components/Collapsible";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
-import { useConfirm } from "../components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  Check,
+  EmptyState,
+  Field,
+  FormGrid,
+  Kpi,
+  KpiStrip,
+  Modal,
+  PageHeader,
+  Pagination,
+  Pill,
+  RowMenu,
+  Segmented,
+  Skeleton,
+  Switch,
+  useConfirm,
+  usePagedList,
+  type PillTone,
+} from "../components/ui";
+import { formatDateTime, formatRelative } from "../format";
 
-function statusBadgeClass(status: string): string {
-  if (status === "SUCCESS") return "online";
-  if (status === "FAILED") return "danger";
-  return "warn"; // PENDING or RUNNING
+// Pattern B (design-system/docs/PAGE_PATTERNS.md, "Network Manager → Scans / devices"):
+// VLAN list card, then each VLAN's latest scan with its discovered hosts.
+
+type ScanStatus = NetworkScanRunListItem["status"];
+
+const SCAN_STATUS: Record<ScanStatus, { tone: PillTone; label: string }> = {
+  SUCCESS: { tone: "ok", label: "Success" },
+  FAILED: { tone: "critical", label: "Failed" },
+  PENDING: { tone: "warn", label: "Pending" },
+  RUNNING: { tone: "warn", label: "Running" },
+};
+
+function ScanStatusPill({ status }: { status: ScanStatus }) {
+  const s = SCAN_STATUS[status] ?? { tone: "neutral" as PillTone, label: status };
+  return <Pill tone={s.tone}>{s.label}</Pill>;
 }
 
 // The scanner never fingerprints OS/device type (it's just ping + ARP + a fixed port probe +
@@ -67,101 +101,177 @@ function DiscoveredHostsTable({ runDetail }: { runDetail: NetworkScanRunDetail }
     .filter((h) => !macTerm || (h.macAddress ?? "").toLowerCase().includes(macTerm))
     .filter((h) => !hostnameTerm || (h.hostname ?? "").toLowerCase().includes(hostnameTerm))
     .filter((h) => !portTerm || h.openPorts.some((p) => String(p).includes(portTerm)));
+  const paged = usePagedList(visibleHosts, 25);
+
+  const managedCount = afterComputerFilter.filter((h) => !!h.matchedAgent).length;
+
+  function clearFilters() {
+    setComputersOnly(false);
+    setManagedFilter("all");
+    setIpFilter("");
+    setMacFilter("");
+    setHostnameFilter("");
+    setPortFilter("");
+  }
+
+  const inProgress = runDetail.status === "PENDING" || runDetail.status === "RUNNING";
 
   return (
-    <div className="panel">
-      <h3>Discovered hosts — {runDetail.cidr}</h3>
-      {runDetail.status === "FAILED" && runDetail.errorMessage && <p className="error-text">{runDetail.errorMessage}</p>}
-      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
-        <input type="checkbox" checked={computersOnly} onChange={(e) => setComputersOnly(e.target.checked)} />
-        <span className="mono-cell">
-          ({computerCount}/{totalCount})
-        </span>
-        Laptops/desktops/servers only (hides phones, tablets, and other non-PC devices)
-      </label>
-      {computersOnly && hiddenCount > 0 && (
-        <p style={{ color: "var(--text-muted)", fontSize: "0.85em" }}>
-          {hiddenCount} device{hiddenCount === 1 ? "" : "s"} hidden — heuristic based on open ports (no Windows/SSH
-          management ports responded), not a guaranteed device type.
-        </p>
+    <div className="app-stack">
+      <span className="app-subhead">
+        Discovered hosts — <span className="ep-mono">{runDetail.cidr}</span>
+      </span>
+      {runDetail.status === "FAILED" && runDetail.errorMessage && (
+        <Alert tone="critical" title="Scan failed">
+          {runDetail.errorMessage}
+        </Alert>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "0.75rem" }}>
-        <label style={{ display: "inline-block" }}>
-          Status
-          <select value={managedFilter} onChange={(e) => setManagedFilter(e.target.value as ManagedFilter)}>
-            <option value="all">All</option>
-            <option value="managed">Managed</option>
-            <option value="unmanaged">Unmanaged</option>
-          </select>
-        </label>
-        <label style={{ display: "inline-block" }}>
-          IP address
-          <input type="text" value={ipFilter} onChange={(e) => setIpFilter(e.target.value)} placeholder="192.168.1…" />
-        </label>
-        <label style={{ display: "inline-block" }}>
-          MAC address
-          <input type="text" value={macFilter} onChange={(e) => setMacFilter(e.target.value)} placeholder="AA:BB:…" />
-        </label>
-        <label style={{ display: "inline-block" }}>
-          Hostname
-          <input type="text" value={hostnameFilter} onChange={(e) => setHostnameFilter(e.target.value)} placeholder="Hostname…" />
-        </label>
-        <label style={{ display: "inline-block" }}>
-          Open ports
-          <input type="text" value={portFilter} onChange={(e) => setPortFilter(e.target.value)} placeholder="e.g. 445" />
-        </label>
+      <div className="app-actions-row">
+        <Segmented
+          label="Managed status"
+          value={managedFilter}
+          onChange={setManagedFilter}
+          options={[
+            { value: "all", label: `All ${afterComputerFilter.length}` },
+            { value: "managed", label: `Managed ${managedCount}` },
+            { value: "unmanaged", label: `Unmanaged ${afterComputerFilter.length - managedCount}` },
+          ]}
+        />
+        <Check
+          checked={computersOnly}
+          onChange={setComputersOnly}
+          label={
+            <>
+              Laptops, desktops and servers only{" "}
+              <span className="app-muted ep-num">
+                ({computerCount} of {totalCount})
+              </span>
+            </>
+          }
+          hint={
+            computersOnly && hiddenCount > 0
+              ? `${hiddenCount} device${hiddenCount === 1 ? "" : "s"} hidden (phones, tablets and other non-PC devices) — heuristic based on open ports (no Windows/SSH management ports responded), not a guaranteed device type.`
+              : "Hides phones, tablets and other non-PC devices."
+          }
+        />
       </div>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>IP address</th>
-            <th>MAC address</th>
-            <th>Hostname</th>
-            <th>Open ports</th>
-            <th>Response</th>
-            <th>Status</th>
-            <th>User</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleHosts.map((host) => (
-            <tr key={host.id}>
-              <td className="mono-cell">{host.ipAddress}</td>
-              <td className="mono-cell">{host.macAddress ?? "—"}</td>
-              <td>{host.hostname ?? "—"}</td>
-              <td>{host.openPorts.join(", ") || "—"}</td>
-              <td>{host.responseTimeMs !== null ? `${host.responseTimeMs} ms` : "—"}</td>
-              <td>
-                {host.matchedAgent ? (
-                  <span className="status-badge online">
-                    Managed (<EndpointLabel hostname={host.matchedAgent.hostname} agentId={host.matchedAgent.id} />)
-                  </span>
-                ) : (
-                  <span className="status-badge offline">Unmanaged</span>
-                )}
-              </td>
-              <td>{host.matchedAgent?.lastLoggedOnUser ?? "—"}</td>
-            </tr>
-          ))}
-          {visibleHosts.length === 0 && runDetail.hosts.length > 0 && (
-            <tr>
-              <td colSpan={7}>No discovered hosts match the current filters.</td>
-            </tr>
+      <div className="app-actions-row">
+        <input
+          className="ep-input ep-mono"
+          style={{ width: 160 }}
+          value={ipFilter}
+          onChange={(e) => setIpFilter(e.target.value)}
+          placeholder="IP: 192.168.1…"
+          aria-label="Filter by IP address"
+        />
+        <input
+          className="ep-input ep-mono"
+          style={{ width: 160 }}
+          value={macFilter}
+          onChange={(e) => setMacFilter(e.target.value)}
+          placeholder="MAC: AA:BB:…"
+          aria-label="Filter by MAC address"
+        />
+        <input
+          className="ep-input"
+          style={{ width: 180 }}
+          value={hostnameFilter}
+          onChange={(e) => setHostnameFilter(e.target.value)}
+          placeholder="Hostname…"
+          aria-label="Filter by hostname"
+        />
+        <input
+          className="ep-input ep-mono"
+          style={{ width: 140 }}
+          value={portFilter}
+          onChange={(e) => setPortFilter(e.target.value)}
+          placeholder="Port, e.g. 445"
+          aria-label="Filter by open port"
+        />
+      </div>
+
+      {inProgress && runDetail.hosts.length === 0 ? (
+        <EmptyState icon={Radar} title={runDetail.status === "PENDING" ? "Scan queued" : "Scan in progress"}>
+          {runDetail.status === "PENDING" ? "Waiting for the assigned agent to pick this up…" : "Scan in progress…"}
+        </EmptyState>
+      ) : runDetail.hosts.length === 0 ? (
+        runDetail.status === "SUCCESS" ? (
+          <EmptyState icon={Radar} title="No hosts responded on this range">
+            Check the CIDR range and the scanner's network reach, then run the scan again.
+          </EmptyState>
+        ) : null
+      ) : visibleHosts.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="No discovered hosts match the current filters"
+          action={
+            <Button size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <>
+        {inProgress && (
+          <Alert tone="info">{runDetail.status === "PENDING" ? "Waiting for the assigned agent to pick this up…" : "Scan in progress…"}</Alert>
+        )}
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">IP address</th>
+                <th scope="col">MAC address</th>
+                <th scope="col">Hostname</th>
+                <th scope="col">Open ports</th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Response
+                </th>
+                <th scope="col">Status</th>
+                <th scope="col">User</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paged.pageItems.map((host) => (
+                <tr key={host.id}>
+                  <td className="ep-mono">{host.ipAddress}</td>
+                  <td className="ep-mono">{host.macAddress ?? <span className="app-muted">—</span>}</td>
+                  <td>{host.hostname ?? <span className="app-muted">—</span>}</td>
+                  <td className="ep-mono">{host.openPorts.join(", ") || <span className="app-muted">—</span>}</td>
+                  <td className="ep-num" style={{ textAlign: "right" }}>
+                    {host.responseTimeMs !== null ? `${host.responseTimeMs} ms` : <span className="app-muted">—</span>}
+                  </td>
+                  <td>
+                    {host.matchedAgent ? (
+                      <div className="app-badge-row">
+                        <Pill tone="ok">Managed</Pill>
+                        <span>
+                          <EndpointLabel hostname={host.matchedAgent.hostname} agentId={host.matchedAgent.id} />
+                        </span>
+                      </div>
+                    ) : (
+                      <Pill tone="warn">Unmanaged</Pill>
+                    )}
+                  </td>
+                  <td>{host.matchedAgent?.lastLoggedOnUser ?? <span className="app-muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {paged.total > paged.pageSize && (
+            <Pagination
+              page={paged.page}
+              pageSize={paged.pageSize}
+              total={paged.total}
+              noun="hosts"
+              onPageChange={paged.setPage}
+              onPageSizeChange={paged.setPageSize}
+            />
           )}
-          {runDetail.hosts.length === 0 && runDetail.status === "SUCCESS" && (
-            <tr>
-              <td colSpan={7}>No hosts responded on this range.</td>
-            </tr>
-          )}
-          {(runDetail.status === "PENDING" || runDetail.status === "RUNNING") && (
-            <tr>
-              <td colSpan={7}>{runDetail.status === "PENDING" ? "Waiting for the assigned agent to pick this up…" : "Scan in progress…"}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+        </div>
+        </>
+      )}
     </div>
   );
 }
@@ -171,37 +281,52 @@ function ScanRunsTable({ runs }: { runs: NetworkScanRunListItem[] | undefined })
   const { data: runDetail } = useNetworkScanRun(selectedRunId);
 
   return (
-    <>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>Hosts scanned</th>
-            <th>Hosts found</th>
-            <th>Started</th>
-          </tr>
-        </thead>
-        <tbody>
-          {runs?.map((run) => (
-            <tr key={run.id} className="clickable-row" onClick={() => setSelectedRunId(run.id)}>
-              <td>
-                <span className={`status-badge ${statusBadgeClass(run.status)}`}>{run.status}</span>
-              </td>
-              <td>{run.hostsScanned}</td>
-              <td>{run.hostsFound}</td>
-              <td>{new Date(run.startedAt).toLocaleString()}</td>
-            </tr>
-          ))}
-          {runs?.length === 0 && (
-            <tr>
-              <td colSpan={4}>No scans run yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+    <div className="app-stack">
+      {runs && runs.length === 0 ? (
+        <EmptyState icon={Radar} title="No scans run yet" />
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Range</th>
+                <th scope="col">Status</th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Hosts scanned
+                </th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Hosts found
+                </th>
+                <th scope="col">Started</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs?.map((run) => (
+                <tr
+                  key={run.id}
+                  className={`app-clickable ${run.id === selectedRunId ? "ep-sel" : ""}`}
+                  onClick={() => setSelectedRunId(run.id)}
+                >
+                  <td className="ep-mono">{run.cidr}</td>
+                  <td>
+                    <ScanStatusPill status={run.status} />
+                  </td>
+                  <td className="ep-num" style={{ textAlign: "right" }}>
+                    {run.hostsScanned}
+                  </td>
+                  <td className="ep-num" style={{ textAlign: "right" }}>
+                    {run.hostsFound}
+                  </td>
+                  <td className="app-muted">{formatDateTime(run.startedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {runDetail && <DiscoveredHostsTable runDetail={runDetail} />}
-    </>
+    </div>
   );
 }
 
@@ -216,28 +341,36 @@ function LatestVlanScanPanel({ vlan }: { vlan: NetworkVlanListItem }) {
   const { data: runDetail } = useNetworkScanRun(latestRun?.id);
 
   return (
-    <Collapsible title={`${vlan.name} — latest scan`} defaultOpen={false}>
-      {!latestRun && <p>No scans run yet for this VLAN.</p>}
+    <Collapsible
+      title={`${vlan.name} — latest scan`}
+      hint={vlan.cidr}
+      actions={latestRun ? <ScanStatusPill status={latestRun.status} /> : undefined}
+      defaultOpen={false}
+    >
+      {!latestRun && (
+        <EmptyState icon={Radar} title="No scans run yet for this VLAN">
+          Use "Scan now" on the VLAN above to discover its hosts.
+        </EmptyState>
+      )}
       {latestRun && (
-        <>
-          <p>
-            <span className={`status-badge ${statusBadgeClass(latestRun.status)}`}>{latestRun.status}</span>{" "}
-            {latestRun.hostsScanned} scanned, {latestRun.hostsFound} found — started{" "}
-            {new Date(latestRun.startedAt).toLocaleString()}
+        <div className="app-stack">
+          <p className="app-text">
+            <span className="ep-num">{latestRun.hostsScanned}</span> scanned, <span className="ep-num">{latestRun.hostsFound}</span>{" "}
+            found — started {formatDateTime(latestRun.startedAt)}
           </p>
           {runDetail && <DiscoveredHostsTable runDetail={runDetail} />}
-        </>
+        </div>
       )}
     </Collapsible>
   );
 }
 
-function VlanForm({
+function VlanFormModal({
   vlan,
   onDone,
 }: {
   vlan?: NetworkVlanListItem;
-  onDone?: () => void;
+  onDone: () => void;
 }) {
   const { data: agents } = useAgents();
   const { data: suggested } = useSuggestedCidr();
@@ -251,6 +384,7 @@ function VlanForm({
 
   const mutation = vlan ? update : create;
   const isEdit = Boolean(vlan);
+  const formId = isEdit ? `vlan-form-${vlan?.id}` : "vlan-form-new";
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -264,7 +398,7 @@ function VlanForm({
     if (isEdit && vlan) {
       update.mutate(
         { id: vlan.id, ...body, description: description.trim() || null, assignedAgentId: assignedAgentId || null },
-        { onSuccess: () => onDone?.() },
+        { onSuccess: () => onDone() },
       );
     } else {
       create.mutate(body, {
@@ -273,54 +407,87 @@ function VlanForm({
           setDescription("");
           setCidr("");
           setAssignedAgentId("");
-          onDone?.();
+          onDone();
         },
       });
     }
   }
 
   return (
-    <form className="panel" onSubmit={handleSubmit}>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <label>
-        CIDR range
-        <input
-          type="text"
-          value={cidr}
-          onChange={(e) => setCidr(e.target.value)}
-          placeholder={suggested?.cidr ?? "e.g. 192.168.1.0/24"}
-          required={isEdit}
-          autoComplete="off"
-        />
-      </label>
-      <label>
-        Assigned agent (runs the scan on this VLAN's behalf — leave blank to scan from the server itself)
-        <select value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}>
-          <option value="">— None (run from server) —</option>
-          {agents?.map((a) => (
-            <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
-          ))}
-        </select>
-      </label>
-      {mutation.isError && <p className="error-text">{(mutation.error as Error).message}</p>}
-      <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="submit" disabled={mutation.isPending || !name.trim()}>
-          {mutation.isPending ? "Saving…" : isEdit ? "Save changes" : "Add VLAN"}
-        </button>
-        {isEdit && (
-          <button type="button" onClick={() => onDone?.()}>
-            Cancel
-          </button>
-        )}
-      </div>
-    </form>
+    <Modal
+      title={isEdit ? `Edit VLAN "${vlan?.name}"` : "Add VLAN"}
+      description="A named address range to scan for hosts, optionally scanned from an endpoint inside it."
+      onClose={onDone}
+      footer={
+        <>
+          <Button onClick={onDone}>Cancel</Button>
+          <Button variant="primary" type="submit" form={formId} disabled={mutation.isPending || !name.trim()}>
+            {mutation.isPending ? "Saving…" : isEdit ? "Save changes" : "Add VLAN"}
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} className="app-stack">
+        <FormGrid>
+          <Field label="Name" htmlFor={`${formId}-name`} required>
+            <input
+              id={`${formId}-name`}
+              data-autofocus
+              className="ep-input"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </Field>
+          <Field
+            label="CIDR range"
+            htmlFor={`${formId}-cidr`}
+            required={isEdit}
+            help={!isEdit && suggested?.cidr ? `Leave blank to use ${suggested.cidr}.` : undefined}
+          >
+            <input
+              id={`${formId}-cidr`}
+              className="ep-input ep-mono"
+              type="text"
+              value={cidr}
+              onChange={(e) => setCidr(e.target.value)}
+              placeholder={suggested?.cidr ?? "e.g. 192.168.1.0/24"}
+              required={isEdit}
+              autoComplete="off"
+            />
+          </Field>
+          <Field label="Description" htmlFor={`${formId}-desc`} span2>
+            <input
+              id={`${formId}-desc`}
+              className="ep-input"
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Assigned agent"
+            htmlFor={`${formId}-agent`}
+            span2
+            help="Runs the scan on this VLAN's behalf — leave blank to scan from the server itself."
+          >
+            <select
+              id={`${formId}-agent`}
+              className="ep-select"
+              value={assignedAgentId}
+              onChange={(e) => setAssignedAgentId(e.target.value)}
+            >
+              <option value="">— None (run from server) —</option>
+              {agents?.map((a) => (
+                <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
+              ))}
+            </select>
+          </Field>
+        </FormGrid>
+        {mutation.isError && <Alert tone="critical">{(mutation.error as Error).message}</Alert>}
+      </form>
+    </Modal>
   );
 }
 
@@ -346,56 +513,61 @@ function VlanRow({ vlan }: { vlan: NetworkVlanListItem }) {
     del.mutate(vlan.id);
   }
 
-  if (editing) {
-    return (
-      <tr>
-        <td colSpan={7}>
-          <VlanForm vlan={vlan} onDone={() => setEditing(false)} />
-        </td>
-      </tr>
-    );
-  }
-
   return (
     <tr>
-      <td>{vlan.name}</td>
-      <td>{vlan.description ?? "—"}</td>
-      <td className="mono-cell">{vlan.cidr}</td>
-      <td>{vlan.assignedAgentId ? vlan.assignedAgentHostname : "Server-side"}</td>
+      <td className="ep-host">
+        <b>{vlan.name}</b>
+        {vlan.description && <span className="app-row-sub">{vlan.description}</span>}
+      </td>
+      <td className="ep-mono">{vlan.cidr}</td>
       <td>
-        <input
-          type="checkbox"
-          checked={vlan.enabled}
-          onChange={(e) => toggleEnabled(e.target.checked)}
-          title="Enabled — controls whether this VLAN is included in 'Scan All Enabled VLANs'. Its own Scan Now button and scan history still work either way."
-        />
+        {vlan.assignedAgentId ? (
+          <EndpointLabel hostname={vlan.assignedAgentHostname} agentId={vlan.assignedAgentId} />
+        ) : (
+          <span className="app-muted">Server-side</span>
+        )}
+      </td>
+      <td>
+        <span title="Enabled — controls whether this VLAN is included in 'Scan all enabled VLANs'. Its own Scan now button and scan history still work either way.">
+          <Switch checked={vlan.enabled} onChange={toggleEnabled} label={vlan.enabled ? "Enabled" : "Disabled"} />
+        </span>
       </td>
       <td>
         {vlan.latestRun ? (
-          <span className={`status-badge ${statusBadgeClass(vlan.latestRun.status)}`}>
-            {vlan.latestRun.status} — {vlan.latestRun.hostsFound} host{vlan.latestRun.hostsFound === 1 ? "" : "s"}
-          </span>
+          <div className="app-badge-row">
+            <ScanStatusPill status={vlan.latestRun.status} />
+            <span className="ep-num">
+              {vlan.latestRun.hostsFound} host{vlan.latestRun.hostsFound === 1 ? "" : "s"}
+            </span>
+            <span className="app-muted" title={formatDateTime(vlan.latestRun.startedAt)}>
+              · {formatRelative(vlan.latestRun.startedAt)}
+            </span>
+          </div>
         ) : (
-          "Never scanned"
+          <span className="app-muted">Never scanned</span>
         )}
       </td>
-      <td style={{ display: "flex", gap: "0.4rem" }}>
-        <button type="button" onClick={() => triggerScan.mutate(vlan.id)} disabled={triggerScan.isPending}>
-          Scan now
-        </button>
-        <button type="button" onClick={() => setEditing(true)}>
-          Edit
-        </button>
-        <button type="button" onClick={handleDelete}>
-          Delete
-        </button>
+      <td>
+        <div className="app-cell-actions">
+          <Button size="sm" icon={Radar} onClick={() => triggerScan.mutate(vlan.id)} disabled={triggerScan.isPending}>
+            Scan now
+          </Button>
+          <RowMenu
+            label={`Actions for ${vlan.name}`}
+            items={[
+              { label: "Edit VLAN", icon: Pencil, onSelect: () => setEditing(true) },
+              { label: "Delete VLAN", icon: Trash2, danger: true, dividerBefore: true, onSelect: handleDelete },
+            ]}
+          />
+        </div>
+        {editing && <VlanFormModal vlan={vlan} onDone={() => setEditing(false)} />}
       </td>
     </tr>
   );
 }
 
 export default function NetworkScanPage() {
-  const { data: vlans } = useNetworkVlans();
+  const { data: vlans, isLoading, error, refetch } = useNetworkVlans();
   const { data: legacyRuns } = useLegacyNetworkScanRuns();
   const scanAll = useScanAllEnabledVlans();
   const [scanAllSummary, setScanAllSummary] = useState<string | null>(null);
@@ -413,57 +585,117 @@ export default function NetworkScanPage() {
     });
   }
 
+  const enabledCount = vlans?.filter((v) => v.enabled).length ?? 0;
+  const hostsFound = vlans?.reduce((sum, v) => sum + (v.latestRun?.hostsFound ?? 0), 0) ?? 0;
+  const neverScanned = vlans?.filter((v) => !v.latestRun).length ?? 0;
+  const failedLatest = vlans?.filter((v) => v.latestRun?.status === "FAILED").length ?? 0;
+
+  const header = (
+    <PageHeader
+      title="Network scan"
+      description="Scan VLANs for hosts and see which ones don't have the agent installed yet."
+      actions={
+        <>
+          <Button icon={Plus} onClick={() => setShowAddForm(true)}>
+            Add VLAN
+          </Button>
+          <Button variant="primary" icon={Radar} onClick={handleScanAll} disabled={scanAll.isPending}>
+            {scanAll.isPending ? "Starting…" : "Scan all enabled VLANs"}
+          </Button>
+        </>
+      }
+    />
+  );
+
   return (
-    <div>
-      <h1>Network Scan</h1>
+    <>
+      {header}
 
-      <div className="panel" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-        <button type="button" onClick={handleScanAll} disabled={scanAll.isPending}>
-          {scanAll.isPending ? "Starting…" : "Scan all enabled VLANs"}
-        </button>
-        <button type="button" onClick={() => setShowAddForm((v) => !v)}>
-          {showAddForm ? "Cancel" : "Add VLAN"}
-        </button>
-        {scanAllSummary && <span>{scanAllSummary}</span>}
-      </div>
+      {scanAllSummary && <Alert tone="info">{scanAllSummary}</Alert>}
+      {scanAll.isError && <Alert tone="critical">{(scanAll.error as Error).message}</Alert>}
 
-      {showAddForm && <VlanForm onDone={() => setShowAddForm(false)} />}
-
-      <h2>VLANs</h2>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Description</th>
-            <th>CIDR</th>
-            <th>Assigned agent</th>
-            <th>Enabled</th>
-            <th>Latest scan</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {vlans?.map((vlan) => (
-            <VlanRow key={vlan.id} vlan={vlan} />
-          ))}
-          {vlans?.length === 0 && (
-            <tr>
-              <td colSpan={7}>No VLANs defined yet — add one above to start scanning.</td>
-            </tr>
+      {isLoading ? (
+        <Card>
+          <Skeleton lines={6} />
+        </Card>
+      ) : error && !vlans ? (
+        <Alert tone="critical" title="Couldn't load VLANs" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+          {(error as Error).message}
+        </Alert>
+      ) : (
+        <>
+          {vlans && vlans.length > 0 && (
+            <KpiStrip>
+              <Kpi icon={Network} label="VLANs" value={vlans.length} suffix={`${enabledCount} enabled`} />
+              <Kpi icon={Server} label="Hosts found" value={hostsFound} suffix="in latest scans" />
+              <Kpi
+                icon={Radar}
+                label="Never scanned"
+                value={neverScanned}
+                valueTone={neverScanned > 0 ? "warning" : undefined}
+                suffix={`of ${vlans.length}`}
+              />
+              <Kpi
+                icon={TriangleAlert}
+                label="Latest scan failed"
+                value={failedLatest}
+                valueTone={failedLatest > 0 ? "critical" : undefined}
+                suffix={`of ${vlans.length}`}
+              />
+            </KpiStrip>
           )}
-        </tbody>
-      </table>
 
-      <h2>Results by VLAN</h2>
-      {vlans?.map((vlan) => (
-        <LatestVlanScanPanel key={vlan.id} vlan={vlan} />
-      ))}
+          <Card flush title="VLANs" hint={vlans ? `${vlans.length} total` : undefined}>
+            {!vlans || vlans.length === 0 ? (
+              <EmptyState
+                icon={Network}
+                title="No VLANs defined yet"
+                action={
+                  <Button size="sm" icon={Plus} onClick={() => setShowAddForm(true)}>
+                    Add VLAN
+                  </Button>
+                }
+              >
+                Add a VLAN to start scanning.
+              </EmptyState>
+            ) : (
+              <div className="app-table-scroll">
+                <table className="ep-tbl">
+                  <thead>
+                    <tr>
+                      <th scope="col">VLAN</th>
+                      <th scope="col">CIDR</th>
+                      <th scope="col">Assigned agent</th>
+                      <th scope="col">Enabled</th>
+                      <th scope="col">Latest scan</th>
+                      <th scope="col">
+                        <span className="app-vh">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vlans.map((vlan) => (
+                      <VlanRow key={vlan.id} vlan={vlan} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          {vlans?.map((vlan) => (
+            <LatestVlanScanPanel key={vlan.id} vlan={vlan} />
+          ))}
+        </>
+      )}
 
       {legacyRuns && legacyRuns.length > 0 && (
-        <Collapsible title="(No VLAN — manual scans)" defaultOpen={false}>
+        <Collapsible title="No VLAN — manual scans" hint={`${legacyRuns.length} runs`} defaultOpen={false}>
           <ScanRunsTable runs={legacyRuns} />
         </Collapsible>
       )}
-    </div>
+
+      {showAddForm && <VlanFormModal onDone={() => setShowAddForm(false)} />}
+    </>
   );
 }

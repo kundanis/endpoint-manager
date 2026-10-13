@@ -1,4 +1,5 @@
-import { Fragment, useState, type FormEvent } from "react";
+import { Fragment, useRef, useState, type FormEvent } from "react";
+import { ChevronDown, ChevronRight, ListChecks, PackageCheck, Power, Send, SearchX, Timer, Trash2, X } from "lucide-react";
 import type { NormalizedSeverity } from "../api/types";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
@@ -16,6 +17,35 @@ import {
   useUpdateAutoPatchPolicy,
 } from "../api/hooks";
 import EndpointLabel from "../components/EndpointLabel";
+import {
+  Alert,
+  Badge,
+  BulkBar,
+  Button,
+  Card,
+  Check,
+  EmptyState,
+  Field,
+  FormFooter,
+  FormGrid,
+  FormSection,
+  IconButton,
+  KeyValueList,
+  Kpi,
+  KpiStrip,
+  PageHeader,
+  Pagination,
+  Pill,
+  Row,
+  Skeleton,
+  Status,
+  Switch,
+  Toolbar,
+  useConfirm,
+  usePagedList,
+  type BadgeTone,
+} from "../components/ui";
+import { formatBytes, formatDate, formatDateTime } from "../format";
 
 // Per-patch drill-down: the endpoints this update is missing on, each selectable, with a
 // one-click dispatch of just this patch to the chosen machines.
@@ -25,8 +55,8 @@ function MissingPatchEndpoints({ patchDefinitionId, updateId, title }: { patchDe
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [jobId, setJobId] = useState<string | null>(null);
 
-  if (!missing) return <p style={{ color: "var(--text-muted)" }}>Loading endpoints…</p>;
-  if (missing.length === 0) return <p style={{ color: "var(--text-muted)" }}>No endpoints are missing this patch right now.</p>;
+  if (!missing) return <Skeleton lines={2} />;
+  if (missing.length === 0) return <p className="app-text">No endpoints are missing this patch right now.</p>;
 
   const allSelected = missing.length > 0 && missing.every((m) => selected.has(m.agentId));
   function toggle(id: string) {
@@ -46,45 +76,56 @@ function MissingPatchEndpoints({ patchDefinitionId, updateId, title }: { patchDe
   }
 
   return (
-    <div style={{ padding: "0.25rem 0 0.5rem" }}>
-      <table className="data-table" style={{ margin: "0.25rem 0" }}>
-        <thead>
-          <tr>
-            <th style={{ width: "2rem" }}><input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" /></th>
-            <th>Endpoint missing "{title}"</th>
-            <th>Detected</th>
-          </tr>
-        </thead>
-        <tbody>
-          {missing.map((m) => (
-            <tr key={m.agentId}>
-              <td><input type="checkbox" checked={selected.has(m.agentId)} onChange={() => toggle(m.agentId)} /></td>
-              <td><EndpointLabel hostname={m.hostname} agentId={m.agentId} /></td>
-              <td>{new Date(m.detectedAt).toLocaleString()}</td>
+    <div className="app-stack-sm">
+      <div className="app-table-wrap" style={{ background: "var(--ep-surface)" }}>
+        <table className="ep-tbl">
+          <thead>
+            <tr>
+              <th className="ep-cb" scope="col">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" aria-label="Select all endpoints" />
+              </th>
+              <th scope="col">Endpoint missing "{title}"</th>
+              <th scope="col">Detected</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <button type="button" onClick={handleDispatch} disabled={selected.size === 0 || dispatch.isPending}>
-        {dispatch.isPending ? "Dispatching…" : `Dispatch to selected (${selected.size})`}
-      </button>
-      {jobId && <span style={{ marginLeft: "0.6rem", fontSize: "0.85rem" }}>Dispatched. Each endpoint installs on its next check-in; track progress under Recent patch jobs below.</span>}
-      {dispatch.isError && <span className="error-text" style={{ marginLeft: "0.6rem" }}>{(dispatch.error as Error).message}</span>}
+          </thead>
+          <tbody>
+            {missing.map((m) => (
+              <tr key={m.agentId} className={selected.has(m.agentId) ? "ep-sel" : undefined}>
+                <td className="ep-cb">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(m.agentId)}
+                    onChange={() => toggle(m.agentId)}
+                    aria-label={`Select ${m.hostname}`}
+                  />
+                </td>
+                <td><EndpointLabel hostname={m.hostname} agentId={m.agentId} /></td>
+                <td>{formatDateTime(m.detectedAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="app-actions-row">
+        <Button size="sm" icon={Send} onClick={handleDispatch} disabled={selected.size === 0 || dispatch.isPending}>
+          {dispatch.isPending ? "Dispatching…" : `Dispatch to selected (${selected.size})`}
+        </Button>
+      </div>
+      {jobId && (
+        <Alert tone="success">Dispatched. Each endpoint installs on its next check-in; track progress under Patch jobs below.</Alert>
+      )}
+      {dispatch.isError && <Alert tone="critical">{(dispatch.error as Error).message}</Alert>}
     </div>
   );
 }
 
-function formatBytes(bytes: string | null): string {
-  if (!bytes) return "—";
-  return `${(Number(bytes) / 1024 ** 2).toFixed(1)} MB`;
-}
-
-function severityBadgeClass(severity: NormalizedSeverity): string {
-  if (severity === "CRITICAL" || severity === "HIGH") return "danger";
-  if (severity === "MEDIUM") return "warn";
-  if (severity === "LOW") return "online";
-  return "offline";
-}
+const SEVERITY_TONES: Record<NormalizedSeverity, BadgeTone> = {
+  CRITICAL: "crit",
+  HIGH: "high",
+  MEDIUM: "med",
+  LOW: "low",
+  UNKNOWN: "neu",
+};
 
 const NORMALIZED_SEVERITIES: NormalizedSeverity[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"];
 const SEVERITY_LABELS: Record<NormalizedSeverity, string> = {
@@ -95,12 +136,26 @@ const SEVERITY_LABELS: Record<NormalizedSeverity, string> = {
   UNKNOWN: "Unknown",
 };
 
+// The fixed severity word as the badge; the vendor's own wording ("Important") follows when
+// it says something different.
+function PatchSeverity({ severity, normalized }: { severity: string | null; normalized: NormalizedSeverity }) {
+  if (!severity) return <span className="app-muted">—</span>;
+  const label = SEVERITY_LABELS[normalized];
+  return (
+    <>
+      <Badge tone={SEVERITY_TONES[normalized]}>{label}</Badge>
+      {severity.toLowerCase() !== label.toLowerCase() && <span className="app-muted"> ({severity})</span>}
+    </>
+  );
+}
+
 function AutomaticModePanel() {
-  const { data: policies } = useAutoPatchPolicies();
+  const { data: policies, isLoading } = useAutoPatchPolicies();
   const { data: groups } = useAssetGroups();
   const createPolicy = useCreateAutoPatchPolicy();
   const updatePolicy = useUpdateAutoPatchPolicy();
   const deletePolicy = useDeleteAutoPatchPolicy();
+  const confirm = useConfirm();
 
   const [minSeverity, setMinSeverity] = useState<NormalizedSeverity>("CRITICAL");
   const [groupIds, setGroupIds] = useState<string[]>([]);
@@ -114,96 +169,144 @@ function AutomaticModePanel() {
     createPolicy.mutate({ minSeverity, groupIds, enabled: true }, { onSuccess: () => setGroupIds([]) });
   }
 
-  return (
-    <div className="panel">
-      <h2>Automatic mode</h2>
-      <p className="hint">
-        A standing policy that auto-dispatches any currently-missing patch at or above the chosen severity, on its
-        own — no manual selection needed. Leave "Target groups" empty to cover every enrolled endpoint. Checked
-        roughly every couple of minutes.
-      </p>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Enabled</th>
-            <th>Minimum severity</th>
-            <th>Target groups</th>
-            <th>Last ran</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id}>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => updatePolicy.mutate({ id: p.id, enabled: e.target.checked })}
-                />
-              </td>
-              <td>
-                <span className={`status-badge ${severityBadgeClass(p.minSeverity)}`}>
-                  {SEVERITY_LABELS[p.minSeverity]}
-                </span>{" "}
-                and above
-              </td>
-              <td>{p.groupNames.join(", ") || "All endpoints"}</td>
-              <td>{p.lastRunAt ? new Date(p.lastRunAt).toLocaleString() : "Not yet run"}</td>
-              <td>
-                <button type="button" onClick={() => deletePolicy.mutate(p.id)} disabled={deletePolicy.isPending}>
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={5}>No automatic-mode policies yet — everything is manual dispatch.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  async function handleRemove(id: string, severityLabel: string) {
+    const confirmed = await confirm({
+      title: `Remove the "${severityLabel} and above" automatic-mode policy?`,
+      body: "Missing patches it would have covered are no longer dispatched automatically. Jobs already dispatched are not affected.",
+      confirmLabel: "Remove policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deletePolicy.mutate(id);
+  }
 
-      <form onSubmit={handleCreate} style={{ marginTop: "1rem" }}>
-        <label>
-          Minimum severity to auto-deploy
-          <select value={minSeverity} onChange={(e) => setMinSeverity(e.target.value as NormalizedSeverity)}>
-            {NORMALIZED_SEVERITIES.filter((s) => s !== "UNKNOWN").map((s) => (
-              <option key={s} value={s}>
-                {SEVERITY_LABELS[s]} and above
-              </option>
-            ))}
-          </select>
-        </label>
-        {groups && groups.length > 0 && (
-          <fieldset>
-            <legend>Target groups (leave blank for all endpoints)</legend>
-            {groups.map((g) => (
-              <label key={g.id} className="checkbox-row">
-                <input type="checkbox" checked={groupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-                {g.name} ({g.memberCount})
-              </label>
-            ))}
-          </fieldset>
+  return (
+    <Card title="Automatic mode" hint={policies ? `${policies.length} ${policies.length === 1 ? "policy" : "policies"}` : undefined}>
+      <div className="app-stack">
+        <p className="app-text">
+          A standing policy that auto-dispatches any currently-missing patch at or above the chosen severity, on its own —
+          no manual selection needed. Leave "Target groups" empty to cover every enrolled endpoint. Checked roughly every
+          couple of minutes.
+        </p>
+        {isLoading ? (
+          <Skeleton lines={2} />
+        ) : !policies || policies.length === 0 ? (
+          <EmptyState icon={Timer} title="No automatic-mode policies yet">
+            Everything is manual dispatch. Add a policy below to auto-deploy patches at or above a severity.
+          </EmptyState>
+        ) : (
+          <div className="app-table-wrap">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Enabled</th>
+                  <th scope="col">Minimum severity</th>
+                  <th scope="col">Target groups</th>
+                  <th scope="col">Last ran</th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policies.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <Switch
+                        checked={p.enabled}
+                        onChange={(enabled) => updatePolicy.mutate({ id: p.id, enabled })}
+                        label={p.enabled ? "Enabled" : "Paused"}
+                      />
+                    </td>
+                    <td>
+                      <Badge tone={SEVERITY_TONES[p.minSeverity]}>{SEVERITY_LABELS[p.minSeverity]}</Badge> and above
+                    </td>
+                    <td>{p.groupNames.join(", ") || "All endpoints"}</td>
+                    <td>{p.lastRunAt ? formatDateTime(p.lastRunAt) : <span className="app-muted">Not yet run</span>}</td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <IconButton
+                          icon={Trash2}
+                          label={`Remove ${SEVERITY_LABELS[p.minSeverity]} and above policy`}
+                          onClick={() => handleRemove(p.id, SEVERITY_LABELS[p.minSeverity])}
+                          disabled={deletePolicy.isPending}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending}>
-          {createPolicy.isPending ? "Adding…" : "Add policy"}
-        </button>
-      </form>
-    </div>
+
+        <form onSubmit={handleCreate} className="app-inset-form">
+          <span className="app-subhead">Add policy</span>
+          <FormGrid>
+            <Field label="Minimum severity to auto-deploy" htmlFor="auto-patch-min-severity">
+              <select
+                id="auto-patch-min-severity"
+                className="ep-select"
+                value={minSeverity}
+                onChange={(e) => setMinSeverity(e.target.value as NormalizedSeverity)}
+              >
+                {NORMALIZED_SEVERITIES.filter((s) => s !== "UNKNOWN").map((s) => (
+                  <option key={s} value={s}>
+                    {SEVERITY_LABELS[s]} and above
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </FormGrid>
+          {groups && groups.length > 0 && (
+            <div className="app-stack-sm" role="group" aria-label="Target groups">
+              <span className="app-subhead">Target groups (leave blank for all endpoints)</span>
+              <div className="app-check-grid">
+                {groups.map((g) => (
+                  <Check
+                    key={g.id}
+                    checked={groupIds.includes(g.id)}
+                    onChange={() => toggleGroup(g.id)}
+                    label={
+                      <>
+                        {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                      </>
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {createPolicy.isError && <Alert tone="critical">{(createPolicy.error as Error).message}</Alert>}
+          <div className="app-actions-row app-end">
+            <Button type="submit" disabled={createPolicy.isPending}>
+              {createPolicy.isPending ? "Adding…" : "Add policy"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </Card>
   );
+}
+
+// Patch task / job status words → Meridian badge or pill.
+function TaskStatus({ status, label }: { status: string; label?: string }) {
+  const key = status.toUpperCase();
+  const text = label ?? key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, " ");
+  if (key === "SUCCESS" || key === "SUCCEEDED" || key === "COMPLETED" || key === "INSTALLED") return <Badge tone="ok">{text}</Badge>;
+  if (key === "RUNNING" || key === "DISPATCHED" || key === "IN_PROGRESS") return <Pill tone="neutral">{text}</Pill>;
+  return <Status value={status} label={text} />;
 }
 
 export default function PatchesPage() {
   const [environmentFilter, setEnvironmentFilter] = useState("");
-  const { data: summary } = usePatchSummary(environmentFilter || undefined);
+  const { data: summary, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = usePatchSummary(environmentFilter || undefined);
   const { data: agents } = useAgents();
   const { data: groups } = useAssetGroups();
-  const { data: jobs } = usePatchJobs();
+  const { data: jobs, isLoading: jobsLoading } = usePatchJobs();
   const dispatchPatch = useDispatchPatchJob();
   const dispatchCommand = useDispatchCommand();
+  const confirm = useConfirm();
 
   const [selectedUpdateIds, setSelectedUpdateIds] = useState<string[]>([]);
   const [expandedPatchId, setExpandedPatchId] = useState<string | null>(null);
@@ -211,8 +314,17 @@ export default function PatchesPage() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState("");
   const [selectedJobId, setSelectedJobId] = useState<string | undefined>();
+  const deployFormRef = useRef<HTMLDivElement>(null);
 
   const { data: jobDetail } = usePatchJob(selectedJobId);
+
+  const pagedSummary = usePagedList(summary ?? [], 25);
+  const pagedJobs = usePagedList(jobs ?? [], 10);
+
+  const severityCount = (s: NormalizedSeverity) => summary?.filter((item) => item.normalizedSeverity === s).length ?? 0;
+  const scheduledJobCount = jobs?.filter((j) => j.scheduledAt).length ?? 0;
+  const selectedUpdates = summary?.filter((item) => selectedUpdateIds.includes(item.updateId)) ?? [];
+  const environmentName = groups?.find((g) => g.id === environmentFilter)?.name;
 
   function toggleUpdate(updateId: string) {
     setSelectedUpdateIds((prev) => (prev.includes(updateId) ? prev.filter((id) => id !== updateId) : [...prev, updateId]));
@@ -239,7 +351,14 @@ export default function PatchesPage() {
     );
   }
 
-  function rebootNow(agentId: string) {
+  async function rebootNow(agentId: string, hostname: string) {
+    const confirmed = await confirm({
+      title: `Reboot ${hostname}?`,
+      body: "The endpoint restarts 60 seconds after it receives the command, with the message \"Applying Windows updates\". Unsaved work on it is lost.",
+      confirmLabel: "Reboot now",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     dispatchCommand.mutate({
       agentIds: [agentId],
       shell: "powershell",
@@ -249,212 +368,409 @@ export default function PatchesPage() {
   }
 
   return (
-    <div>
-      <h1>Patches</h1>
+    <>
+      <PageHeader title="Patches" description="Windows updates missing across the fleet, their deployment jobs and automatic mode" />
 
-      <h2>Missing across the fleet</h2>
-      <label style={{ display: "inline-block", marginBottom: "0.75rem" }}>
-        Environment
-        <select value={environmentFilter} onChange={(e) => setEnvironmentFilter(e.target.value)}>
-          <option value="">All endpoints</option>
-          {groups?.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th></th>
-            <th>Title</th>
-            <th>Severity</th>
-            <th>KB</th>
-            <th>Size</th>
-            <th>Missing on</th>
-            <th>Detected</th>
-          </tr>
-        </thead>
-        <tbody>
-          {summary?.map((item) => {
-            const isExpanded = expandedPatchId === item.patchDefinitionId;
-            return (
-              <Fragment key={item.patchDefinitionId}>
-                <tr>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedUpdateIds.includes(item.updateId)}
-                      onChange={() => toggleUpdate(item.updateId)}
-                      title="Add to the dispatch form below"
-                    />
-                  </td>
-                  <td>{item.title}</td>
-                  <td>
-                    {item.severity ? (
-                      <span className={`status-badge ${severityBadgeClass(item.normalizedSeverity)}`}>{item.severity}</span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td>{item.kbArticleIds.join(", ") || "—"}</td>
-                  <td>{formatBytes(item.sizeBytes)}</td>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedPatchId(isExpanded ? null : item.patchDefinitionId)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, font: "inherit", textDecoration: "underline" }}
-                      title="Show the endpoints missing this patch and dispatch to selected"
-                    >
-                      {isExpanded ? "▾ " : "▸ "}{item.missingAgentCount} endpoint(s)
-                    </button>
-                  </td>
-                  <td>{new Date(item.firstSeenAt).toLocaleDateString()}</td>
-                </tr>
-                {isExpanded && (
+      <KpiStrip>
+        <Kpi
+          icon={PackageCheck}
+          label="Missing updates"
+          value={summary ? <span className="ep-num">{summary.length}</span> : "—"}
+          suffix={environmentName ? `in ${environmentName}` : "across the fleet"}
+        />
+        <Kpi
+          label="Critical"
+          value={summary ? <span className="ep-num">{severityCount("CRITICAL")}</span> : "—"}
+          suffix="updates"
+          valueTone={severityCount("CRITICAL") > 0 ? "critical" : undefined}
+        />
+        <Kpi label="High" value={summary ? <span className="ep-num">{severityCount("HIGH")}</span> : "—"} suffix="updates" />
+        <Kpi
+          icon={ListChecks}
+          label="Patch jobs"
+          value={jobs ? <span className="ep-num">{jobs.length}</span> : "—"}
+          suffix="dispatched"
+          footer={jobs ? `${scheduledJobCount} scheduled` : undefined}
+        />
+      </KpiStrip>
+
+      <Card flush title="Missing across the fleet" hint="newest first">
+        <Toolbar>
+          <select
+            className="ep-select"
+            aria-label="Environment"
+            value={environmentFilter}
+            onChange={(e) => setEnvironmentFilter(e.target.value)}
+          >
+            <option value="">Environment: All endpoints</option>
+            {groups?.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </Toolbar>
+
+        <BulkBar count={selectedUpdateIds.length} onClear={() => setSelectedUpdateIds([])}>
+          <Button size="sm" icon={Send} onClick={() => deployFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            Choose targets
+          </Button>
+        </BulkBar>
+
+        {summaryLoading ? (
+          <div className="ep-cb">
+            <Skeleton lines={6} />
+          </div>
+        ) : summaryError ? (
+          <div className="ep-cb">
+            <Alert
+              tone="critical"
+              title="Couldn't load missing patches"
+              action={
+                <Button size="sm" onClick={() => refetchSummary()}>
+                  Retry
+                </Button>
+              }
+            >
+              {(summaryError as Error).message}
+            </Alert>
+          </div>
+        ) : !summary || summary.length === 0 ? (
+          environmentFilter ? (
+            <EmptyState
+              icon={SearchX}
+              title="No missing patches in this environment"
+              action={
+                <Button size="sm" onClick={() => setEnvironmentFilter("")}>
+                  Clear filter
+                </Button>
+              }
+            >
+              Show all endpoints to see patches missing elsewhere.
+            </EmptyState>
+          ) : (
+            <EmptyState icon={PackageCheck} title="No missing patches detected yet">
+              Endpoints scan on their own multi-hour cycle — check back after their next scan.
+            </EmptyState>
+          )
+        ) : (
+          <>
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ background: "var(--stripe)" }}>
-                      <MissingPatchEndpoints patchDefinitionId={item.patchDefinitionId} updateId={item.updateId} title={item.title} />
-                    </td>
+                    <th className="ep-cb" scope="col">
+                      <span className="app-vh">Add to deployment</span>
+                    </th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">KB</th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Size
+                    </th>
+                    <th scope="col">Missing on</th>
+                    <th scope="col">Detected</th>
                   </tr>
-                )}
-              </Fragment>
-            );
-          })}
-          {summary?.length === 0 && (
-            <tr>
-              <td colSpan={7}>No missing patches detected yet — endpoints scan on their own multi-hour cycle.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      <p className="hint">
-        Sorted newest first by when each update was first detected as missing across the fleet — the closest available
-        proxy for a release date, since no vendor update catalog is synced into this system.
-      </p>
+                </thead>
+                <tbody>
+                  {pagedSummary.pageItems.map((item) => {
+                    const isExpanded = expandedPatchId === item.patchDefinitionId;
+                    const isSelected = selectedUpdateIds.includes(item.updateId);
+                    return (
+                      <Fragment key={item.patchDefinitionId}>
+                        <tr className={isSelected ? "ep-sel" : undefined}>
+                          <td className="ep-cb">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleUpdate(item.updateId)}
+                              title="Add to the dispatch form below"
+                              aria-label={`Add ${item.title} to the deployment`}
+                            />
+                          </td>
+                          <td>{item.title}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            <PatchSeverity severity={item.severity} normalized={item.normalizedSeverity} />
+                          </td>
+                          <td className="ep-mono">{item.kbArticleIds.join(", ") || <span className="app-muted">—</span>}</td>
+                          <td className="ep-num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                            {formatBytes(item.sizeBytes)}
+                          </td>
+                          <td>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={isExpanded ? ChevronDown : ChevronRight}
+                              aria-expanded={isExpanded}
+                              onClick={() => setExpandedPatchId(isExpanded ? null : item.patchDefinitionId)}
+                              title="Show the endpoints missing this patch and dispatch to selected"
+                            >
+                              <span className="ep-num">{item.missingAgentCount}</span> endpoint(s)
+                            </Button>
+                          </td>
+                          <td style={{ whiteSpace: "nowrap" }}>{formatDate(item.firstSeenAt)}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={7} style={{ background: "var(--ep-surface-2)" }}>
+                              <MissingPatchEndpoints patchDefinitionId={item.patchDefinitionId} updateId={item.updateId} title={item.title} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="app-text" style={{ padding: "12px 20px", borderTop: "1px solid var(--ep-border)", maxWidth: "none" }}>
+              Sorted newest first by when each update was first detected as missing across the fleet — the closest available
+              proxy for a release date, since no vendor update catalog is synced into this system.
+            </p>
+            <Pagination
+              page={pagedSummary.page}
+              pageSize={pagedSummary.pageSize}
+              total={pagedSummary.total}
+              noun="updates"
+              onPageChange={pagedSummary.setPage}
+              onPageSizeChange={pagedSummary.setPageSize}
+            />
+          </>
+        )}
+      </Card>
 
       {selectedUpdateIds.length > 0 && (
-        <form className="panel" onSubmit={handleDispatch}>
-          <h2>Deploy {selectedUpdateIds.length} selected update(s)</h2>
-          {groups && groups.length > 0 && (
-            <fieldset>
-              <legend>Target groups</legend>
-              {groups.map((g) => (
-                <label key={g.id} className="checkbox-row">
-                  <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-                  {g.name} ({g.memberCount})
-                </label>
-              ))}
-            </fieldset>
-          )}
-          <EndpointCheckboxList
-            agents={agents}
-            selectedAgentIds={selectedAgentIds}
-            onToggle={toggleAgent}
-            selectedGroupIds={selectedGroupIds}
-            legend="Target endpoints"
-            renderExtra={(agent) => <span className={`status-badge ${agent.status.toLowerCase()}`}>{agent.status}</span>}
-          />
-          <label>
-            Schedule for (leave blank to dispatch immediately)
-            <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
-          </label>
-          {dispatchPatch.isError && <p className="error-text">{(dispatchPatch.error as Error).message}</p>}
-          <button
-            type="submit"
-            disabled={dispatchPatch.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-          >
-            {dispatchPatch.isPending ? "Dispatching…" : scheduledAt ? "Schedule" : "Dispatch"}
-          </button>
-        </form>
+        <div ref={deployFormRef} style={{ scrollMarginTop: 16 }}>
+          <Row layout="21">
+            <Card title={`Deploy ${selectedUpdateIds.length} selected update(s)`}>
+              <form onSubmit={handleDispatch} className="app-settings-form">
+                <FormSection title="Targets" description="Pick groups, individual endpoints, or both.">
+                  <div className="app-stack">
+                    {groups && groups.length > 0 && (
+                      <div className="app-stack-sm" role="group" aria-label="Target groups">
+                        <span className="app-subhead">Target groups</span>
+                        <div className="app-check-grid">
+                          {groups.map((g) => (
+                            <Check
+                              key={g.id}
+                              checked={selectedGroupIds.includes(g.id)}
+                              onChange={() => toggleGroup(g.id)}
+                              label={
+                                <>
+                                  {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                                </>
+                              }
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <EndpointCheckboxList
+                      agents={agents}
+                      selectedAgentIds={selectedAgentIds}
+                      onToggle={toggleAgent}
+                      selectedGroupIds={selectedGroupIds}
+                      legend="Target endpoints"
+                      renderExtra={(agent) => <Status value={agent.status} />}
+                    />
+                  </div>
+                </FormSection>
+                <FormSection title="Schedule" description="Leave blank to dispatch immediately.">
+                  <FormGrid>
+                    <Field label="Schedule for" htmlFor="patch-scheduled-at" help="Leave blank to dispatch immediately">
+                      <input
+                        id="patch-scheduled-at"
+                        className="ep-input"
+                        type="datetime-local"
+                        value={scheduledAt}
+                        onChange={(e) => setScheduledAt(e.target.value)}
+                      />
+                    </Field>
+                  </FormGrid>
+                </FormSection>
+                {dispatchPatch.isError && <Alert tone="critical">{(dispatchPatch.error as Error).message}</Alert>}
+                <FormFooter>
+                  <Button onClick={() => setSelectedUpdateIds([])}>Cancel</Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    icon={Send}
+                    disabled={dispatchPatch.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
+                  >
+                    {dispatchPatch.isPending ? "Dispatching…" : scheduledAt ? "Schedule" : "Dispatch"}
+                  </Button>
+                </FormFooter>
+              </form>
+            </Card>
+            <div className="app-stack">
+              <Alert tone="info" title="How deployment works">
+                Each endpoint installs the selected updates on its next check-in. Some updates need a reboot — the job detail
+                below flags them.
+              </Alert>
+              <Card title="Summary">
+                <div className="app-stack">
+                  <KeyValueList
+                    items={[
+                      { label: "Updates", value: <span className="ep-num">{selectedUpdateIds.length}</span> },
+                      { label: "Groups", value: <span className="ep-num">{selectedGroupIds.length}</span> },
+                      { label: "Endpoints", value: <span className="ep-num">{selectedAgentIds.length}</span> },
+                      { label: "Timing", value: scheduledAt ? formatDateTime(new Date(scheduledAt).toISOString()) : "Immediate" },
+                    ]}
+                  />
+                  {selectedUpdates.length > 0 && (
+                    <div className="app-stack-sm">
+                      <span className="app-subhead">Selected updates</span>
+                      {selectedUpdates.map((u) => (
+                        <span key={u.updateId} className="app-text">
+                          {u.title}
+                          {u.kbArticleIds.length > 0 && <span className="ep-mono app-muted"> · {u.kbArticleIds.join(", ")}</span>}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </Row>
+        </div>
       )}
 
       <AutomaticModePanel />
 
-      <h2>Patch jobs</h2>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Updates</th>
-            <th>Groups</th>
-            <th>Created</th>
-            <th>Timing</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {jobs?.map((job) => (
-            <tr key={job.id} className="clickable-row" onClick={() => setSelectedJobId(job.id)}>
-              <td>{job.updateIds.length} update(s)</td>
-              <td>{job.targetGroupNames.join(", ") || "—"}</td>
-              <td>{new Date(job.createdAt).toLocaleString()}</td>
-              <td>
-                {job.scheduledAt ? (
-                  <span className="status-badge warn">Scheduled for {new Date(job.scheduledAt).toLocaleString()}</span>
-                ) : (
-                  "Immediate"
-                )}
-              </td>
-              <td>
-                {Object.entries(job.taskCounts)
-                  .map(([status, count]) => `${status}: ${count}`)
-                  .join(", ")}
-              </td>
-            </tr>
-          ))}
-          {jobs?.length === 0 && (
-            <tr>
-              <td colSpan={5}>No patch jobs dispatched yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <Card flush title="Patch jobs" hint={jobs ? `${jobs.length} total` : undefined}>
+        {jobsLoading ? (
+          <div className="ep-cb">
+            <Skeleton lines={4} />
+          </div>
+        ) : !jobs || jobs.length === 0 ? (
+          <EmptyState icon={ListChecks} title="No patch jobs dispatched yet">
+            Tick missing updates above, choose targets and dispatch them — or add an automatic-mode policy.
+          </EmptyState>
+        ) : (
+          <>
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Updates
+                    </th>
+                    <th scope="col">Groups</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Timing</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedJobs.pageItems.map((job) => (
+                    <tr
+                      key={job.id}
+                      className={`app-clickable ${job.id === selectedJobId ? "ep-sel" : ""}`}
+                      onClick={() => setSelectedJobId(job.id)}
+                    >
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {job.updateIds.length} update(s)
+                      </td>
+                      <td>{job.targetGroupNames.join(", ") || <span className="app-muted">—</span>}</td>
+                      <td>{formatDateTime(job.createdAt)}</td>
+                      <td>
+                        {job.scheduledAt ? <Pill tone="warn">Scheduled for {formatDateTime(job.scheduledAt)}</Pill> : "Immediate"}
+                      </td>
+                      <td>
+                        <div className="app-badge-row">
+                          {Object.entries(job.taskCounts).map(([status, count]) => (
+                            <TaskStatus key={status} status={status} label={`${status}: ${count}`} />
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={pagedJobs.page}
+              pageSize={pagedJobs.pageSize}
+              total={pagedJobs.total}
+              noun="jobs"
+              onPageChange={pagedJobs.setPage}
+              onPageSizeChange={pagedJobs.setPageSize}
+            />
+          </>
+        )}
+      </Card>
 
       {jobDetail && (
-        <div className="panel">
-          <h2>Patch job detail</h2>
-          {jobDetail.targetGroupNames.length > 0 && <p>Targeted groups: {jobDetail.targetGroupNames.join(", ")}</p>}
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Endpoint</th>
-                <th>Status</th>
-                <th>Reboot</th>
-                <th>Results</th>
-                <th>Message</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobDetail.tasks.map((task) => (
-                <tr key={task.id}>
-                  <td>
-                    <EndpointLabel hostname={task.hostname} agentId={task.agentId} />
-                  </td>
-                  <td>{task.status}</td>
-                  <td>{task.rebootRequired ? <span className="status-badge warn">Required</span> : "—"}</td>
-                  <td>
-                    {task.results.map((r) => (
-                      <div key={r.updateId} className="mono-cell">
-                        {r.updateId.slice(0, 8)}… → code {r.resultCode}
-                      </div>
-                    ))}
-                  </td>
-                  <td>{task.message ?? "—"}</td>
-                  <td>
-                    {task.rebootRequired && (
-                      <button type="button" onClick={() => rebootNow(task.agentId)} disabled={dispatchCommand.isPending}>
-                        Reboot now
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card
+          flush
+          title="Patch job detail"
+          hint={formatDateTime(jobDetail.createdAt)}
+          actions={<IconButton icon={X} label="Close job detail" onClick={() => setSelectedJobId(undefined)} />}
+        >
+          {jobDetail.targetGroupNames.length > 0 && (
+            <div className="ep-cb">
+              <KeyValueList items={[{ label: "Targeted groups", value: jobDetail.targetGroupNames.join(", ") }]} />
+            </div>
+          )}
+          {jobDetail.tasks.length === 0 ? (
+            <EmptyState icon={ListChecks} title="No endpoint tasks yet">
+              Tasks appear here once the job is dispatched to its target endpoints.
+            </EmptyState>
+          ) : (
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Endpoint</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Reboot</th>
+                    <th scope="col">Results</th>
+                    <th scope="col">Message</th>
+                    <th scope="col">
+                      <span className="app-vh">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobDetail.tasks.map((task) => (
+                    <tr key={task.id}>
+                      <td>
+                        <EndpointLabel hostname={task.hostname} agentId={task.agentId} />
+                      </td>
+                      <td>
+                        <TaskStatus status={task.status} />
+                      </td>
+                      <td>{task.rebootRequired ? <Pill tone="warn">Required</Pill> : <span className="app-muted">—</span>}</td>
+                      <td>
+                        {task.results.map((r) => (
+                          <div key={r.updateId} className="ep-mono">
+                            {r.updateId.slice(0, 8)}… → code {r.resultCode}
+                          </div>
+                        ))}
+                      </td>
+                      <td>{task.message ?? <span className="app-muted">—</span>}</td>
+                      <td>
+                        {task.rebootRequired && (
+                          <div className="app-cell-actions">
+                            <Button
+                              size="sm"
+                              icon={Power}
+                              onClick={() => rebootNow(task.agentId, task.hostname)}
+                              disabled={dispatchCommand.isPending}
+                            >
+                              Reboot now
+                            </Button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       )}
-    </div>
+    </>
   );
 }

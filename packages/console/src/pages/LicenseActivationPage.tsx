@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { CalendarClock, KeyRound, Monitor, PlugZap, Undo2 } from "lucide-react";
 import {
   useActivateLicense,
   useLicenseServerConfig,
@@ -10,7 +11,32 @@ import {
   useSetModuleVisibility,
   useTestLicenseServerConnection,
 } from "../api/hooks";
+import { CHART_SEMANTIC } from "../chartTheme";
 import { NAV_MODULES } from "../navConfig";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Check,
+  EmptyState,
+  Field,
+  FormFooter,
+  FormSection,
+  KeyValueList,
+  Kpi,
+  KpiStrip,
+  PageHeader,
+  Pill,
+  Row,
+  Skeleton,
+  Switch,
+  Tag,
+} from "../components/ui";
+import { formatDate, formatDateTime } from "../format";
+
+// Pattern C — licensing (design-system/docs/PAGE_PATTERNS.md): forms on the left, read-only
+// license facts (.ep-kv) on the right, a usage KPI strip on top.
 
 const VALIDITY_LABELS: Record<string, string> = {
   ONE_YEAR: "1 year",
@@ -41,66 +67,61 @@ function LicenseApiPanel() {
     setConfig.mutate(url, { onSuccess: () => setUrl("") });
   }
 
-  if (isLoading) return null;
+  if (isLoading) {
+    return (
+      <Card title="License server">
+        <Skeleton lines={3} />
+      </Card>
+    );
+  }
 
   const isConnected = !!serverConfig?.configured && serverConfig.lastConnectionOk === true;
 
   return (
-    <div className="panel">
-      <h2>Licence API</h2>
-      <p>
-        Enter the address of the vendor's central License Server. A key can only be activated once a connection to
-        it is confirmed.
-      </p>
-
-      {serverConfig?.serverUrl && (
-        <div className="detail-grid" style={{ marginBottom: "1rem" }}>
-          <div>
-            <strong>Configured address</strong>
-            <span className="mono-cell">{serverConfig.serverUrl}</span>
-          </div>
-          <div>
-            <strong>Connection</strong>
-            <span className={`status-badge ${isConnected ? "online" : "danger"}`}>
-              {isConnected ? "Connected" : "Not connected"}
-            </span>
-          </div>
-          <div>
-            <strong>Last checked</strong>
-            {serverConfig.lastConnectionCheckAt ? new Date(serverConfig.lastConnectionCheckAt).toLocaleString() : "—"}
-          </div>
+    <form className="ep-card" onSubmit={handleConnect}>
+      <FormSection
+        title="License server"
+        description="Enter the address of the vendor's central License Server. A key can only be activated once a connection to it is confirmed."
+      >
+        <div className="app-stack">
+          {serverConfig?.serverUrl && (
+            <KeyValueList
+              items={[
+                { label: "Configured address", value: serverConfig.serverUrl, mono: true },
+                {
+                  label: "Connection",
+                  value: isConnected ? <Pill tone="ok">Connected</Pill> : <Pill tone="critical">Not connected</Pill>,
+                },
+                { label: "Last checked", value: formatDateTime(serverConfig.lastConnectionCheckAt) },
+              ]}
+            />
+          )}
+          <Field label={serverConfig?.configured ? "Change address" : "License Server address"} htmlFor="license-server-url" required>
+            <input
+              id="license-server-url"
+              className="ep-input ep-mono"
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://license.vendor.example"
+              required
+            />
+          </Field>
+          {setConfig.isError && <Alert tone="critical">{(setConfig.error as Error).message}</Alert>}
+          {testConnection.isError && <Alert tone="critical">{(testConnection.error as Error).message}</Alert>}
         </div>
-      )}
-
-      {serverConfig?.configured && (
-        <button
-          type="button"
-          onClick={() => testConnection.mutate()}
-          disabled={testConnection.isPending}
-          style={{ marginBottom: "1rem" }}
-        >
-          {testConnection.isPending ? "Testing…" : "Test connection"}
-        </button>
-      )}
-
-      <form onSubmit={handleConnect}>
-        <label>
-          {serverConfig?.configured ? "Change address" : "License Server address"}
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://license.vendor.example"
-            required
-          />
-        </label>
-        {setConfig.isError && <p className="error-text">{(setConfig.error as Error).message}</p>}
-        {testConnection.isError && <p className="error-text">{(testConnection.error as Error).message}</p>}
-        <button type="submit" disabled={setConfig.isPending || !url.trim()}>
+      </FormSection>
+      <FormFooter>
+        {serverConfig?.configured && (
+          <Button icon={PlugZap} onClick={() => testConnection.mutate()} disabled={testConnection.isPending}>
+            {testConnection.isPending ? "Testing…" : "Test connection"}
+          </Button>
+        )}
+        <Button type="submit" variant="primary" disabled={setConfig.isPending || !url.trim()}>
           {setConfig.isPending ? "Connecting…" : "Connect"}
-        </button>
-      </form>
-    </div>
+        </Button>
+      </FormFooter>
+    </form>
   );
 }
 
@@ -138,66 +159,74 @@ function ModuleVisibilityPanel() {
     setVisibility.mutate({ hiddenModuleKeys, hiddenItemPaths });
   }
 
-  if (isLoading) return null;
+  if (isLoading) {
+    return (
+      <Card title="Module visibility">
+        <Skeleton lines={3} />
+      </Card>
+    );
+  }
 
   if (me?.role !== "SUPER_ADMIN") {
     return (
-      <div className="panel">
-        <h2>Module visibility</h2>
-        <p className="hint">Only a super admin can hide/unhide modules. Ask one to change this if needed.</p>
-      </div>
+      <Card title="Module visibility">
+        <p className="app-text">Only a super admin can hide/unhide modules. Ask one to change this if needed.</p>
+      </Card>
     );
   }
 
   return (
-    <div className="panel">
-      <h2>Module visibility</h2>
-      <p>
-        Hide a main module or an individual item within it for <strong>every</strong> admin on this deployment —
-        this is stronger than license modules or per-admin access above/in Administrators: a hidden module or item
-        disappears from the menu and its page for everyone, including super admins, and (for a whole main module)
-        its underlying API is blocked too, not just the menu.
-      </p>
+    <Card title="Module visibility" hint="applies to every admin on this deployment">
+      <div className="app-settings-form">
+        <div className="app-stack">
+          <p className="app-text">
+            Hide a main module or an individual item within it for <strong>every</strong> admin on this deployment —
+            this is stronger than license modules or per-admin access above/in Administrators: a hidden module or item
+            disappears from the menu and its page for everyone, including super admins, and (for a whole main module)
+            its underlying API is blocked too, not just the menu.
+          </p>
 
-      {hideableModules.map((module) => {
-        const moduleHidden = hiddenModuleKeys.includes(module.licenseModule!);
-        return (
-          <fieldset key={module.key} style={{ marginBottom: "0.75rem" }}>
-            <legend>
-              <label style={{ fontWeight: "bold" }}>
-                <input type="checkbox" checked={moduleHidden} onChange={() => toggleModule(module.licenseModule!)} />{" "}
-                Hide {module.label} entirely
-              </label>
-            </legend>
-            {!moduleHidden &&
-              module.items!.map((item) => (
-                <label key={item.path} style={{ display: "block", fontWeight: "normal" }}>
-                  <input
-                    type="checkbox"
-                    checked={hiddenItemPaths.includes(item.path)}
-                    onChange={() => toggleItem(item.path)}
-                  />{" "}
-                  Hide {item.label}
-                </label>
-              ))}
-          </fieldset>
-        );
-      })}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: 12 }}>
+            {hideableModules.map((module) => {
+              const moduleHidden = hiddenModuleKeys.includes(module.licenseModule!);
+              return (
+                <div key={module.key} className="app-inset-form" role="group" aria-label={module.label}>
+                  <Switch checked={moduleHidden} onChange={() => toggleModule(module.licenseModule!)} label={`Hide ${module.label} entirely`} />
+                  {moduleHidden ? (
+                    <span className="app-muted">Every item in {module.label} is hidden.</span>
+                  ) : (
+                    <div className="app-stack-sm">
+                      {module.items!.map((item) => (
+                        <Check
+                          key={item.path}
+                          checked={hiddenItemPaths.includes(item.path)}
+                          onChange={() => toggleItem(item.path)}
+                          label={`Hide ${item.label}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-      {setVisibility.isError && <p className="error-text">{(setVisibility.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="button" onClick={handleSave} disabled={setVisibility.isPending}>
-          {setVisibility.isPending ? "Saving…" : "Save changes"}
-        </button>
-        {setVisibility.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
+          {setVisibility.isError && <Alert tone="critical">{(setVisibility.error as Error).message}</Alert>}
+        </div>
+        <FormFooter>
+          {setVisibility.isSuccess && !setVisibility.isPending && <span className="app-saved">Saved</span>}
+          <Button variant="primary" onClick={handleSave} disabled={setVisibility.isPending}>
+            {setVisibility.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </FormFooter>
       </div>
-    </div>
+    </Card>
   );
 }
 
 export default function LicenseActivationPage() {
   const { data: serverConfig } = useLicenseServerConfig();
-  const { data: status, isLoading } = useLicenseStatus();
+  const { data: status, isLoading, error: statusError, refetch: refetchStatus } = useLicenseStatus();
   const activate = useActivateLicense();
   const requestUnlock = useRequestLicenseUnlock();
 
@@ -220,7 +249,23 @@ export default function LicenseActivationPage() {
     });
   }
 
-  if (isLoading) return <div className="page-loading">Loading…</div>;
+  const header = (
+    <PageHeader
+      title="Licensing"
+      description="Activate a license key from the vendor's License Server so this deployment can enroll new agents."
+    />
+  );
+
+  if (isLoading) {
+    return (
+      <>
+        {header}
+        <Card>
+          <Skeleton />
+        </Card>
+      </>
+    );
+  }
 
   const isExpired = status?.validUntil ? new Date(status.validUntil) < new Date() : false;
   const isRevoked = status?.status === "REVOKED";
@@ -228,131 +273,210 @@ export default function LicenseActivationPage() {
   const atCap = status?.activated && status.maxAgents !== undefined && (status.currentAgentCount ?? 0) >= status.maxAgents;
   const canActivate = !!serverConfig?.configured && serverConfig.lastConnectionOk === true;
 
+  const used = status?.currentAgentCount ?? 0;
+  const max = status?.maxAgents ?? 0;
+  const usedPct = max > 0 ? Math.round((used / max) * 100) : 0;
+
+  const statusBadge = isRevoked ? (
+    <Pill tone="critical">Revoked</Pill>
+  ) : isExpired ? (
+    <Pill tone="warn">Expired</Pill>
+  ) : (
+    <Badge tone="ok">Activated</Badge>
+  );
+
   return (
-    <div>
-      <h1>Licensing</h1>
-      <p>
-        This deployment must activate a license key (issued by the vendor's central License Server) before it can
-        enroll new agents. Activation is one-time-use — once a key is redeemed here, it locks to this deployment.
-      </p>
+    <>
+      {header}
 
-      <LicenseApiPanel />
-      <ModuleVisibilityPanel />
-
-      {status?.activated ? (
-        <div className="detail-grid">
-          <div>
-            <strong>Entity</strong>
-            {status.entityName}
-          </div>
-          <div>
-            <strong>Status</strong>
-            <span className={`status-badge ${isRevoked ? "danger" : isExpired ? "warn" : "online"}`}>
-              {isRevoked ? "Revoked" : isExpired ? "Expired" : "Activated"}
-            </span>
-          </div>
-          <div>
-            <strong>Agents</strong>
-            {status.currentAgentCount} / {status.maxAgents}
-            {atCap && <span className="status-badge danger" style={{ marginLeft: "0.5rem" }}>At cap</span>}
-            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
-              Paused endpoints still count here — pausing releases policy enforcement, not the seat.
-            </div>
-          </div>
-          <div>
-            <strong>Total ever uninstalled</strong>
-            {status.totalAgentsUninstalled ?? 0}
-            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
-              Lifetime count of seats released back by uninstalling — not currently-active usage.
-            </div>
-          </div>
-          <div>
-            <strong>Validity</strong>
-            {status.validityType ? VALIDITY_LABELS[status.validityType] : "—"}
-          </div>
-          <div>
-            <strong>Modules</strong>
-            {!status.modules || status.modules.length === ALL_MODULE_KEYS.length
-              ? "All"
-              : status.modules.map((m) => MODULE_LABELS[m] ?? m).join(", ") || "None"}
-          </div>
-          <div>
-            <strong>Valid until</strong>
-            {status.validUntil ? new Date(status.validUntil).toLocaleDateString() : "Perpetual"}
-          </div>
-          <div>
-            <strong>Deployment ID</strong>
-            <span className="mono-cell">{status.deploymentId}</span>
-          </div>
-          <div>
-            <strong>Last re-validated</strong>
-            {status.lastRevalidatedAt ? new Date(status.lastRevalidatedAt).toLocaleString() : "Never"}
-          </div>
-          {isUnreachable && (
-            <div>
-              <strong>Re-validation issue</strong>
-              <span className="error-text">{status.lastRevalidationError}</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="panel">
-          <h2>Not activated</h2>
-          <p>No license key has been activated on this deployment yet. New agent enrollment is blocked until one is.</p>
-        </div>
-      )}
-
-      {canActivate ? (
-        <form className="panel" onSubmit={handleActivate}>
-          <h2>{status?.activated ? "Activate a replacement key" : "Activate a license key"}</h2>
-          <label>
-            License key
-            <input
-              type="text"
-              value={keyString}
-              onChange={(e) => setKeyString(e.target.value)}
-              placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
-              required
-            />
-          </label>
-          {activate.isError && <p className="error-text">{(activate.error as Error).message}</p>}
-          {activate.isSuccess && <p>License activated.</p>}
-          <button type="submit" disabled={activate.isPending || !keyString.trim()}>
-            {activate.isPending ? "Activating…" : "Activate"}
-          </button>
-        </form>
-      ) : (
-        <div className="panel">
-          <h2>Activate a license key</h2>
-          <p>Connect to the License Server above first.</p>
-        </div>
+      {!!statusError && (
+        <Alert
+          tone="critical"
+          title="Couldn't load the license status"
+          action={
+            <Button size="sm" onClick={() => refetchStatus()}>
+              Retry
+            </Button>
+          }
+        >
+          {(statusError as Error).message}
+        </Alert>
       )}
 
       {status?.activated && (
-        <form className="panel" onSubmit={handleUnlockRequest}>
-          <h2>Request an unlock</h2>
-          <p>
-            If this deployment is being migrated to new hardware, or the license needs to be re-activated for any
-            other reason, send an unlock request to the vendor. A vendor admin reviews and approves it manually
-            before the key can be activated again.
-          </p>
-          <label>
-            Reason
-            <input
-              type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Migrating to new hardware"
-              required
-            />
-          </label>
-          {requestUnlock.isError && <p className="error-text">{(requestUnlock.error as Error).message}</p>}
-          {unlockSent && !requestUnlock.isError && <p>Unlock request sent — awaiting vendor approval.</p>}
-          <button type="submit" disabled={requestUnlock.isPending || !reason.trim()}>
-            {requestUnlock.isPending ? "Sending…" : "Send unlock request"}
-          </button>
-        </form>
+        <KpiStrip>
+          <Kpi
+            icon={Monitor}
+            label="Agent seats used"
+            value={<span className="ep-num">{status.currentAgentCount}</span>}
+            valueTone={atCap ? "critical" : undefined}
+            suffix={`of ${status.maxAgents} · ${usedPct}%`}
+            bar={[
+              { value: used, color: atCap ? CHART_SEMANTIC.critical : CHART_SEMANTIC.ok },
+              { value: Math.max(max - used, 0), color: CHART_SEMANTIC.neutral },
+            ]}
+            footer={
+              atCap ? (
+                <>
+                  <Pill tone="critical">At cap</Pill> Paused endpoints still count here — pausing releases policy
+                  enforcement, not the seat.
+                </>
+              ) : (
+                "Paused endpoints still count here — pausing releases policy enforcement, not the seat."
+              )
+            }
+          />
+          <Kpi
+            icon={Undo2}
+            label="Total ever uninstalled"
+            value={<span className="ep-num">{status.totalAgentsUninstalled ?? 0}</span>}
+            suffix="seats released"
+            footer="Lifetime count of seats released back by uninstalling — not currently-active usage."
+          />
+          <Kpi
+            icon={CalendarClock}
+            label="Valid until"
+            value={status.validUntil ? formatDate(status.validUntil) : "Perpetual"}
+            valueTone={isExpired ? "warning" : undefined}
+            footer={<>Validity: {status.validityType ? VALIDITY_LABELS[status.validityType] : "—"}</>}
+          />
+        </KpiStrip>
       )}
-    </div>
+
+      <Row layout="21">
+        <div className="app-stack">
+          <LicenseApiPanel />
+
+          {canActivate ? (
+            <form className="ep-card" onSubmit={handleActivate}>
+              <FormSection
+                title={status?.activated ? "Activate a replacement key" : "Activate a license key"}
+                description="Activation is one-time-use — once a key is redeemed here, it locks to this deployment."
+              >
+                <div className="app-stack">
+                  <Field label="License key" htmlFor="license-key" required>
+                    <input
+                      id="license-key"
+                      className="ep-input ep-mono"
+                      type="text"
+                      value={keyString}
+                      onChange={(e) => setKeyString(e.target.value)}
+                      placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
+                      required
+                    />
+                  </Field>
+                  {activate.isError && <Alert tone="critical">{(activate.error as Error).message}</Alert>}
+                  {activate.isSuccess && <Alert tone="success">License activated.</Alert>}
+                </div>
+              </FormSection>
+              <FormFooter>
+                <Button type="submit" variant="primary" icon={KeyRound} disabled={activate.isPending || !keyString.trim()}>
+                  {activate.isPending ? "Activating…" : "Activate"}
+                </Button>
+              </FormFooter>
+            </form>
+          ) : (
+            <Card title="Activate a license key">
+              <EmptyState icon={PlugZap} title="Not connected to the License Server">
+                Connect to the License Server above first.
+              </EmptyState>
+            </Card>
+          )}
+
+          {status?.activated && (
+            <form className="ep-card" onSubmit={handleUnlockRequest}>
+              <FormSection
+                title="Request an unlock"
+                description="If this deployment is being migrated to new hardware, or the license needs to be re-activated for any other reason, send an unlock request to the vendor. A vendor admin reviews and approves it manually before the key can be activated again."
+              >
+                <div className="app-stack">
+                  <Field label="Reason" htmlFor="unlock-reason" required>
+                    <input
+                      id="unlock-reason"
+                      className="ep-input"
+                      type="text"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="e.g. Migrating to new hardware"
+                      required
+                    />
+                  </Field>
+                  {requestUnlock.isError && <Alert tone="critical">{(requestUnlock.error as Error).message}</Alert>}
+                  {unlockSent && !requestUnlock.isError && <Alert tone="success">Unlock request sent — awaiting vendor approval.</Alert>}
+                </div>
+              </FormSection>
+              <FormFooter>
+                <Button type="submit" disabled={requestUnlock.isPending || !reason.trim()}>
+                  {requestUnlock.isPending ? "Sending…" : "Send unlock request"}
+                </Button>
+              </FormFooter>
+            </form>
+          )}
+        </div>
+
+        <div className="app-stack">
+          {status?.activated ? (
+            <Card title="License" actions={statusBadge}>
+              <div className="app-stack">
+                <KeyValueList
+                  items={[
+                    { label: "Entity", value: status.entityName },
+                    { label: "Status", value: statusBadge },
+                    {
+                      label: "Agents",
+                      value: (
+                        <span className="app-badge-row">
+                          <span className="ep-num">
+                            {status.currentAgentCount} / {status.maxAgents}
+                          </span>
+                          {atCap && <Pill tone="critical">At cap</Pill>}
+                        </span>
+                      ),
+                    },
+                    { label: "Total ever uninstalled", value: <span className="ep-num">{status.totalAgentsUninstalled ?? 0}</span> },
+                    { label: "Validity", value: status.validityType ? VALIDITY_LABELS[status.validityType] : "—" },
+                    {
+                      label: "Modules",
+                      value:
+                        !status.modules || status.modules.length === ALL_MODULE_KEYS.length ? (
+                          "All"
+                        ) : status.modules.length === 0 ? (
+                          "None"
+                        ) : (
+                          <span className="app-badge-row">
+                            {status.modules.map((m) => (
+                              <Tag key={m}>{MODULE_LABELS[m] ?? m}</Tag>
+                            ))}
+                          </span>
+                        ),
+                    },
+                    { label: "Valid until", value: status.validUntil ? formatDate(status.validUntil) : "Perpetual" },
+                    { label: "Deployment ID", value: status.deploymentId, mono: true },
+                    { label: "Last re-validated", value: formatDateTime(status.lastRevalidatedAt, "Never") },
+                  ]}
+                />
+                {isUnreachable && (
+                  <Alert tone="critical" title="Re-validation issue">
+                    {status.lastRevalidationError}
+                  </Alert>
+                )}
+              </div>
+            </Card>
+          ) : (
+            <Card title="License" actions={<Badge tone="neu">Not activated</Badge>}>
+              <EmptyState icon={KeyRound} title="Not activated">
+                No license key has been activated on this deployment yet. New agent enrollment is blocked until one is.
+              </EmptyState>
+            </Card>
+          )}
+          <Alert tone="info">
+            This deployment must activate a license key (issued by the vendor's central License Server) before it can
+            enroll new agents. Activation is one-time-use — once a key is redeemed here, it locks to this deployment.
+          </Alert>
+        </div>
+      </Row>
+
+      <ModuleVisibilityPanel />
+    </>
   );
 }

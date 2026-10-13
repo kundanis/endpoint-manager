@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ListChecks, Pencil, Plus, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2, Users } from "lucide-react";
 import type { SecurityRuleOperator } from "@em/shared";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
@@ -23,7 +24,40 @@ import {
   useZeroTrustPolicy,
 } from "../api/hooks";
 import type { ZeroTrustPolicyDetail, ZeroTrustPolicySummary } from "../api/types";
-import StatusBadge from "../components/StatusBadge";
+import { CHART_SEMANTIC } from "../chartTheme";
+import { NewPolicyDialog, PolicyDetail, PolicySettingsForm } from "../components/policy";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Check,
+  CoverageTable,
+  EmptyState,
+  Field,
+  FilterChips,
+  FormGrid,
+  IconButton,
+  Kpi,
+  KpiStrip,
+  Legend,
+  PageHeader,
+  Pagination,
+  Pill,
+  RankedBars,
+  Row,
+  RowMenu,
+  Segmented,
+  Skeleton,
+  Switch,
+  Tag,
+  Toolbar,
+  useConfirm,
+  usePagedList,
+} from "../components/ui";
+
+// Pattern A-lite (design-system/docs/PAGE_PATTERNS.md): KPI strip + per-endpoint trust table,
+// with the policy list → tabbed detail workflow (as WebBlockPage) underneath.
 
 const OPERATORS: SecurityRuleOperator[] = ["EQUALS", "NOT_EQUALS", "GTE", "LTE", "CONTAINS", "REGEX_MATCH"];
 
@@ -40,6 +74,7 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
   const addCondition = useAddZeroTrustCondition();
   const updateCondition = useUpdateZeroTrustCondition();
   const deleteCondition = useDeleteZeroTrustCondition();
+  const confirm = useConfirm();
 
   const [editingConditionId, setEditingConditionId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_CONDITION_FORM);
@@ -71,6 +106,17 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
     setForm(BLANK_CONDITION_FORM);
   }
 
+  async function handleDelete(conditionId: string, title: string) {
+    const confirmed = await confirm({
+      title: `Delete condition "${title}"?`,
+      body: "It stops counting toward this policy's trust decision on every assigned endpoint. This cannot be undone.",
+      confirmLabel: "Delete condition",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deleteCondition.mutate({ policyId: policy.id, conditionId });
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const body = {
@@ -92,97 +138,109 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
   }
 
   return (
-    <div className="panel">
-      <h2>Conditions ({policy.conditions.length})</h2>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Key</th>
-            <th>Title</th>
-            <th>Check</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policy.conditions.map((c) => (
-            <tr key={c.id} className={c.id === editingConditionId ? "selected-row" : ""}>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={c.enabled}
-                  onChange={(e) => toggleEnabled(c.id, e.target.checked)}
-                  title="Enabled — checked conditions are evaluated by the agent and count toward the trust decision"
-                />
-              </td>
-              <td className="mono-cell">{c.conditionKey}</td>
-              <td>{c.title}</td>
-              <td className="mono-cell">
-                {c.operator} {c.expectedValue}
-              </td>
-              <td>
-                <button type="button" onClick={() => startEdit(c.id)}>
-                  Edit
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() => deleteCondition.mutate({ policyId: policy.id, conditionId: c.id })}
-                  disabled={deleteCondition.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policy.conditions.length === 0 && (
-            <tr>
-              <td colSpan={5}>No conditions yet — add one below.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+    <div className="app-stack">
+      {policy.conditions.length === 0 ? (
+        <EmptyState icon={ListChecks} title="No conditions yet">
+          Add one below. A device is trusted only once every enabled condition has been scanned and passes.
+        </EmptyState>
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Enabled</th>
+                <th scope="col">Key</th>
+                <th scope="col">Title</th>
+                <th scope="col">Check</th>
+                <th scope="col">
+                  <span className="app-vh">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {policy.conditions.map((c) => (
+                <tr key={c.id} className={c.id === editingConditionId ? "ep-sel" : undefined}>
+                  <td>
+                    <span title="Enabled — checked conditions are evaluated by the agent and count toward the trust decision">
+                      <Switch
+                        checked={c.enabled}
+                        onChange={(enabled) => toggleEnabled(c.id, enabled)}
+                        label={c.enabled ? "Enabled" : "Disabled"}
+                      />
+                    </span>
+                  </td>
+                  <td className="ep-mono">{c.conditionKey}</td>
+                  <td>
+                    {c.title}
+                    {c.description && <span className="app-row-sub">{c.description}</span>}
+                  </td>
+                  <td className="ep-mono">
+                    {c.operator} {c.expectedValue}
+                  </td>
+                  <td>
+                    <div className="app-cell-actions">
+                      <IconButton icon={Pencil} label={`Edit ${c.title}`} onClick={() => startEdit(c.id)} />
+                      <IconButton
+                        icon={Trash2}
+                        label={`Delete ${c.title}`}
+                        onClick={() => handleDelete(c.id, c.title)}
+                        disabled={deleteCondition.isPending}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      <div className="card accent-blue">
-        <h3>{isEditing ? `Edit condition: ${form.conditionKey}` : "Add condition"}</h3>
-        <form onSubmit={handleSubmit}>
-          <label>
-            Condition key
+      <form onSubmit={handleSubmit} className="app-inset-form">
+        <span className="app-subhead">{isEditing ? `Edit condition: ${form.conditionKey}` : "Add condition"}</span>
+        <FormGrid>
+          <Field label="Condition key" htmlFor="zt-cond-key" required>
             <input
+              id="zt-cond-key"
+              className="ep-input ep-mono"
               type="text"
               value={form.conditionKey}
               onChange={(e) => setForm((prev) => ({ ...prev, conditionKey: e.target.value }))}
               required
             />
-          </label>
-          <label>
-            Title
+          </Field>
+          <Field label="Title" htmlFor="zt-cond-title" required>
             <input
+              id="zt-cond-title"
+              className="ep-input"
               type="text"
               value={form.title}
               onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
               required
             />
-          </label>
-          <label>
-            Description
+          </Field>
+          <Field label="Description" htmlFor="zt-cond-desc" span2>
             <textarea
+              id="zt-cond-desc"
+              className="ep-textarea"
               rows={2}
               value={form.description}
               onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
             />
-          </label>
-          <label>
-            Check PowerShell (must print the current value to stdout)
+          </Field>
+          <Field label="Check PowerShell" htmlFor="zt-cond-ps" required span2 help="Must print the current value to stdout.">
             <textarea
+              id="zt-cond-ps"
+              className="ep-textarea ep-mono"
               rows={3}
               value={form.checkPowerShell}
               onChange={(e) => setForm((prev) => ({ ...prev, checkPowerShell: e.target.value }))}
               required
             />
-          </label>
-          <label>
-            Operator
+          </Field>
+          <Field label="Operator" htmlFor="zt-cond-op">
             <select
+              id="zt-cond-op"
+              className="ep-select"
               value={form.operator}
               onChange={(e) => setForm((prev) => ({ ...prev, operator: e.target.value as SecurityRuleOperator }))}
             >
@@ -192,33 +250,32 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            Expected value
+          </Field>
+          <Field label="Expected value" htmlFor="zt-cond-expected" required>
             <input
+              id="zt-cond-expected"
+              className="ep-input ep-mono"
               type="text"
               value={form.expectedValue}
               onChange={(e) => setForm((prev) => ({ ...prev, expectedValue: e.target.value }))}
               required
             />
-          </label>
-          {mutationError && <p className="error-text">{(mutationError as Error).message}</p>}
-          <div className="actions" style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="submit" disabled={pending}>
-              {pending ? "Saving…" : isEditing ? "Save changes" : "Add condition"}
-            </button>
-            {isEditing && (
-              <button type="button" onClick={cancelEdit}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
+          </Field>
+        </FormGrid>
+        {!!mutationError && <Alert tone="critical">{(mutationError as Error).message}</Alert>}
+        <div className="app-actions-row app-end">
+          {isEditing && <Button onClick={cancelEdit}>Cancel</Button>}
+          <Button type="submit" variant="primary" disabled={pending}>
+            {pending ? "Saving…" : isEditing ? "Save changes" : "Add condition"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
 
+// Same layout as components/policy.tsx AssignmentEditor, kept local because this page also
+// shows each endpoint's OS edition in the picker.
 function AssignmentPanel({ policyId }: { policyId: string }) {
   const { data: agents } = useAgents();
   const { data: groups } = useAssetGroups();
@@ -245,69 +302,118 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   }
 
   return (
-    <div className="panel">
-      <h2>Assignment</h2>
+    <div className="app-stack">
+      <div className="app-stack-sm">
+        <span className="app-subhead">Currently assigned</span>
+        {assignments && assignments.length === 0 ? (
+          <EmptyState icon={Users} title="Not assigned to any endpoint or group yet">
+            Pick groups or endpoints below. A policy does nothing until it's assigned.
+          </EmptyState>
+        ) : (
+          <div className="app-table-wrap">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Target</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">
+                    <span className="app-vh">Remove</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignments?.map((a) => (
+                  <tr key={a.id}>
+                    <td>{a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : a.groupName}</td>
+                    <td>{a.hostname ? "Endpoint" : <Badge tone="neu">Group</Badge>}</td>
+                    <td>
+                      <div className="app-cell-actions">
+                        <Button
+                          size="sm"
+                          onClick={() => unassign.mutate({ policyId, assignmentId: a.id })}
+                          disabled={unassign.isPending}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-      <h3>Currently assigned</h3>
-      <ul>
-        {assignments?.map((a) => (
-          <li key={a.id}>
-            {a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : `Group: ${a.groupName}`}{" "}
-            <button type="button" onClick={() => unassign.mutate({ policyId, assignmentId: a.id })} disabled={unassign.isPending}>
-              Remove
-            </button>
-          </li>
-        ))}
-        {assignments?.length === 0 && <li>Not assigned to any endpoint or group yet.</li>}
-      </ul>
+      <div className="app-stack-sm">
+        <span className="app-subhead">Assign to</span>
+        {groups && groups.length > 0 && (
+          <div className="app-check-grid">
+            {groups.map((g) => (
+              <Check
+                key={g.id}
+                checked={selectedGroupIds.includes(g.id)}
+                onChange={() => toggleGroup(g.id)}
+                label={
+                  <>
+                    {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                  </>
+                }
+              />
+            ))}
+          </div>
+        )}
 
-      <h3>Assign to</h3>
-      {groups && groups.length > 0 && (
-        <fieldset>
-          <legend>Groups</legend>
-          {groups.map((g) => (
-            <label key={g.id} className="checkbox-row">
-              <input type="checkbox" checked={selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.name} ({g.memberCount})
-            </label>
-          ))}
-        </fieldset>
-      )}
+        <EndpointCheckboxList
+          agents={agents}
+          selectedAgentIds={selectedAgentIds}
+          onToggle={toggleAgent}
+          selectedGroupIds={selectedGroupIds}
+          renderExtra={(agent) => agent.osEditionLabel && <span className="app-muted">({agent.osEditionLabel})</span>}
+        />
 
-      <EndpointCheckboxList
-        agents={agents}
-        selectedAgentIds={selectedAgentIds}
-        onToggle={toggleAgent}
-        selectedGroupIds={selectedGroupIds}
-        renderExtra={(agent) => agent.osEditionLabel && <span style={{ color: "var(--text-muted)" }}>({agent.osEditionLabel})</span>}
-      />
-
-      {assign.isError && <p className="error-text">{(assign.error as Error).message}</p>}
-      <button
-        type="button"
-        onClick={handleAssign}
-        disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-      >
-        {assign.isPending ? "Assigning…" : "Assign"}
-      </button>
+        {assign.isError && <Alert tone="critical">{(assign.error as Error).message}</Alert>}
+        <div className="app-actions-row app-end">
+          <Button
+            variant="primary"
+            onClick={handleAssign}
+            disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
+          >
+            {assign.isPending ? "Assigning…" : "Assign"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
 type FleetTrustFilter = { policyId: string; conditionId?: string } | null;
 
-// Fleet-wide view across every enabled policy: a tile per policy with how many of its
-// endpoints are NOT compliant, and under it a tile per condition with how many endpoints
-// fail that condition. Clicking a tile narrows the table to exactly those endpoints;
+// Endpoint/policy rows narrowed by trust state. Synced with the ?trust= query param, which is
+// what the Dashboard's Zero Trust donut links to.
+type TrustFilter = "all" | "trusted" | "not-trusted";
+
+// Fleet-wide view across every enabled policy: per policy, how many of its endpoints are
+// NOT compliant, and (once a policy is picked) per condition how many endpoints fail that
+// condition. Clicking a policy or condition narrows the table to exactly those endpoints;
 // clearing the filter shows every endpoint/policy pair again.
-function FleetTrustPanel({
+function FleetTrust({
   policies,
   initialFilter = null,
+  trustFilter,
+  onTrustFilterChange,
+  onNewPolicy,
 }: {
   policies: ZeroTrustPolicySummary[];
   initialFilter?: FleetTrustFilter;
+  trustFilter: TrustFilter;
+  onTrustFilterChange: (value: TrustFilter) => void;
+  onNewPolicy: () => void;
 }) {
   const results = useZeroTrustAgentBreakdowns(policies.map((p) => p.id));
+  // Shares the ["agents"] cache with the assignment/override panels; only used to count the
+  // endpoints no enabled policy covers ("Not assessed").
+  const { data: agents } = useAgents();
   const [filter, setFilter] = useState<FleetTrustFilter>(initialFilter);
 
   const conditionTitleById = new Map(
@@ -316,13 +422,17 @@ function FleetTrustPanel({
   const rows = policies.flatMap((p, i) =>
     (results[i]?.data?.agents ?? []).map((a) => ({ ...a, policyId: p.id, policyName: p.name })),
   );
-  const visibleRows = !filter
+  const policyRows = !filter
     ? rows
     : rows.filter(
         (r) =>
           r.policyId === filter.policyId &&
           (filter.conditionId ? r.nonCompliantConditionIds.includes(filter.conditionId) : !r.trusted),
       );
+  const visibleRows = policyRows.filter(
+    (r) => trustFilter === "all" || (trustFilter === "trusted" ? r.trusted : !r.trusted),
+  );
+  const paged = usePagedList(visibleRows, 25);
   const filterLabel = !filter
     ? null
     : filter.conditionId
@@ -330,169 +440,271 @@ function FleetTrustPanel({
       : `Not compliant with: ${policies.find((p) => p.id === filter.policyId)?.name ?? "…"}`;
   const loading = results.some((r) => r.isLoading);
 
-  if (policies.length === 0) return null;
+  // Endpoint-level verdict: trusted only when every enabled policy it's assigned passes.
+  const endpointTrust = new Map<string, boolean>();
+  for (const r of rows) endpointTrust.set(r.agentId, (endpointTrust.get(r.agentId) ?? true) && r.trusted);
+  const trustedCount = [...endpointTrust.values()].filter(Boolean).length;
+  const notTrustedCount = endpointTrust.size - trustedCount;
+  const notAssessedCount = agents ? agents.filter((a) => !endpointTrust.has(a.id)).length : null;
+  const fleetTotal = agents?.length ?? endpointTrust.size;
+  const pct = (n: number) => (fleetTotal > 0 ? `${Math.round((n / fleetTotal) * 100)}%` : "0%");
 
-  const isActive = (f: FleetTrustFilter) =>
-    filter?.policyId === f?.policyId && filter?.conditionId === f?.conditionId && !!filter === !!f;
+  const selectedPolicy = filter ? policies.find((p) => p.id === filter.policyId) : undefined;
+  const selectedIndex = selectedPolicy ? policies.indexOf(selectedPolicy) : -1;
+  const selectedData = selectedIndex >= 0 ? results[selectedIndex]?.data : undefined;
+
+  function clearFilters() {
+    setFilter(null);
+    onTrustFilterChange("all");
+  }
 
   return (
-    <div className="panel">
-      <h2>Device trust — all enabled policies</h2>
-      <p className="hint">
-        Each policy tile shows how many assigned endpoints are not compliant. Click a policy to list those endpoints
-        and see its conditions below; click a condition to list only the endpoints failing it.
-      </p>
+    <>
+      <KpiStrip>
+        <Kpi
+          icon={ShieldCheck}
+          label="Trusted"
+          value={loading ? "…" : trustedCount}
+          suffix={`${pct(trustedCount)} of ${fleetTotal}`}
+          bar={[
+            { value: trustedCount, color: CHART_SEMANTIC.ok },
+            { value: notTrustedCount, color: CHART_SEMANTIC.critical },
+            { value: notAssessedCount ?? 0, color: CHART_SEMANTIC.neutral },
+          ]}
+          active={trustFilter === "trusted"}
+          onClick={() => onTrustFilterChange("trusted")}
+        />
+        <Kpi
+          icon={ShieldX}
+          label="Not trusted"
+          value={loading ? "…" : notTrustedCount}
+          valueTone={notTrustedCount > 0 ? "critical" : undefined}
+          suffix={pct(notTrustedCount)}
+          footer="failing or not yet scanned on at least one policy"
+          active={trustFilter === "not-trusted"}
+          onClick={() => onTrustFilterChange("not-trusted")}
+        />
+        <Kpi
+          icon={ShieldQuestion}
+          label="Not assessed"
+          value={loading || notAssessedCount === null ? "…" : notAssessedCount}
+          suffix={notAssessedCount === null ? undefined : pct(notAssessedCount)}
+          footer="no enabled policy assigned"
+        />
+      </KpiStrip>
 
-      <div className="tiles">
-        <div className={`tile ${filter === null ? "active" : ""}`} onClick={() => setFilter(null)}>
-          <div className="tile-label">All endpoints</div>
-          <div className="tile-value">{new Set(rows.map((r) => r.agentId)).size}</div>
-        </div>
-        {policies.map((p, i) => {
-          const agents = results[i]?.data?.agents ?? [];
-          const notCompliant = agents.filter((a) => !a.trusted).length;
-          return (
-            <div
-              key={p.id}
-              className={`tile ${notCompliant > 0 ? "accent-critical" : "accent-good"} ${isActive({ policyId: p.id }) ? "active" : ""}`}
-              onClick={() => setFilter({ policyId: p.id })}
-              title={`Show the endpoints not compliant with "${p.name}"`}
-            >
-              <div className="tile-label">Policy: {p.name} — not compliant</div>
-              <div className="tile-value">{results[i]?.data ? notCompliant : "…"}</div>
-              <div className="tile-label">of {agents.length} assigned</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {policies.map((p, i) => {
-        const data = results[i]?.data;
-        // Only the clicked policy's conditions, shown once a policy (or one of its
-        // conditions) is selected — "All endpoints" collapses them again.
-        if (filter?.policyId !== p.id || !data || data.conditions.length === 0) return null;
-        return (
-          <div key={p.id}>
-            <h3>Conditions — {p.name}</h3>
-            <div className="tiles">
-              {data.conditions.map((c) => {
-                const failing = data.agents.filter((a) => a.nonCompliantConditionIds.includes(c.id)).length;
-                return (
-                  <div
-                    key={c.id}
-                    className={`tile ${failing > 0 ? "accent-critical" : "accent-good"} ${isActive({ policyId: p.id, conditionId: c.id }) ? "active" : ""}`}
-                    onClick={() => setFilter({ policyId: p.id, conditionId: c.id })}
-                    title={`Show the endpoints failing "${c.title}"`}
-                  >
-                    <div className="tile-label">{c.title} — not compliant</div>
-                    <div className="tile-value">{failing}</div>
-                    <div className="tile-label">of {data.agents.length} assigned</div>
-                  </div>
-                );
+      {policies.length > 0 && (
+        <Row layout="21">
+          <Card
+            title="Compliance by policy"
+            hint="click a policy to list its non-compliant endpoints"
+            actions={
+              <Legend
+                items={[
+                  { label: "Compliant", color: CHART_SEMANTIC.ok },
+                  { label: "Not compliant", color: CHART_SEMANTIC.critical },
+                ]}
+              />
+            }
+          >
+            <CoverageTable
+              nameHeader="Policy"
+              managedHeader="Compliant"
+              rows={policies.map((p, i) => {
+                const data = results[i]?.data;
+                const assigned = data?.agents ?? [];
+                const notCompliant = assigned.filter((a) => !a.trusted).length;
+                return {
+                  key: p.id,
+                  name: p.name,
+                  sub: data ? `${notCompliant} not compliant of ${assigned.length} assigned` : "Loading…",
+                  segments: [
+                    { value: assigned.length - notCompliant, color: CHART_SEMANTIC.ok },
+                    { value: notCompliant, color: CHART_SEMANTIC.critical },
+                  ],
+                  managed: assigned.length - notCompliant,
+                  total: assigned.length,
+                  noData: !data ? "Loading…" : assigned.length === 0 ? "Not assigned to any endpoint yet" : undefined,
+                  onSelect: () => setFilter({ policyId: p.id }),
+                };
               })}
-            </div>
-          </div>
-        );
-      })}
+            />
+          </Card>
 
-      {filterLabel && (
-        <p>
-          <span className="filter-chip">
-            {filterLabel}{" "}
-            <button type="button" aria-label="Clear filter" onClick={() => setFilter(null)}>
-              ×
-            </button>
-          </span>
-        </p>
+          <Card
+            title={selectedPolicy ? `Conditions — ${selectedPolicy.name}` : "Conditions"}
+            hint={selectedPolicy ? "endpoints failing each condition" : undefined}
+          >
+            {/* Only the clicked policy's conditions, shown once a policy (or one of its
+                conditions) is selected — clearing the filter collapses them again. */}
+            {!selectedPolicy ? (
+              <EmptyState icon={ListChecks} title="Select a policy">
+                Click a policy on the left to see how many endpoints fail each of its conditions.
+              </EmptyState>
+            ) : !selectedData ? (
+              <Skeleton lines={3} />
+            ) : selectedData.conditions.length === 0 ? (
+              <EmptyState icon={ListChecks} title="No conditions in this policy">
+                Open the policy below and add conditions to start assessing endpoints.
+              </EmptyState>
+            ) : (
+              <RankedBars
+                total={selectedData.agents.length}
+                data={selectedData.conditions.map((c) => {
+                  const failing = selectedData.agents.filter((a) => a.nonCompliantConditionIds.includes(c.id)).length;
+                  return {
+                    label: c.title,
+                    value: failing,
+                    color: failing > 0 ? CHART_SEMANTIC.critical : CHART_SEMANTIC.ok,
+                    onSelect: () => setFilter({ policyId: selectedPolicy.id, conditionId: c.id }),
+                  };
+                })}
+              />
+            )}
+          </Card>
+        </Row>
       )}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Endpoint</th>
-            <th>Policy</th>
-            <th>Scanned</th>
-            <th>Compliant</th>
-            <th>Non-compliant</th>
-            <th>Error</th>
-            <th>Failing conditions</th>
-            <th>Trust status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleRows.map((r) => (
-            <tr key={`${r.policyId}-${r.agentId}`}>
-              <td>
-                <EndpointLabel hostname={r.hostname} agentId={r.agentId} />
-              </td>
-              <td>{r.policyName}</td>
-              <td>{r.scanned ? "Yes" : "Pending first scan"}</td>
-              <td>{r.passCount}</td>
-              <td>{r.failCount}</td>
-              <td>{r.errorCount}</td>
-              <td>
-                {r.nonCompliantConditionIds.length > 0
-                  ? r.nonCompliantConditionIds.map((id) => conditionTitleById.get(id) ?? "…").join(", ")
-                  : "—"}
-              </td>
-              <td>
-                <StatusBadge kind={r.trusted ? "pass" : "fail"} label={r.trusted ? "Trusted" : "Not trusted"} />
-              </td>
-            </tr>
-          ))}
-          {visibleRows.length === 0 && (
-            <tr>
-              <td colSpan={8}>
-                {loading
-                  ? "Loading…"
-                  : filter?.conditionId
-                    ? "Every endpoint assigned to this policy passes this condition."
-                    : filter
-                      ? "Every endpoint assigned to this policy is compliant."
-                      : "No enabled policy is assigned to any endpoint yet."}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+      <Card flush title="Device trust" hint="all enabled policies">
+        <Toolbar
+          right={
+            <Segmented
+              label="Trust status"
+              value={trustFilter}
+              onChange={onTrustFilterChange}
+              options={[
+                { value: "all", label: `All ${policyRows.length}` },
+                { value: "trusted", label: `Trusted ${policyRows.filter((r) => r.trusted).length}` },
+                { value: "not-trusted", label: `Not trusted ${policyRows.filter((r) => !r.trusted).length}` },
+              ]}
+            />
+          }
+        >
+          <FilterChips chips={filterLabel ? [{ key: "policy", label: filterLabel, onRemove: () => setFilter(null) }] : []} />
+        </Toolbar>
+
+        {loading && rows.length === 0 ? (
+          <div className="ep-cb">
+            <Skeleton />
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={ShieldCheck}
+            title="No enabled policy is assigned to any endpoint yet"
+            action={
+              policies.length === 0 ? (
+                <Button size="sm" icon={Plus} onClick={onNewPolicy}>
+                  New policy
+                </Button>
+              ) : undefined
+            }
+          >
+            {policies.length === 0
+              ? "Create a policy, add its conditions, then assign it to groups or endpoints."
+              : "Open a policy below and assign it to groups or endpoints."}
+          </EmptyState>
+        ) : visibleRows.length === 0 ? (
+          <EmptyState
+            icon={SearchX}
+            title="No endpoints match"
+            action={
+              <Button size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            }
+          >
+            {filter?.conditionId && trustFilter !== "trusted"
+              ? "Every endpoint assigned to this policy passes this condition."
+              : filter && trustFilter !== "trusted"
+                ? "Every endpoint assigned to this policy is compliant."
+                : `No endpoint/policy pair is ${trustFilter === "trusted" ? "trusted" : "not trusted"} with the current filters.`}
+          </EmptyState>
+        ) : (
+          <>
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Endpoint</th>
+                    <th scope="col">Policy</th>
+                    <th scope="col">Scanned</th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Compliant
+                    </th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Non-compliant
+                    </th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Error
+                    </th>
+                    <th scope="col">Failing conditions</th>
+                    <th scope="col">Trust status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.pageItems.map((r) => (
+                    <tr key={`${r.policyId}-${r.agentId}`}>
+                      <td>
+                        <EndpointLabel hostname={r.hostname} agentId={r.agentId} />
+                      </td>
+                      <td>{r.policyName}</td>
+                      <td>{r.scanned ? "Yes" : <Pill tone="warn">Pending first scan</Pill>}</td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {r.passCount}
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {r.failCount}
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {r.errorCount}
+                      </td>
+                      <td>
+                        {r.nonCompliantConditionIds.length > 0 ? (
+                          <div className="app-badge-row">
+                            <Badge tone="crit">{r.nonCompliantConditionIds.length} failing</Badge>
+                            {r.nonCompliantConditionIds.map((id) => (
+                              <Tag key={id}>{conditionTitleById.get(id) ?? "…"}</Tag>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="app-muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <Badge tone={r.trusted ? "ok" : "crit"}>{r.trusted ? "Trusted" : "Not trusted"}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={paged.page}
+              pageSize={paged.pageSize}
+              total={paged.total}
+              noun="endpoint/policy pairs"
+              onPageChange={paged.setPage}
+              onPageSizeChange={paged.setPageSize}
+            />
+          </>
+        )}
+      </Card>
+    </>
   );
 }
 
 function PolicySettingsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
   const updatePolicy = useUpdateZeroTrustPolicy();
-  const [name, setName] = useState(policy.name);
-  const [description, setDescription] = useState(policy.description ?? "");
-
-  useEffect(() => {
-    setName(policy.name);
-    setDescription(policy.description ?? "");
-  }, [policy.id, policy.name, policy.description]);
-
-  function handleSave(e: FormEvent) {
-    e.preventDefault();
-    updatePolicy.mutate({ id: policy.id, name, description: description.trim() || null });
-  }
-
   return (
-    <form className="card accent-blue" onSubmit={handleSave}>
-      <h2>Policy settings</h2>
-      <label>
-        Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label>
-        Description
-        <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      {updatePolicy.isError && <p className="error-text">{(updatePolicy.error as Error).message}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <button type="submit" disabled={updatePolicy.isPending || !name.trim()}>
-          {updatePolicy.isPending ? "Saving…" : "Save policy"}
-        </button>
-        {updatePolicy.isSuccess && <span style={{ color: "var(--online)", fontSize: "0.85rem" }}>Saved</span>}
-      </div>
-    </form>
+    <PolicySettingsForm
+      policyId={policy.id}
+      name={policy.name}
+      description={policy.description}
+      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values })}
+      pending={updatePolicy.isPending}
+      error={updatePolicy.error}
+      saved={updatePolicy.isSuccess}
+    />
   );
 }
 
@@ -551,121 +763,142 @@ function OverridePanel() {
   const canSubmit = selectedAgentIds.length > 0 && selectedConditionKeys.length > 0;
 
   return (
-    <div className="card accent-purple">
-      <h2>Policy check override (bulk)</h2>
-      <p>
-        Force specific policy checks to stop counting against selected devices' compliance verdict, regardless of
-        real posture — e.g. a known false positive while a fix rolls out. Applied "Force comply" only actually
-        touches devices currently failing the checked category; "Revoke override" is safe to run on all selected
-        devices even where nothing is active. Deliberately invisible everywhere else in the tool — no badge, no API
-        field, no CSV column — this is the only place to apply or revoke it.
-      </p>
+    <Card title="Policy check override (bulk)">
+      <div className="app-stack">
+        <p className="app-text">
+          Force specific policy checks to stop counting against selected devices' compliance verdict, regardless of
+          real posture — e.g. a known false positive while a fix rolls out. Applied "Force comply" only actually
+          touches devices currently failing the checked category; "Revoke override" is safe to run on all selected
+          devices even where nothing is active. Deliberately invisible everywhere else in the tool — no badge, no API
+          field, no CSV column — this is the only place to apply or revoke it.
+        </p>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
-        <label>
-          Filter by host
-          <input
-            type="text"
-            placeholder="Filter by hostname…"
-            value={hostnameFilter}
-            onChange={(e) => setHostnameFilter(e.target.value)}
-          />
-        </label>
-        <label>
-          Filter by user
-          <input
-            type="text"
-            placeholder="Filter by logged-on user…"
-            value={userFilter}
-            onChange={(e) => setUserFilter(e.target.value)}
-          />
-        </label>
-      </div>
-      <select
-        multiple
-        size={10}
-        style={{ width: "100%" }}
-        value={selectedAgentIds}
-        onChange={(e) => setSelectedAgentIds(Array.from(e.target.selectedOptions).map((o) => o.value))}
-      >
-        {filteredAgents.map((a) => (
-          <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
-        ))}
-      </select>
-      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Ctrl/Cmd-click or shift-click to select more than one.</p>
-
-      <fieldset>
-        <legend>Checks</legend>
-        {conditionKeys?.map((c) => (
-          <label key={c.conditionKey} className="checkbox-row">
+        <FormGrid>
+          <Field label="Filter by host" htmlFor="zt-override-host">
             <input
-              type="checkbox"
-              checked={selectedConditionKeys.includes(c.conditionKey)}
-              onChange={() => toggleConditionKey(c.conditionKey)}
+              id="zt-override-host"
+              className="ep-input"
+              type="text"
+              placeholder="Filter by hostname…"
+              value={hostnameFilter}
+              onChange={(e) => setHostnameFilter(e.target.value)}
             />
-            {c.title}
-          </label>
-        ))}
-        {conditionKeys?.length === 0 && <p>No conditions defined yet across any policy.</p>}
-      </fieldset>
+          </Field>
+          <Field label="Filter by user" htmlFor="zt-override-user">
+            <input
+              id="zt-override-user"
+              className="ep-input"
+              type="text"
+              placeholder="Filter by logged-on user…"
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Devices"
+            htmlFor="zt-override-devices"
+            span2
+            help={`Ctrl/Cmd-click or shift-click to select more than one.${selectedAgentIds.length > 0 ? ` ${selectedAgentIds.length} selected.` : ""}`}
+          >
+            <select
+              id="zt-override-devices"
+              className="ep-select"
+              multiple
+              size={10}
+              style={{ height: "auto" }}
+              value={selectedAgentIds}
+              onChange={(e) => setSelectedAgentIds(Array.from(e.target.selectedOptions).map((o) => o.value))}
+            >
+              {filteredAgents.map((a) => (
+                <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
+              ))}
+            </select>
+          </Field>
+        </FormGrid>
 
-      {(forceComply.isError || revoke.isError) && (
-        <p className="error-text">{((forceComply.error ?? revoke.error) as Error).message}</p>
-      )}
-      {lastResult && <p>{lastResult}</p>}
+        <div className="app-stack-sm">
+          <span className="app-subhead">Checks</span>
+          {conditionKeys && conditionKeys.length > 0 && (
+            <div className="app-check-grid">
+              {conditionKeys.map((c) => (
+                <Check
+                  key={c.conditionKey}
+                  checked={selectedConditionKeys.includes(c.conditionKey)}
+                  onChange={() => toggleConditionKey(c.conditionKey)}
+                  label={c.title}
+                />
+              ))}
+            </div>
+          )}
+          {conditionKeys?.length === 0 && (
+            <span className="ep-nodata">No conditions defined yet across any policy — add conditions to a policy first.</span>
+          )}
+        </div>
 
-      <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="button" onClick={handleForceComply} disabled={!canSubmit || forceComply.isPending}>
-          {forceComply.isPending ? "Applying…" : "Force comply"}
-        </button>
-        <button type="button" onClick={handleRevoke} disabled={!canSubmit || revoke.isPending}>
-          {revoke.isPending ? "Revoking…" : "Revoke override"}
-        </button>
+        {(forceComply.isError || revoke.isError) && (
+          <Alert tone="critical">{((forceComply.error ?? revoke.error) as Error).message}</Alert>
+        )}
+        {lastResult && <Alert tone="info">{lastResult}</Alert>}
+
+        <div className="app-actions-row app-end">
+          <Button onClick={handleRevoke} disabled={!canSubmit || revoke.isPending}>
+            {revoke.isPending ? "Revoking…" : "Revoke override"}
+          </Button>
+          <Button onClick={handleForceComply} disabled={!canSubmit || forceComply.isPending}>
+            {forceComply.isPending ? "Applying…" : "Force comply"}
+          </Button>
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
+const PAGE_DESCRIPTION =
+  'Define device-trust policies — a set of conditions checked directly on each assigned endpoint (OS/patch posture, firewall, disk encryption, required security agents, blacklisted processes). A device is "Trusted" only once every condition in the policy has been scanned and passes.';
+
 export default function ZeroTrustPage() {
-  const { data: policies } = useZeroTrustPolicies();
+  const { data: policies, isLoading, error, refetch } = useZeroTrustPolicies();
   const createPolicy = useCreateZeroTrustPolicy();
   const updatePolicy = useUpdateZeroTrustPolicy();
   const deletePolicy = useDeleteZeroTrustPolicy();
+  const confirm = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
 
-  // Dashboard deep link ?trust=not-trusted: with a single enabled policy, open the Device
-  // trust panel already filtered to that policy's non-compliant endpoints.
-  const [searchParams] = useSearchParams();
+  // Dashboard deep links: ?trust=trusted / ?trust=not-trusted preselect the trust filter on
+  // the Device trust table. ?trust=not-trusted with a single enabled policy also opens the
+  // table already filtered to that policy's non-compliant endpoints.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const trustParam = searchParams.get("trust");
+  const trustFilter: TrustFilter = trustParam === "trusted" ? "trusted" : trustParam === "not-trusted" ? "not-trusted" : "all";
   const enabledPolicies = policies?.filter((p) => p.enabled) ?? [];
   const initialFleetFilter: FleetTrustFilter =
-    searchParams.get("trust") === "not-trusted" && enabledPolicies.length === 1
+    trustParam === "not-trusted" && enabledPolicies.length === 1
       ? { policyId: enabledPolicies[0].id }
       : null;
 
-  const { data: policy } = useZeroTrustPolicy(selectedId);
-
-  function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    createPolicy.mutate(
-      { name, description: description.trim() || null },
-      {
-        onSuccess: (result) => {
-          setSelectedId(result.id);
-          setName("");
-          setDescription("");
-        },
-      },
-    );
+  function setTrustFilter(value: TrustFilter) {
+    const next = new URLSearchParams(searchParams);
+    if (value === "all") next.delete("trust");
+    else next.set("trust", value);
+    setSearchParams(next, { replace: true });
   }
+
+  const { data: policy } = useZeroTrustPolicy(selectedId);
 
   function toggleEnabled(id: string, enabled: boolean) {
     updatePolicy.mutate({ id, enabled });
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
+    const confirmed = await confirm({
+      title: `Delete policy "${name}"?`,
+      body: "Its conditions stop counting toward the trust status of every assigned endpoint. This cannot be undone.",
+      confirmLabel: "Delete policy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     deletePolicy.mutate(id, {
       onSuccess: () => {
         if (selectedId === id) setSelectedId(undefined);
@@ -673,91 +906,162 @@ export default function ZeroTrustPage() {
     });
   }
 
-  return (
-    <div>
-      <h1>Zero Trust</h1>
-      <p>
-        Define device-trust policies — a set of conditions checked directly on each assigned endpoint (OS/patch
-        posture, firewall, disk encryption, required security agents, blacklisted processes). A device is "Trusted"
-        only once every condition in the policy has been scanned and passes.
-      </p>
+  const header = (
+    <PageHeader
+      title="Zero Trust"
+      description={PAGE_DESCRIPTION}
+      actions={
+        <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+          New policy
+        </Button>
+      }
+    />
+  );
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th style={{ width: "3rem" }}>Enabled</th>
-            <th>Name</th>
-            <th>Conditions</th>
-            <th>Assigned endpoints</th>
-            <th>Compliance</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies?.map((p) => (
-            <tr key={p.id} className="clickable-row" onClick={() => setSelectedId(p.id)}>
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={p.enabled}
-                  onChange={(e) => toggleEnabled(p.id, e.target.checked)}
-                  title="Enabled — paused policies are skipped entirely and don't affect any device's trust status"
-                />
-              </td>
-              <td>{p.name}</td>
-              <td>{p.conditionCount}</td>
-              <td>{p.assignedAgentCount}</td>
-              <td>{p.compliancePercent != null ? `${p.compliancePercent}%` : "—"}</td>
-              <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p.id);
-                  }}
-                  disabled={deletePolicy.isPending}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {policies?.length === 0 && (
-            <tr>
-              <td colSpan={6}>No policies yet.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  if (isLoading) {
+    return (
+      <>
+        {header}
+        <Card>
+          <Skeleton lines={6} />
+        </Card>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {header}
+
+      {!!error && (
+        <Alert tone="critical" title="Couldn't load Zero Trust policies" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+          {(error as Error).message}
+        </Alert>
+      )}
 
       {/* Mounted once policies have loaded, so the deep-link initial filter is computed from real data. */}
-      {policies && <FleetTrustPanel policies={enabledPolicies} initialFilter={initialFleetFilter} />}
+      {policies && (
+        <FleetTrust
+          policies={enabledPolicies}
+          initialFilter={initialFleetFilter}
+          trustFilter={trustFilter}
+          onTrustFilterChange={setTrustFilter}
+          onNewPolicy={() => setCreating(true)}
+        />
+      )}
 
-      <form className="panel" onSubmit={handleCreate}>
-        <h2>New policy</h2>
-        <label>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Description
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        {createPolicy.isError && <p className="error-text">{(createPolicy.error as Error).message}</p>}
-        <button type="submit" disabled={createPolicy.isPending || !name.trim()}>
-          {createPolicy.isPending ? "Creating…" : "Create policy"}
-        </button>
-      </form>
+      {policies && (
+        <Card flush title="Policies" hint={`${policies.length} total`}>
+          {policies.length === 0 ? (
+            <EmptyState
+              icon={ShieldCheck}
+              title="No Zero Trust policies yet"
+              action={
+                <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+                  New policy
+                </Button>
+              }
+            >
+              Create a policy, add the conditions a device must pass, then assign it to groups or endpoints.
+            </EmptyState>
+          ) : (
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Policy</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Conditions
+                    </th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Assigned endpoints
+                    </th>
+                    <th scope="col" style={{ textAlign: "right" }}>
+                      Compliance
+                    </th>
+                    <th scope="col">
+                      <span className="app-vh">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {policies.map((p) => (
+                    <tr key={p.id} className={`app-clickable ${p.id === selectedId ? "ep-sel" : ""}`} onClick={() => setSelectedId(p.id)}>
+                      <td className="ep-host">
+                        <b>{p.name}</b>
+                        {p.description && <span className="app-row-sub">{p.description}</span>}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <span title="Enabled — paused policies are skipped entirely and don't affect any device's trust status">
+                          <Switch
+                            checked={p.enabled}
+                            onChange={(enabled) => toggleEnabled(p.id, enabled)}
+                            label={p.enabled ? "Enabled" : "Paused"}
+                          />
+                        </span>
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {p.conditionCount}
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {p.assignedAgentCount}
+                      </td>
+                      <td className="ep-num" style={{ textAlign: "right" }}>
+                        {p.compliancePercent != null ? `${p.compliancePercent}%` : <span className="app-muted">—</span>}
+                      </td>
+                      <td>
+                        <div className="app-cell-actions">
+                          <RowMenu
+                            label={`Actions for ${p.name}`}
+                            items={[
+                              { label: "Open policy", icon: Pencil, onSelect: () => setSelectedId(p.id) },
+                              {
+                                label: "Delete policy",
+                                icon: Trash2,
+                                danger: true,
+                                dividerBefore: true,
+                                disabled: deletePolicy.isPending,
+                                onSelect: () => handleDelete(p.id, p.name),
+                              },
+                            ]}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {policy && (
-        <>
-          <PolicySettingsPanel policy={policy} />
-          <ConditionsPanel policy={policy} />
-          <AssignmentPanel policyId={policy.id} />
-        </>
+        <PolicyDetail
+          policyId={policy.id}
+          name={policy.name}
+          enabled={policy.enabled}
+          meta={`${policy.conditions.length} ${policy.conditions.length === 1 ? "condition" : "conditions"} · ${policy.assignedAgentCount} assigned`}
+          onClose={() => setSelectedId(undefined)}
+          tabs={[
+            { value: "conditions", label: `Conditions (${policy.conditions.length})`, content: <ConditionsPanel policy={policy} /> },
+            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+            { value: "settings", label: "Settings", content: <PolicySettingsPanel policy={policy} /> },
+          ]}
+        />
       )}
 
       <OverridePanel />
-    </div>
+
+      {creating && (
+        <NewPolicyDialog
+          onClose={() => setCreating(false)}
+          pending={createPolicy.isPending}
+          error={createPolicy.error}
+          onCreate={(values) => createPolicy.mutateAsync(values).then((result) => setSelectedId(result.id))}
+        />
+      )}
+    </>
   );
 }

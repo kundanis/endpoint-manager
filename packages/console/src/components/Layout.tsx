@@ -151,38 +151,24 @@ export default function Layout() {
   const location = useLocation();
 
   const matchedModule = NAV_MODULES.find((m) => isModuleActive(location.pathname, m));
-  const activeModule = matchedModule ?? NAV_MODULES[0];
   const activeItem = matchedModule?.items?.find((item) => pathMatches(location.pathname, item.path));
-  // Every module starts minimized, including whichever one owns the landing route (e.g.
-  // "/" -> "/endpoints" -> Endpoint Manager) — the active module button is still
-  // highlighted via isActive below, just collapsed until clicked.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const isFirstRender = useRef(true);
+  // Accordion (COMPONENTS.md §2): at most one module open. The module that owns the current
+  // page opens on load and whenever you navigate into it, so you can always see where you
+  // are; opening another module closes the rest.
+  const [expandedKey, setExpandedKey] = useState<string | null>(() => (matchedModule?.items ? matchedModule.key : null));
   // Below 960px the sidebar is a drawer (ep-open), toggled from the top bar.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Whichever module you navigate INTO after the initial load auto-expands — doesn't
-  // collapse others, just guarantees you can see where you are once you've moved around.
-  // Skipped on the very first render so the landing page doesn't force its module open.
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    setExpanded((prev) => (prev.has(activeModule.key) ? prev : new Set(prev).add(activeModule.key)));
-  }, [activeModule.key]);
+    if (matchedModule?.items) setExpandedKey(matchedModule.key);
+  }, [matchedModule?.key, matchedModule?.items]);
 
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
 
   function toggleModule(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setExpandedKey((prev) => (prev === key ? null : key));
   }
 
   const navModules = NAV_MODULES.filter((module) => !module.superAdminOnly || me?.role === "SUPER_ADMIN")
@@ -201,7 +187,7 @@ export default function Layout() {
       );
     }
 
-    const isExpanded = expanded.has(module.key);
+    const isExpanded = expandedKey === module.key;
     const locked = isModuleLocked(module, licenseStatus);
     const ungranted = isModuleUngranted(module, me);
     const Chevron = isExpanded ? ChevronDown : ChevronRight;

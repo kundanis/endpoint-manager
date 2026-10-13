@@ -26,7 +26,7 @@ The order is fonts → `tokens/tokens.css` → `css/meridian.css` → `src/index
 | 1 Foundations | Done: fonts, tokens, meridian.css, Lucide, chart palette, legacy classes re-themed to tokens |
 | 2 App shell | Done: `.ep-sb` sidebar (Operations/Administration), `.ep-tb` top bar with breadcrumb and avatar menu (Log out moved there), `.ep-pg`, ≤960px drawer. Login page rebuilt as a Meridian card |
 | 3 Shared components | Done: `src/components/ui/` (see below). All `window.confirm`/`alert`/`prompt` calls replaced with Meridian modals and toasts; `StatusBadge` now renders `ep-badge` |
-| 4 Pages | In progress. Done: Dashboard. All other pages still render legacy markup through the bridge |
+| 4 Pages | Done: every route renders Meridian markup. Legacy CSS bridge and legacy classes removed from `src/index.css` |
 
 ## Shared components (`src/components/ui`, import from `../components/ui`)
 
@@ -42,43 +42,44 @@ The order is fonts → `tokens/tokens.css` → `css/meridian.css` → `src/index
 | Charts | `Donut` (2–3 parts only), `RankedBars` (`tail` for long-tail "Other"), `CoverageTable`, `Legend` |
 | Dialogs | `useConfirm()`, `usePrompt()` (with `validate`), `useToast()`; `<DialogProvider>` is mounted in `main.tsx` |
 
-Shared components can be used inside legacy pages: the legacy bridge skips anything inside an `ep-*` component.
+Also shared: `components/policy.tsx` (SectionHeader, NewPolicyDialog, PolicyDetail tabs, PolicySettingsForm, AssignmentEditor, SyncStatusTable) for every policy page; `TaskStatus`/`TaskCounts` for job states; `format.ts` (formatRelative, formatDateTime, formatDate, formatTime, formatBytes); `Collapsible` (Meridian card); `EndpointCheckboxList` (picker block).
+
+Templates to copy for new pages: `pages/DashboardPage.tsx` (A), `pages/AgentsPage.tsx` (B), `pages/WebBlockPage.tsx` (policy list → detail), `pages/AgentDetailPage.tsx` (D), `pages/AssetSettingsPage.tsx` (E).
 
 ## Page → pattern map
 
 | Route | Page | Pattern |
 |---|---|---|
 | /dashboard | DashboardPage | A (migrated) |
-| /endpoints | AgentsPage | B |
-| /endpoints/:id | AgentDetailPage | D |
-| /enrollment-tokens | EnrollmentTokensPage | B + C |
-| /commands | CommandsPage | B + C |
-| /packages | PackagesPage | B + C |
-| /agent-updates | AgentUpdatesPage | B (KPI strip) |
-| /asset-settings | AssetSettingsPage | E |
-| /network-scan | NetworkScanPage | A (landing) + B |
-| /software-licenses | SoftwareLicensesPage | B |
-| /vulnerabilities | VulnerabilitiesPage | B (severity KPI strip) |
-| /patches | PatchesPage | B |
-| /security-config | SecurityConfigPage | B + C |
-| /zero-trust | ZeroTrustPage | A-lite |
-| /edr | EdrPage (hidden from nav) | B |
-| /data-discovery | DataDiscoveryPage | B |
-| /dlp/* | DlpPage, DlpContentPoliciesPage, EmailAttachmentBlockPage | B with tabs; rules use C |
-| /data-movement | DataMovementPage | B |
-| /epm/* | EpmPage + 6 tab pages (App control, Web, PII, Command, IP, USB) | B with tabs; rules use C |
-| /access-exceptions | AccessExceptionsPage | B |
-| /user-productivity | UserProductivityPage | A |
-| /licensing | LicenseActivationPage | C |
-| /admin-users | AdminUsersPage | B + C |
+| /endpoints | AgentsPage | B (migrated) |
+| /endpoints/:id | AgentDetailPage | D (migrated) |
+| /enrollment-tokens | EnrollmentTokensPage | B + C (migrated) |
+| /commands | CommandsPage | B + C (migrated) |
+| /packages | PackagesPage | B + C (migrated) |
+| /agent-updates | AgentUpdatesPage | B (KPI strip) (migrated) |
+| /asset-settings | AssetSettingsPage | E (migrated) |
+| /network-scan | NetworkScanPage | A (landing) + B (migrated) |
+| /software-licenses | SoftwareLicensesPage | B (migrated) |
+| /vulnerabilities | VulnerabilitiesPage | B (severity KPI strip) (migrated) |
+| /patches | PatchesPage | B (migrated) |
+| /security-config | SecurityConfigPage | B + C (migrated) |
+| /zero-trust | ZeroTrustPage | A-lite (migrated) |
+| /edr | EdrPage (hidden from nav) | B (migrated) |
+| /data-discovery | DataDiscoveryPage | B (migrated) |
+| /dlp/* | DlpPage, DlpContentPoliciesPage, EmailAttachmentBlockPage | B with tabs; rules use C (migrated) |
+| /data-movement | DataMovementPage | B (migrated) |
+| /epm/* | EpmPage + 6 tab pages (App control, Web, PII, Command, IP, USB) | B with tabs; rules use C (migrated) |
+| /access-exceptions | AccessExceptionsPage | B (migrated) |
+| /user-productivity | UserProductivityPage | A (migrated) |
+| /licensing | LicenseActivationPage | C (migrated) |
+| /admin-users | AdminUsersPage | B + C (migrated) |
 | /login | LoginPage | Done (Meridian card) |
 
 ## Gaps and risks
 
 - **Top-bar search** is left out because the console has no global or endpoint free-text search to connect it to. Add it when that search exists.
 - **Notifications bell** is left out because there is no alerts feed.
-- **Nav expand behaviour** keeps the existing multi-expand. COMPONENTS.md §2 asks for one module at a time; changing that is a behaviour decision.
+- **Nav** is an accordion (one module open at a time) and the current module opens on load.
 - **Endpoint offline dot** changed from red to neutral grey, per the Meridian rule "offline = `--ep-neutral`". The old code had deliberately used red.
-- **Legacy buttons** are now secondary (white) by default, and only `type="submit"` buttons stay brand red. This replaces the old look where every button was red.
 - **Dashboard slots left out (no data in the API):** KPI trend deltas ("+6 enrolled this week", "+9 since yesterday"), open CVEs by severity, and the per-endpoint "Endpoints needing attention" table. Each needs a new field on `/admin/dashboard/summary`. Unmanaged devices (real data) fills the full-width table slot instead.
 - Recharts was removed with the dashboard migration; the JS bundle went from about 930 kB to 620 kB. Pages still aren't code-split, so the large-chunk warning remains.
