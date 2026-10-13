@@ -1,369 +1,443 @@
-import { useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Monitor, Network, Radar, ShieldCheck, TriangleAlert, Wifi } from "lucide-react";
 import { useDashboardSummary, useIsItemHidden } from "../api/hooks";
-import { CHART_SEMANTIC, CHART_SERIES, CHART_SURFACE } from "../chartTheme";
+import type { DashboardSummary } from "../api/types";
+import { CHART_SEMANTIC, CHART_SERIES } from "../chartTheme";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CoverageTable,
+  Donut,
+  EmptyState,
+  Kpi,
+  KpiStrip,
+  Legend,
+  PageHeader,
+  Pagination,
+  RankedBars,
+  Row,
+  Skeleton,
+  type ChartDatum,
+  type CoverageRow,
+} from "../components/ui";
 
-// Meridian chart palette (chartTheme.ts / DESIGN_SYSTEM.md §6): categorical series in fixed
-// order, and the long-tail "Other" bucket always neutral.
-const CATEGORICAL_HUES = CHART_SERIES;
-const OTHER_HUE = CHART_SEMANTIC.neutral;
-const MAX_CATEGORICAL_SLICES = 5;
+// Pattern A — overview dashboard (design-system/docs/PAGE_PATTERNS.md, reference/dashboard.html).
 
-interface DonutDatum {
-  name: string;
-  value: number;
-  color: string;
-  // Where clicking this slice (or its legend entry) goes — the module page with the
-  // matching filter applied, so the dashboard is a jumping-off point, not a dead end.
-  to?: string;
-}
+// The server's label for endpoints whose OS edition couldn't be read (dashboard.service.ts).
+const UNKNOWN_OS_LABEL = "Unknown";
+const UNMANAGED_PAGE_SIZE = 10;
 
 function percentOf(value: number, total: number): number {
   return total > 0 ? Math.round((value / total) * 100) : 0;
 }
 
-// Keyboard activation for the non-button elements below that act as links.
-function onActivateKey(go: () => void) {
-  return (e: KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      go();
-    }
-  };
+function relativeTime(from: number, now: number): string {
+  const minutes = Math.floor((now - from) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  return `${Math.floor(minutes / 60)} h ago`;
 }
 
-function DonutChart({ title, data, totalLabel }: { title: string; data: DonutDatum[]; totalLabel: string }) {
-  const navigate = useNavigate();
-  const total = data.reduce((sum, d) => sum + d.value, 0);
+// Re-render periodically so "Updated N min ago" stays truthful between pushes.
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
 
+function LoadingDashboard() {
   return (
-    <div className="panel dashboard-chart-card">
-      <h3>{title}</h3>
-      {total === 0 ? (
-        <p>No data yet.</p>
-      ) : (
-        <>
-          <div className="dashboard-donut-wrap">
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={55}
-                  outerRadius={82}
-                  paddingAngle={2}
-                  stroke={CHART_SURFACE}
-                  strokeWidth={2}
-                  isAnimationActive={false}
-                >
-                  {data.map((d) => (
-                    <Cell
-                      key={d.name}
-                      fill={d.color}
-                      className={d.to ? "dashboard-link" : undefined}
-                      onClick={d.to ? () => navigate(d.to!) : undefined}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value, name) => [`${value} (${percentOf(Number(value), total)}%)`, name]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="dashboard-donut-center">
-              <div className="dashboard-donut-center-value">{total}</div>
-              <div className="dashboard-donut-center-label">{totalLabel}</div>
-            </div>
+    <>
+      <PageHeader title="Dashboard" description="Loading fleet summary…" />
+      <KpiStrip>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="ep-card ep-kpi">
+            <Skeleton lines={3} />
           </div>
-          <ul className="dashboard-legend">
-            {data.map((d) =>
-              d.to ? (
-                <li
-                  key={d.name}
-                  className="dashboard-link"
-                  role="link"
-                  tabIndex={0}
-                  onClick={() => navigate(d.to!)}
-                  onKeyDown={onActivateKey(() => navigate(d.to!))}
-                >
-                  <span className="dashboard-legend-swatch" style={{ background: d.color }} />
-                  {d.name} — {d.value} ({percentOf(d.value, total)}%)
-                </li>
-              ) : (
-                <li key={d.name}>
-                  <span className="dashboard-legend-swatch" style={{ background: d.color }} />
-                  {d.name} — {d.value} ({percentOf(d.value, total)}%)
-                </li>
-              ),
-            )}
-          </ul>
-        </>
-      )}
-    </div>
+        ))}
+      </KpiStrip>
+      <Row layout="21">
+        <Card title="Agent coverage by VLAN">
+          <Skeleton />
+        </Card>
+        <Card title="Security posture">
+          <Skeleton />
+        </Card>
+      </Row>
+    </>
   );
 }
 
-// A summary tile that opens `to` on click/Enter; without `to` it's a plain, static tile.
-function LinkTile({ label, value, accent = "", to }: { label: string; value: number; accent?: string; to?: string }) {
-  const navigate = useNavigate();
-  if (!to) {
-    return (
-      <div className={`tile static ${accent}`}>
-        <div className="tile-label">{label}</div>
-        <div className="tile-value">{value}</div>
-      </div>
-    );
-  }
+function CoverageCard({ summary, onOpenNetworkScan }: { summary: DashboardSummary; onOpenNetworkScan: () => void }) {
+  // Largest networks first; never-scanned VLANs last, with a call to action instead of a bar.
+  const vlans = [...summary.networkDeviceSummary].sort((a, b) => {
+    if (a.hasScan !== b.hasScan) return a.hasScan ? -1 : 1;
+    return b.total - a.total;
+  });
+  const rows: CoverageRow[] = vlans.map((v) => ({
+    key: v.vlanId,
+    name: v.vlanName,
+    sub: v.hasScan ? `${v.total} hosts` : "not scanned",
+    segments: [
+      { value: v.managed, color: CHART_SEMANTIC.ok },
+      { value: v.unmanaged, color: CHART_SEMANTIC.warn },
+    ],
+    managed: v.managed,
+    total: v.total,
+    noData: v.hasScan ? (v.total === 0 ? "Latest scan found no hosts" : undefined) : "No scan data yet — schedule a network scan",
+    onSelect: onOpenNetworkScan,
+  }));
+
   return (
-    <div
-      className={`tile ${accent}`}
-      role="link"
-      tabIndex={0}
-      onClick={() => navigate(to)}
-      onKeyDown={onActivateKey(() => navigate(to))}
+    <Card
+      title="Agent coverage by VLAN"
+      hint="managed vs. unenrolled hosts from latest scan"
+      actions={
+        rows.length > 0 && (
+          <Legend
+            items={[
+              { label: "Managed", color: CHART_SEMANTIC.ok },
+              { label: "Unmanaged", color: CHART_SEMANTIC.warn },
+            ]}
+          />
+        )
+      }
     >
-      <div className="tile-label">{label}</div>
-      <div className="tile-value">{value}</div>
-    </div>
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={Radar}
+          title="No VLANs set up yet"
+          action={
+            <Button size="sm" onClick={onOpenNetworkScan}>
+              Set up network scan
+            </Button>
+          }
+        >
+          Add a VLAN on the Network scan page to see which hosts have the agent.
+        </EmptyState>
+      ) : (
+        <CoverageTable nameHeader="Network" rows={rows} />
+      )}
+    </Card>
+  );
+}
+
+function PostureCard({
+  summary,
+  showVulnerabilities,
+  showZeroTrust,
+  goTo,
+  endpointsLink,
+}: {
+  summary: DashboardSummary;
+  showVulnerabilities: boolean;
+  showZeroTrust: boolean;
+  goTo: (to: string | undefined) => (() => void) | undefined;
+  endpointsLink: (query?: string) => string | undefined;
+}) {
+  const { trusted, notTrusted, notAssigned } = summary.trustSummary;
+  const trustTotal = trusted + notTrusted + notAssigned;
+  const vulnerabilityData: ChartDatum[] = [
+    // "Clean" has no CVEs to show, so it lists the clean endpoints instead.
+    { label: "Clean", value: summary.vulnerabilitySummary.clean, color: CHART_SEMANTIC.ok, onSelect: goTo(endpointsLink("?vuln=none")) },
+    {
+      label: "Vulnerable",
+      value: summary.vulnerabilitySummary.withVulnerabilities,
+      color: CHART_SEMANTIC.critical,
+      onSelect: goTo("/vulnerabilities"),
+    },
+  ];
+  const trustSegments = [
+    { label: "Trusted", value: trusted, color: CHART_SEMANTIC.ok, to: "/zero-trust?trust=trusted" },
+    { label: "Not trusted", value: notTrusted, color: CHART_SEMANTIC.critical, to: "/zero-trust?trust=not-trusted" },
+    // No enabled policy covers these, so it opens the page itself (where policies get assigned).
+    { label: "Not assessed", value: notAssigned, color: CHART_SEMANTIC.neutral, to: "/zero-trust" },
+  ];
+
+  return (
+    <Card
+      title={showVulnerabilities ? "Vulnerability exposure" : "Zero Trust status"}
+      actions={
+        showVulnerabilities && (
+          <Link className="ep-link" to="/vulnerabilities">
+            View all
+          </Link>
+        )
+      }
+    >
+      {showVulnerabilities && <Donut centerLabel="endpoints" data={vulnerabilityData} />}
+      {showZeroTrust && (
+        <div className="app-posture-section">
+          {showVulnerabilities && <div className="app-posture-title">Zero Trust status</div>}
+          {trustTotal === 0 ? (
+            <span className="ep-nodata">No endpoints enrolled yet</span>
+          ) : (
+            <>
+              <div className="ep-sbar">
+                {trustSegments.map((s) => (
+                  <i key={s.label} style={{ width: `${(s.value / trustTotal) * 100}%`, background: s.color }} />
+                ))}
+              </div>
+              <div className="ep-legend">
+                {trustSegments.map((s) => (
+                  <Link key={s.label} to={s.to} className="app-legend-link">
+                    <i className="ep-sw" style={{ background: s.color }} />
+                    {s.label} <b className="ep-num">{s.value}</b>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function UnmanagedDevicesCard({ summary, onOpenNetworkScan }: { summary: DashboardSummary; onOpenNetworkScan: () => void }) {
+  const [page, setPage] = useState(1);
+  const hosts = summary.unmanagedHosts;
+  const anyScanned = summary.networkDeviceSummary.some((v) => v.hasScan);
+  const pageCount = Math.max(1, Math.ceil(hosts.length / UNMANAGED_PAGE_SIZE));
+  // Live updates can shrink the list under the current page.
+  const currentPage = Math.min(page, pageCount);
+  const visible = hosts.slice((currentPage - 1) * UNMANAGED_PAGE_SIZE, currentPage * UNMANAGED_PAGE_SIZE);
+
+  return (
+    <Card
+      flush
+      title="Unmanaged devices"
+      hint="seen by network scan without an agent"
+      actions={
+        <Link className="ep-link" to="/network-scan">
+          Open network scan
+        </Link>
+      }
+    >
+      {hosts.length === 0 ? (
+        <EmptyState
+          icon={ShieldCheck}
+          title={anyScanned ? "No unmanaged devices" : "No scan results yet"}
+          action={
+            <Button size="sm" onClick={onOpenNetworkScan}>
+              Run network scan
+            </Button>
+          }
+        >
+          {anyScanned
+            ? "Every host found on a scanned VLAN has the agent. Scan again after network changes."
+            : "Run a network scan to find devices on your network that don't have the agent."}
+        </EmptyState>
+      ) : (
+        <>
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Device</th>
+                <th scope="col">MAC address</th>
+                <th scope="col">VLAN</th>
+                <th scope="col">Open ports</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((h) => (
+                <tr key={`${h.vlanName}-${h.ipAddress}`}>
+                  <td className="ep-host">
+                    <b className={h.hostname ? undefined : "app-unnamed"}>{h.hostname ?? "Unknown hostname"}</b>
+                    <small>{h.ipAddress}</small>
+                  </td>
+                  <td className="ep-mono">{h.macAddress ?? "—"}</td>
+                  <td>{h.vlanName}</td>
+                  <td className="ep-mono">{h.openPorts.length > 0 ? h.openPorts.join(", ") : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {hosts.length > UNMANAGED_PAGE_SIZE && (
+            <Pagination page={currentPage} pageSize={UNMANAGED_PAGE_SIZE} total={hosts.length} noun="devices" onPageChange={setPage} />
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
 export default function DashboardPage() {
-  const { data: summary } = useDashboardSummary();
-  const [showCoverageDetail, setShowCoverageDetail] = useState(false);
+  const navigate = useNavigate();
+  const { data: summary, isLoading, isError, error, refetch, dataUpdatedAt } = useDashboardSummary();
+  const now = useNow(30000);
   // Links into Endpoints are dropped (not redirected) when that page is hidden.
   const endpointsHidden = useIsItemHidden("/endpoints");
   const endpointsLink = (query = "") => (endpointsHidden ? undefined : `/endpoints${query}`);
   const vulnerabilitiesHidden = useIsItemHidden("/vulnerabilities");
   const zeroTrustHidden = useIsItemHidden("/zero-trust");
-  // Both coverage sections below are built from Network Scan results.
+  // Coverage, unmanaged devices and the scan action are all built from Network Scan results.
   const networkScanHidden = useIsItemHidden("/network-scan");
 
-  if (!summary) return <p>Loading dashboard…</p>;
+  const goTo = (to: string | undefined) => (to ? () => navigate(to) : undefined);
+  const openNetworkScan = () => navigate("/network-scan");
 
-  const statusData: DonutDatum[] = [
-    { name: "Online", value: summary.onlineCount, color: CHART_SEMANTIC.ok, to: endpointsLink("?status=ONLINE") },
-    { name: "Offline", value: summary.offlineCount, color: CHART_SEMANTIC.neutral, to: endpointsLink("?status=OFFLINE") },
+  if (isLoading) return <LoadingDashboard />;
+  if (isError || !summary) {
+    return (
+      <>
+        <PageHeader title="Dashboard" />
+        <Alert tone="critical" title="Couldn't load the dashboard" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+          {(error as Error | null)?.message ?? "The server didn't return a fleet summary."}
+        </Alert>
+      </>
+    );
+  }
+
+  const total = summary.totalAgents;
+  const { trusted, notTrusted, notAssigned } = summary.trustSummary;
+  const { agentsInstalled, discoveredByNetworkScan, notInstalled } = summary.agentCoverage;
+
+  const deviceTypeData: ChartDatum[] = [
+    { label: "Laptop", value: summary.deviceTypeCounts.LAPTOP, color: CHART_SERIES[0], onSelect: goTo(endpointsLink("?deviceType=LAPTOP")) },
+    { label: "Desktop", value: summary.deviceTypeCounts.DESKTOP, color: CHART_SERIES[1], onSelect: goTo(endpointsLink("?deviceType=DESKTOP")) },
+    { label: "Server", value: summary.deviceTypeCounts.SERVER, color: CHART_SERIES[2], onSelect: goTo(endpointsLink("?deviceType=SERVER")) },
   ];
 
-  const deviceTypeData: DonutDatum[] = [
-    { name: "Laptop", value: summary.deviceTypeCounts.LAPTOP, color: CATEGORICAL_HUES[0], to: endpointsLink("?deviceType=LAPTOP") },
-    { name: "Desktop", value: summary.deviceTypeCounts.DESKTOP, color: CATEGORICAL_HUES[1], to: endpointsLink("?deviceType=DESKTOP") },
-    { name: "Server", value: summary.deviceTypeCounts.SERVER, color: CATEGORICAL_HUES[2], to: endpointsLink("?deviceType=SERVER") },
-  ];
   const osLink = (label: string) => endpointsLink(`?os=${encodeURIComponent(label)}`);
+  const knownOs = summary.osCounts.filter((o) => o.label !== UNKNOWN_OS_LABEL);
+  const unknownOsCount = summary.osCounts.find((o) => o.label === UNKNOWN_OS_LABEL)?.count ?? 0;
+  // Ranked bars carry their own labels, so colour follows rank here (series 1 for the top
+  // OS); the unclassified tail is always neutral and always last.
+  const osData: ChartDatum[] = [...knownOs]
+    .sort((a, b) => b.count - a.count)
+    .map((o, i) => ({ label: o.label, value: o.count, color: CHART_SERIES[i % CHART_SERIES.length], onSelect: goTo(osLink(o.label)) }));
+  const osTail: ChartDatum | undefined =
+    unknownOsCount > 0
+      ? { label: "Unclassified", value: unknownOsCount, color: CHART_SEMANTIC.neutral, onSelect: goTo(osLink(UNKNOWN_OS_LABEL)) }
+      : undefined;
 
-  // Fixed alphabetical order (not by count) so an OS's color never shifts just because
-  // its rank changed — "color follows the entity, never its rank." Beyond the validated
-  // 5-slice categorical cap, the tail folds into "Other" rather than generating a 6th hue.
-  const sortedOs = [...summary.osCounts].sort((a, b) => a.label.localeCompare(b.label));
-  const osData: DonutDatum[] =
-    sortedOs.length <= MAX_CATEGORICAL_SLICES
-      ? sortedOs.map((o, i) => ({ name: o.label, value: o.count, color: CATEGORICAL_HUES[i], to: osLink(o.label) }))
-      : [
-          ...sortedOs
-            .slice(0, MAX_CATEGORICAL_SLICES - 1)
-            .map((o, i) => ({ name: o.label, value: o.count, color: CATEGORICAL_HUES[i], to: osLink(o.label) })),
-          {
-            // Several OSes folded together — no single filter matches, so the full list.
-            name: "Other",
-            value: sortedOs.slice(MAX_CATEGORICAL_SLICES - 1).reduce((sum, o) => sum + o.count, 0),
-            color: OTHER_HUE,
-            to: endpointsLink(),
-          },
-        ];
-
-  // Trust is per policy on the Zero Trust page; "Not assessed" means no enabled policy
-  // covers the endpoint, so it opens the page itself (where policies get assigned).
-  const trustData: DonutDatum[] = [
-    { name: "Trusted", value: summary.trustSummary.trusted, color: CHART_SEMANTIC.ok, to: "/zero-trust?trust=trusted" },
-    { name: "Not trusted", value: summary.trustSummary.notTrusted, color: CHART_SEMANTIC.critical, to: "/zero-trust?trust=not-trusted" },
-    { name: "Not assessed", value: summary.trustSummary.notAssigned, color: CHART_SEMANTIC.neutral, to: "/zero-trust" },
+  const connectivityData: ChartDatum[] = [
+    { label: "Online", value: summary.onlineCount, color: CHART_SEMANTIC.ok, onSelect: goTo(endpointsLink("?status=ONLINE")) },
+    { label: "Offline", value: summary.offlineCount, color: CHART_SEMANTIC.neutral, onSelect: goTo(endpointsLink("?status=OFFLINE")) },
   ];
 
-  // "Has vulnerabilities" opens the CVE list (where remediation happens); "Clean" has no
-  // CVEs to show, so it lists the clean endpoints instead.
-  const vulnerabilityData: DonutDatum[] = [
-    { name: "Clean", value: summary.vulnerabilitySummary.clean, color: CHART_SEMANTIC.ok, to: endpointsLink("?vuln=none") },
-    {
-      name: "Has vulnerabilities",
-      value: summary.vulnerabilitySummary.withVulnerabilities,
-      color: CHART_SEMANTIC.critical,
-      to: "/vulnerabilities",
-    },
-  ];
-
-  const scannedVlans = summary.networkDeviceSummary.filter((v) => v.hasScan);
+  const showPosture = !vulnerabilitiesHidden || !zeroTrustHidden;
+  const coverageCard = !networkScanHidden && <CoverageCard summary={summary} onOpenNetworkScan={openNetworkScan} />;
+  const postureCard = showPosture && (
+    <PostureCard
+      summary={summary}
+      showVulnerabilities={!vulnerabilitiesHidden}
+      showZeroTrust={!zeroTrustHidden}
+      goTo={goTo}
+      endpointsLink={endpointsLink}
+    />
+  );
 
   return (
-    <div>
-      <h1>Dashboard</h1>
+    <>
+      <PageHeader
+        title="Dashboard"
+        description={
+          <>
+            <span className="ep-live">Live</span>· <span className="ep-num">{total}</span> managed endpoints ·{" "}
+            {dataUpdatedAt ? `Updated ${relativeTime(dataUpdatedAt, now)}` : null}
+          </>
+        }
+        actions={
+          !networkScanHidden && (
+            <Link className="ep-btn ep-btn-primary" to="/network-scan">
+              <Radar size={15} strokeWidth={1.7} className="ep-ic" aria-hidden />
+              Run network scan
+            </Link>
+          )
+        }
+      />
 
-      <div className="tiles">
-        <LinkTile label="Total endpoints" value={summary.totalAgents} to={endpointsLink()} />
-        <LinkTile label="Online" value={summary.onlineCount} accent="accent-good" to={endpointsLink("?status=ONLINE")} />
+      <KpiStrip>
+        <Kpi
+          icon={Monitor}
+          label="Total endpoints"
+          value={total}
+          suffix="managed"
+          footer={`${summary.offlineCount} offline`}
+          to={endpointsLink()}
+        />
+        <Kpi
+          icon={Wifi}
+          label="Online now"
+          value={summary.onlineCount}
+          suffix={`${percentOf(summary.onlineCount, total)}%`}
+          bar={[
+            { value: summary.onlineCount, color: CHART_SEMANTIC.ok },
+            { value: summary.offlineCount, color: CHART_SEMANTIC.neutral },
+          ]}
+          to={endpointsLink("?status=ONLINE")}
+        />
         {!vulnerabilitiesHidden && (
-          // The endpoints that have open findings, each with its own count.
-          <LinkTile
+          <Kpi
+            icon={TriangleAlert}
             label="With vulnerabilities"
             value={summary.vulnerabilitySummary.withVulnerabilities}
-            accent={summary.vulnerabilitySummary.withVulnerabilities > 0 ? "accent-critical" : "accent-good"}
+            valueTone={summary.vulnerabilitySummary.withVulnerabilities > 0 ? "critical" : undefined}
+            suffix={`${percentOf(summary.vulnerabilitySummary.withVulnerabilities, total)}%`}
+            footer={`${summary.vulnerabilitySummary.clean} clean`}
             to={endpointsLink("?vuln=open")}
           />
         )}
         {!zeroTrustHidden && (
-          <LinkTile
-            label="Trusted"
-            value={summary.trustSummary.trusted}
-            accent="accent-good"
-            to="/zero-trust?trust=trusted"
+          <Kpi
+            icon={ShieldCheck}
+            label="Zero Trust assessed"
+            value={trusted + notTrusted}
+            suffix={`of ${total}`}
+            footer={
+              notAssigned > 0 ? (
+                <span className="ep-delta ep-warn">{notAssigned} not assessed</span>
+              ) : (
+                `${trusted} trusted · ${notTrusted} not trusted`
+              )
+            }
+            to="/zero-trust"
           />
         )}
-      </div>
-
-      <div className="dashboard-chart-grid">
-        <DonutChart title="Online vs offline" data={statusData} totalLabel="Endpoints" />
-        <DonutChart title="Device type" data={deviceTypeData} totalLabel="Endpoints" />
-        <DonutChart title="Operating system" data={osData} totalLabel="Endpoints" />
-        {!zeroTrustHidden && <DonutChart title="Zero Trust status" data={trustData} totalLabel="Endpoints" />}
-        {!vulnerabilitiesHidden && (
-          <DonutChart title="Vulnerability exposure" data={vulnerabilityData} totalLabel="Endpoints" />
+        {!networkScanHidden && (
+          <Kpi
+            icon={Network}
+            label="Unmanaged devices"
+            value={notInstalled}
+            valueTone={notInstalled > 0 ? "warning" : undefined}
+            suffix={`of ${discoveredByNetworkScan} seen`}
+            footer={`${agentsInstalled} with agent installed`}
+            to="/network-scan"
+          />
         )}
-      </div>
+      </KpiStrip>
 
-      {!networkScanHidden && (
-        <>
-          <h2>Agent coverage</h2>
-          <p>
-            Agents installed (enrolled endpoints) vs. endpoints seen by a Network Scan — the gap is unmanaged network
-            devices (routers, printers, unenrolled PCs) or endpoints on an un-scanned VLAN. Click a tile for the
-            breakdown.
-          </p>
-          <div className="tiles">
-            <div
-              className="tile static clickable-row"
-              onClick={() => setShowCoverageDetail((v) => !v)}
-            >
-              <div className="tile-label">Agents installed</div>
-              <div className="tile-value">{summary.agentCoverage.agentsInstalled}</div>
-            </div>
-            <div
-              className="tile static clickable-row"
-              onClick={() => setShowCoverageDetail((v) => !v)}
-            >
-              <div className="tile-label">Discovered by network scan</div>
-              <div className="tile-value">{summary.agentCoverage.discoveredByNetworkScan}</div>
-            </div>
-            <div
-              className={`tile static clickable-row ${summary.agentCoverage.notInstalled > 0 ? "accent-critical" : "accent-good"}`}
-              onClick={() => setShowCoverageDetail((v) => !v)}
-            >
-              <div className="tile-label">Not installed (unmanaged)</div>
-              <div className="tile-value">{summary.agentCoverage.notInstalled}</div>
-            </div>
-          </div>
-
-          {showCoverageDetail && (
-            <div className="panel">
-              <h3>By VLAN</h3>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>VLAN</th>
-                    <th>Scanned</th>
-                    <th>Total hosts</th>
-                    <th>Managed (agent installed)</th>
-                    <th>Unmanaged</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.networkDeviceSummary.map((v) => (
-                    <tr key={v.vlanId}>
-                      <td>{v.vlanName}</td>
-                      <td>{v.hasScan ? "Yes" : "Not yet scanned"}</td>
-                      <td>{v.total}</td>
-                      <td>{v.managed}</td>
-                      <td>{v.unmanaged}</td>
-                    </tr>
-                  ))}
-                  {summary.networkDeviceSummary.length === 0 && (
-                    <tr>
-                      <td colSpan={5}>No VLANs defined yet — set one up on the Network Scan page.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              <h3>Installed agents by asset type</h3>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Laptop</th>
-                    <th>Desktop</th>
-                    <th>Server</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>{summary.deviceTypeCounts.LAPTOP}</td>
-                    <td>{summary.deviceTypeCounts.DESKTOP}</td>
-                    <td>{summary.deviceTypeCounts.SERVER}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <h3>Not installed — device details</h3>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>VLAN</th>
-                    <th>IP address</th>
-                    <th>MAC address</th>
-                    <th>Hostname</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.unmanagedHosts.map((h) => (
-                    <tr key={`${h.vlanName}-${h.ipAddress}`}>
-                      <td>{h.vlanName}</td>
-                      <td className="mono-cell">{h.ipAddress}</td>
-                      <td className="mono-cell">{h.macAddress ?? "—"}</td>
-                      <td>{h.hostname ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {summary.unmanagedHosts.length === 0 && (
-                    <tr>
-                      <td colSpan={4}>No unmanaged devices found on any scanned VLAN.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <h2>Network coverage by VLAN</h2>
-          <p>Managed = hosts matched to an enrolled agent from that VLAN's latest scan. Unmanaged hosts are unenrolled network devices (routers, printers, etc.).</p>
-          {scannedVlans.length === 0 ? (
-            <p>No VLAN has been scanned yet — set one up on the Network Scan page.</p>
-          ) : (
-            <div className="dashboard-chart-grid">
-              {scannedVlans.map((v) => (
-                <DonutChart
-                  key={v.vlanId}
-                  title={v.vlanName}
-                  totalLabel="Hosts"
-                  data={[
-                    { name: "Managed", value: v.managed, color: CHART_SEMANTIC.ok, to: "/network-scan" },
-                    { name: "Unmanaged (network device)", value: v.unmanaged, color: CHART_SEMANTIC.warn, to: "/network-scan" },
-                  ]}
-                />
-              ))}
-            </div>
-          )}
-        </>
+      {coverageCard && postureCard ? (
+        // Stacks earlier than the default breakpoint: the coverage bars need the full width.
+        <Row layout="21" className="app-dash-top">
+          {coverageCard}
+          {postureCard}
+        </Row>
+      ) : (
+        coverageCard || postureCard
       )}
-    </div>
+
+      <Row layout="3">
+        <Card title="Connectivity">
+          {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <Donut centerLabel="endpoints" data={connectivityData} />}
+        </Card>
+        <Card title="Device type">
+          {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={deviceTypeData} total={total} />}
+        </Card>
+        <Card title="Operating system" actions={unknownOsCount > 0 && <Badge tone="med">{unknownOsCount} unclassified</Badge>}>
+          {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={osData} tail={osTail} total={total} />}
+        </Card>
+      </Row>
+
+      {!networkScanHidden && <UnmanagedDevicesCard summary={summary} onOpenNetworkScan={openNetworkScan} />}
+    </>
   );
 }

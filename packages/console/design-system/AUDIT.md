@@ -26,7 +26,7 @@ The order is fonts → `tokens/tokens.css` → `css/meridian.css` → `src/index
 | 1 Foundations | Done: fonts, tokens, meridian.css, Lucide, chart palette, legacy classes re-themed to tokens |
 | 2 App shell | Done: `.ep-sb` sidebar (Operations/Administration), `.ep-tb` top bar with breadcrumb and avatar menu (Log out moved there), `.ep-pg`, ≤960px drawer. Login page rebuilt as a Meridian card |
 | 3 Shared components | Done: `src/components/ui/` (see below). All `window.confirm`/`alert`/`prompt` calls replaced with Meridian modals and toasts; `StatusBadge` now renders `ep-badge` |
-| 4 Pages | Not started (every page still renders legacy markup through the bridge) |
+| 4 Pages | In progress. Done: Dashboard. All other pages still render legacy markup through the bridge |
 
 ## Shared components (`src/components/ui`, import from `../components/ui`)
 
@@ -48,7 +48,7 @@ Shared components can be used inside legacy pages: the legacy bridge skips anyth
 
 | Route | Page | Pattern |
 |---|---|---|
-| /dashboard | DashboardPage | A |
+| /dashboard | DashboardPage | A (migrated) |
 | /endpoints | AgentsPage | B |
 | /endpoints/:id | AgentDetailPage | D |
 | /enrollment-tokens | EnrollmentTokensPage | B + C |
@@ -80,4 +80,5 @@ Shared components can be used inside legacy pages: the legacy bridge skips anyth
 - **Nav expand behaviour** keeps the existing multi-expand. COMPONENTS.md §2 asks for one module at a time; changing that is a behaviour decision.
 - **Endpoint offline dot** changed from red to neutral grey, per the Meridian rule "offline = `--ep-neutral`". The old code had deliberately used red.
 - **Legacy buttons** are now secondary (white) by default, and only `type="submit"` buttons stay brand red. This replaces the old look where every button was red.
-- The JS bundle is about 930 kB. The large-chunk warning predates this work (Recharts and pages aren't code-split).
+- **Dashboard slots left out (no data in the API):** KPI trend deltas ("+6 enrolled this week", "+9 since yesterday"), open CVEs by severity, and the per-endpoint "Endpoints needing attention" table. Each needs a new field on `/admin/dashboard/summary`. Unmanaged devices (real data) fills the full-width table slot instead.
+- Recharts was removed with the dashboard migration; the JS bundle went from about 930 kB to 620 kB. Pages still aren't code-split, so the large-chunk warning remains.

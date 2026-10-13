@@ -369,6 +369,52 @@ button.ep-link.app-link-btn {
   cursor: not-allowed;
 }
 
+/* Dashboard posture card: a sub-section below the donut, split by a hairline. */
+.app-posture-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.app-posture-section:not(:first-child) {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ep-border);
+}
+
+.app-posture-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ep-ink-muted);
+}
+
+.app-posture-section .ep-legend {
+  row-gap: 6px;
+}
+
+.ep-host b.app-unnamed {
+  font-weight: 400;
+  color: var(--ep-ink-subtle);
+}
+
+@media (max-width: 1280px) {
+  .ep-row.app-dash-top {
+    grid-template-columns: 1fr;
+  }
+}
+
+a.app-legend-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.app-legend-link:hover {
+  text-decoration: underline;
+}
+
 .app-page-gap {
   min-width: 20px;
   text-align: center;
@@ -856,78 +902,6 @@ button.ep-link.app-link-btn {
   color: var(--ep-sev-medium);
 }
 
-/* Dashboard KPI tiles are informational, not click-to-filter like AgentsPage's. */
-.tile.static {
-  cursor: default;
-}
-
-.tile.static:hover {
-  border-color: var(--ep-border);
-}
-
-/* Dashboard donut charts */
-.dashboard-chart-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.dashboard-chart-card h3 {
-  margin-top: 0;
-}
-
-.dashboard-donut-wrap {
-  position: relative;
-}
-
-.dashboard-donut-center {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  pointer-events: none;
-}
-
-.dashboard-donut-center-value {
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--ep-ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.dashboard-donut-center-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--ep-ink-subtle);
-  margin-top: 4px;
-}
-
-.ep-pg .dashboard-legend {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--ep-ink);
-}
-
-.dashboard-legend li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-}
-
-.dashboard-legend-swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
 /* Category-accent cards — coloured top border per topic, used for grouping condition/rule
    authoring forms. Categorical chart tokens keep categories distinguishable without
    reusing brand or severity colours; titles stay ink per Meridian. */
@@ -1027,11 +1001,3 @@ button.ep-link.app-link-btn {
   line-height: 1.2;
 }
 
-/* Dashboard chart slices / legend entries / tiles that deep-link to a module page. */
-.dashboard-link {
-  cursor: pointer;
-}
-.dashboard-legend li.dashboard-link:hover,
-.dashboard-legend li.dashboard-link:focus-visible {
-  text-decoration: underline;
-}

@@ -81,8 +81,8 @@ export function Card({
 }
 
 // Grid rows (DESIGN_SYSTEM.md §5): "21" = 2/3 + 1/3, "12" = 1/3 + 2/3, "3" = thirds.
-export function Row({ layout, children }: { layout: "21" | "12" | "3"; children: ReactNode }) {
-  return <div className={`ep-row ep-r${layout}`}>{children}</div>;
+export function Row({ layout, children, className }: { layout: "21" | "12" | "3"; children: ReactNode; className?: string }) {
+  return <div className={`ep-row ep-r${layout} ${className ?? ""}`}>{children}</div>;
 }
 
 // Key/value property list for detail pages (COMPONENTS.md §17).
