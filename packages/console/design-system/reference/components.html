@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>Endpoint Pro — Meridian component gallery</title><link href="https://fonts.googleapis.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/><link href="../tokens/tokens.css" rel="stylesheet"/><link href="../css/meridian.css" rel="stylesheet"/></head>
+  <body>
+    <div class="ep-app" style="display:block">
+      <div style="max-width:1200px;margin:0 auto;padding:40px 32px">
+        <div style="display:flex;gap:12px;align-items:center">
+          <svg aria-hidden="true" height="28" viewbox="0 0 28 28" width="28"><rect height="28" rx="7" style="fill:var(--ep-brand)" width="28"></rect><path d="M14 6l6.5 2.6v4.8c0 4-2.8 7.1-6.5 8.2-3.7-1.1-6.5-4.2-6.5-8.2V8.6z" fill="none" stroke="#fff" stroke-linejoin="round" stroke-width="1.8"></path><path d="M11 13.8l2.2 2.2 4-4.2" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>
+          <div><h1 style="font-size:24px;font-weight:600;letter-spacing:-.01em">Endpoint Pro · Meridian components</h1><p style="color:var(--ep-ink-subtle);font-size:13px">Reference for implementation. Class names below are the contract (see docs/COMPONENTS.md).</p></div>
+        </div>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Colour</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Tokens from tokens.css. Severity colours are text-safe on their -soft tints.</p></div>
+          <div style="min-width:0">
+            <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px">
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-bg);border:1px solid var(--ep-border)"></span><b style="font-weight:600">bg</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#f4f5f7</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-surface);border:1px solid var(--ep-border)"></span><b style="font-weight:600">surface</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#ffffff</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-surface-2);border:1px solid var(--ep-border)"></span><b style="font-weight:600">surface-2</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#f1f3f6</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sidebar-bg);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sidebar-bg</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#ffffff</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sidebar-ink);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sidebar-ink</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#1a2231</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sidebar-ink-muted);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sidebar-ink-muted</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#5a6474</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sidebar-active-bg);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sidebar-active-bg</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#fbeced</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sidebar-border);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sidebar-border</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#e3e6eb</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-border);border:1px solid var(--ep-border)"></span><b style="font-weight:600">border</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#e3e6eb</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-border-strong);border:1px solid var(--ep-border)"></span><b style="font-weight:600">border-strong</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#8a93a2</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-ink);border:1px solid var(--ep-border)"></span><b style="font-weight:600">ink</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#111827</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-ink-muted);border:1px solid var(--ep-border)"></span><b style="font-weight:600">ink-muted</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#4b5565</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-ink-subtle);border:1px solid var(--ep-border)"></span><b style="font-weight:600">ink-subtle</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#646c7a</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-brand);border:1px solid var(--ep-border)"></span><b style="font-weight:600">brand</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#b3141b</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-brand-ink);border:1px solid var(--ep-border)"></span><b style="font-weight:600">brand-ink</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#ffffff</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-brand-soft);border:1px solid var(--ep-border)"></span><b style="font-weight:600">brand-soft</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#fdeced</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-accent);border:1px solid var(--ep-border)"></span><b style="font-weight:600">accent</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#0f6e8c</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-focus);border:1px solid var(--ep-border)"></span><b style="font-weight:600">focus</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#1d5fd1</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-critical);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-critical</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#c01e24</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-critical-soft);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-critical-soft</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#fdecec</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-high);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-high</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#b04a06</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-high-soft);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-high-soft</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#fdf0e6</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-medium);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-medium</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#8a6100</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-medium-soft);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-medium-soft</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#fcf4dc</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-warn-fill);border:1px solid var(--ep-border)"></span><b style="font-weight:600">warn-fill</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#dfa112</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-low);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-low</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#1f5fbf</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-sev-low-soft);border:1px solid var(--ep-border)"></span><b style="font-weight:600">sev-low-soft</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#e9f0fc</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-ok);border:1px solid var(--ep-border)"></span><b style="font-weight:600">ok</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#13784a</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-ok-soft);border:1px solid var(--ep-border)"></span><b style="font-weight:600">ok-soft</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#e5f4ec</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-neutral);border:1px solid var(--ep-border)"></span><b style="font-weight:600">neutral</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#8d95a3</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-chart-1);border:1px solid var(--ep-border)"></span><b style="font-weight:600">chart-1</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#2563c9</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-chart-2);border:1px solid var(--ep-border)"></span><b style="font-weight:600">chart-2</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#13784a</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-chart-3);border:1px solid var(--ep-border)"></span><b style="font-weight:600">chart-3</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#c87708</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-chart-4);border:1px solid var(--ep-border)"></span><b style="font-weight:600">chart-4</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#7a4bc8</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-chart-5);border:1px solid var(--ep-border)"></span><b style="font-weight:600">chart-5</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#0f8fa3</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="height:44px;border-radius:6px;background:var(--ep-chart-6);border:1px solid var(--ep-border)"></span><b style="font-weight:600">chart-6</b><span class="ep-mono" style="color:var(--ep-ink-subtle)">#c2417a</span></div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Typography</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Inter for UI, JetBrains Mono for hostnames, IPs, CVEs and versions.</p></div>
+          <div style="min-width:0">
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-metric-xl</span><span class="ep-text-metric-xl">292</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-page-title</span><span class="ep-text-page-title">Security overview</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-card-title</span><span class="ep-text-card-title">Agent coverage by VLAN</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-body</span><span class="ep-text-body">209 of 292 endpoints reported in the last 15 minutes.</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-body-sm</span><span class="ep-text-body-sm">Updated 2 min ago</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-label</span><span class="ep-text-label">With vulnerabilities</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-overline</span><span class="ep-text-overline">SECURITY MANAGER</span></div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:baseline;padding:6px 0"><span class="ep-mono" style="color:var(--ep-ink-subtle)">text-mono-sm</span><span class="ep-text-mono-sm">10.20.6.114 · CVE-2026-21412</span></div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Buttons</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">One primary per view. Danger only for destructive actions.</p></div>
+          <div style="min-width:0">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <div class="ep-btn ep-pri"><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><path d="M12 12l6-6"></path></svg>Run network scan</div>
+              <div class="ep-btn"><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>Export</div>
+              <div class="ep-btn ep-btn-ghost">Cancel</div>
+              <div class="ep-btn ep-btn-danger">Remove agent</div>
+              <div class="ep-btn ep-btn-sm">Small</div>
+              <div class="ep-btn ep-pri ep-disabled">Disabled</div>
+              <span class="ep-link">Text link</span>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Status</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Badge = severity / result. Pill = live state. Always a word, never colour alone.</p></div>
+          <div style="min-width:0">
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="ep-badge ep-b-crit">Critical</span><span class="ep-badge ep-b-high">High</span><span class="ep-badge ep-b-med">Medium</span><span class="ep-badge ep-b-low">Low</span><span class="ep-badge ep-b-ok">Compliant</span><span class="ep-badge ep-b-neu">Not assessed</span></div>
+            <div style="display:flex;gap:16px;margin-top:14px"><span class="ep-pill" style="--ep-c:var(--ep-ok)">Online</span><span class="ep-pill" style="--ep-c:var(--ep-neutral)">Offline</span><span class="ep-pill" style="--ep-c:var(--ep-warn-fill)">Unmanaged</span><span class="ep-pill" style="--ep-c:var(--ep-sev-critical)">Not trusted</span></div>
+            <div style="display:flex;gap:6px;margin-top:14px"><span class="ep-tag">Finance</span><span class="ep-tag">VIP</span><span class="ep-tag">Remote</span></div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Form controls</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">34px controls, 1px border-strong, blue focus ring. Errors say how to fix.</p></div>
+          <div style="min-width:0">
+            <div class="ep-form-grid" style="max-width:640px">
+              <div class="ep-field"><label class="ep-label">Hostname<span class="ep-req">*</span></label><input class="ep-input" placeholder="e.g. SXG-LT-0142"/><span class="ep-help">As reported by the agent.</span></div>
+              <div class="ep-field"><label class="ep-label">Max uses</label><input class="ep-input ep-invalid" value="0"/><span class="ep-error"><svg aria-hidden="true" class="ep-ic" fill="none" height="13" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="13"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.5"></path></svg>Enter a number between 1 and 1,000.</span></div>
+              <div class="ep-field"><label class="ep-label">Group</label><select class="ep-select"><option>Hallmark 12th Floor</option></select></div>
+              <div class="ep-field">
+                <label class="ep-label">Search</label>
+                <div class="ep-input-icon"><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20l-4.3-4.3"></path></svg><input class="ep-input" placeholder="Search…"/></div>
+              </div>
+              <div class="ep-field ep-span2" style="flex-direction:row;gap:24px"><label class="ep-switch ep-on"><i></i>Auto-approve</label><label class="ep-switch"><i></i>Notify admins</label><label class="ep-check"><input checked="" type="checkbox"/>Run scan after enrollment</label></div>
+              <div class="ep-field ep-span2"><span class="ep-seg"><span class="ep-on">All</span><span>Online</span><span>Offline</span></span></div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">KPI tiles</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Label + icon, tabular value, ratio, one footer line.</p></div>
+          <div style="min-width:0">
+            <div class="ep-kpis" style="grid-template-columns:repeat(3,1fr)">
+              <div class="ep-card ep-kpi">
+                <div class="ep-lb"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><rect height="12" rx="2" width="18" x="3" y="4"></rect><path d="M8 20h8M12 16v4"></path></svg>Total endpoints</div>
+                <div class="ep-v">292<small>managed</small></div>
+                <div class="ep-ft"><span class="ep-delta ep-up-good"><svg aria-hidden="true" class="ep-ic" fill="none" height="12" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="12"><path d="M7 14l5-5 5 5"></path></svg>6</span> enrolled this week</div>
+              </div>
+              <div class="ep-card ep-kpi">
+                <div class="ep-lb"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><path d="M12 12l6-6"></path></svg>Online now</div>
+                <div class="ep-v">209<small>72%</small></div>
+                <div class="ep-ft">
+                  <div class="ep-kbar" style="width:100%"><i style="width:71.57534246575342%;background:var(--ep-ok)"></i><i style="width:28.424657534246577%;background:var(--ep-neutral)"></i></div>
+                </div>
+              </div>
+              <div class="ep-card ep-kpi">
+                <div class="ep-lb"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.5"></path></svg>With vulnerabilities</div>
+                <div class="ep-v"><span style="color:var(--ep-sev-critical)">74</span><small>25%</small></div>
+                <div class="ep-ft"><span class="ep-delta ep-up-bad"><svg aria-hidden="true" class="ep-ic" fill="none" height="12" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="12"><path d="M7 14l5-5 5 5"></path></svg>9</span> since yesterday</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Cards &amp; charts</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Coverage table replaces per-VLAN donuts. Donuts only for 2-part ratios.</p></div>
+          <div style="min-width:0">
+            <div class="ep-row ep-r21">
+              <div class="ep-card">
+                <div class="ep-ch">
+                  <h3>Agent coverage by VLAN</h3>
+                  <span class="ep-hint">· managed vs. unenrolled hosts from latest scan</span>
+                  <div class="ep-r">
+                    <div class="ep-legend"><span><i class="ep-sw" style="background:var(--ep-ok)"></i>Managed</span><span><i class="ep-sw" style="background:var(--ep-warn-fill)"></i>Unmanaged</span></div>
+                  </div>
+                </div>
+                <div class="ep-cb">
+                  <table class="ep-cov">
+                    <thead>
+                      <tr><th>Network</th><th>Coverage</th><th style="text-align:right">Managed</th><th style="text-align:right">%</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td class="ep-n" style="width:190px">VLAN 6<small>149 hosts</small></td><td><div class="ep-sbar"><i style="width:27.516778523489933%;background:var(--ep-ok)"></i><i style="width:72.48322147651007%;background:var(--ep-warn-fill)"></i></div></td><td class="ep-t" style="width:80px">41 / 149</td><td class="ep-p" style="color:var(--ep-sev-medium)">28%</td></tr>
+                      <tr><td class="ep-n" style="width:190px">VLAN 2<small>121 hosts</small></td><td><div class="ep-sbar"><i style="width:57.85123966942148%;background:var(--ep-ok)"></i><i style="width:42.14876033057851%;background:var(--ep-warn-fill)"></i></div></td><td class="ep-t" style="width:80px">70 / 121</td><td class="ep-p" style="color:var(--ep-ok)">58%</td></tr>
+                      <tr><td class="ep-n" style="width:190px">Hallmark 12th Floor · C<small>20 hosts</small></td><td><div class="ep-sbar"><i style="width:50.0%;background:var(--ep-ok)"></i><i style="width:50.0%;background:var(--ep-warn-fill)"></i></div></td><td class="ep-t" style="width:80px">10 / 20</td><td class="ep-p" style="color:var(--ep-ok)">50%</td></tr>
+                      <tr><td class="ep-n" style="width:190px">Hallmark 12th Floor · B<small>15 hosts</small></td><td><div class="ep-sbar"><i style="width:20.0%;background:var(--ep-ok)"></i><i style="width:80.0%;background:var(--ep-warn-fill)"></i></div></td><td class="ep-t" style="width:80px">3 / 15</td><td class="ep-p" style="color:var(--ep-sev-medium)">20%</td></tr>
+                      <tr><td class="ep-n" style="width:190px">Hallmark 12th Floor · A<small>15 hosts</small></td><td><div class="ep-sbar"><i style="width:6.666666666666667%;background:var(--ep-ok)"></i><i style="width:93.33333333333333%;background:var(--ep-warn-fill)"></i></div></td><td class="ep-t" style="width:80px">1 / 15</td><td class="ep-p" style="color:var(--ep-sev-medium)">7%</td></tr>
+                      <tr><td class="ep-n" style="width:190px">VLAN 7<small>not scanned</small></td><td><span class="ep-nodata">No scan data yet — schedule a network scan</span></td><td class="ep-t" style="width:80px">—</td><td class="ep-p" style="color:var(--ep-ink-subtle)">—</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="ep-card">
+                <div class="ep-ch">
+                  <h3>Vulnerability exposure</h3>
+                  <div class="ep-r"><span class="ep-link">View all</span></div>
+                </div>
+                <div class="ep-cb">
+                  <div class="ep-dn">
+                    <svg height="128" style="flex:none" viewbox="0 0 128 128" width="128"><circle cx="64.0" cy="64.0" fill="none" r="57.0" stroke-width="14" style="stroke:var(--ep-surface-2)"></circle><circle cx="64.0" cy="64.0" fill="none" r="57.0" stroke-dasharray="265.38 358.14" stroke-dashoffset="0.00" stroke-width="14" style="stroke:var(--ep-ok)" transform="rotate(-90 64.0 64.0)"></circle><circle cx="64.0" cy="64.0" fill="none" r="57.0" stroke-dasharray="88.76 358.14" stroke-dashoffset="-267.38" stroke-width="14" style="stroke:var(--ep-sev-critical)" transform="rotate(-90 64.0 64.0)"></circle><text style="fill:var(--ep-ink);font:600 24px var(--ep-font-sans);font-variant-numeric:tabular-nums" text-anchor="middle" x="50%" y="66.0">292</text><text style="fill:var(--ep-ink-subtle);font:500 11px var(--ep-font-sans)" text-anchor="middle" x="50%" y="84.0">endpoints</text></svg>
+                    <div class="ep-lg">
+                      <div><i class="ep-sw" style="background:var(--ep-ok)"></i>Clean<b>218</b><em>75%</em></div>
+                      <div><i class="ep-sw" style="background:var(--ep-sev-critical)"></i>Vulnerable<b>74</b><em>25%</em></div>
+                    </div>
+                  </div>
+                  <div style="height:1px;background:var(--ep-border);margin:16px 0 14px"></div>
+                  <div style="font-size:12.5px;font-weight:600;color:var(--ep-ink-muted);margin-bottom:10px">Zero Trust status</div>
+                  <div class="ep-sbar" style="height:10px"><i style="width:1%;background:var(--ep-ok)"></i><i style="width:5.136986301369863%;background:var(--ep-sev-critical)"></i><i style="flex:1;background:var(--ep-neutral)"></i></div>
+                  <div class="ep-legend" style="margin-top:10px"><span><i class="ep-sw" style="background:var(--ep-ok)"></i>Trusted 1</span><span><i class="ep-sw" style="background:var(--ep-sev-critical)"></i>Not trusted 15</span><span><i class="ep-sw" style="background:var(--ep-neutral)"></i>Not assessed 276</span></div>
+                  <div style="height:1px;background:var(--ep-border);margin:16px 0 14px"></div>
+                  <div style="font-size:12.5px;font-weight:600;color:var(--ep-ink-muted);margin-bottom:10px">Open CVEs by severity</div>
+                  <div style="display:grid;grid-template-columns:76px 1fr 34px;gap:10px;align-items:center;margin-top:8px;font-size:12.5px">
+                    <span class="ep-badge ep-b-crit" style="justify-self:start">Critical</span>
+                    <div class="ep-kbar" style="margin:0"><i style="width:11.538461538461538%;background:var(--ep-sev-critical)"></i></div>
+                    <b class="ep-num" style="text-align:right;font-weight:600">12</b>
+                  </div>
+                  <div style="display:grid;grid-template-columns:76px 1fr 34px;gap:10px;align-items:center;margin-top:8px;font-size:12.5px">
+                    <span class="ep-badge ep-b-high" style="justify-self:start">High</span>
+                    <div class="ep-kbar" style="margin:0"><i style="width:29.807692307692307%;background:var(--ep-sev-high)"></i></div>
+                    <b class="ep-num" style="text-align:right;font-weight:600">31</b>
+                  </div>
+                  <div style="display:grid;grid-template-columns:76px 1fr 34px;gap:10px;align-items:center;margin-top:8px;font-size:12.5px">
+                    <span class="ep-badge ep-b-med" style="justify-self:start">Medium</span>
+                    <div class="ep-kbar" style="margin:0"><i style="width:55.769230769230774%;background:var(--ep-warn-fill)"></i></div>
+                    <b class="ep-num" style="text-align:right;font-weight:600">58</b>
+                  </div>
+                  <div style="display:grid;grid-template-columns:76px 1fr 34px;gap:10px;align-items:center;margin-top:8px;font-size:12.5px">
+                    <span class="ep-badge ep-b-low" style="justify-self:start">Low</span>
+                    <div class="ep-kbar" style="margin:0"><i style="width:100.0%;background:var(--ep-sev-low)"></i></div>
+                    <b class="ep-num" style="text-align:right;font-weight:600">104</b>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Alerts</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Inline, above the content they concern.</p></div>
+          <div style="min-width:0">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="ep-alert ep-alert-info">
+                <svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"></path><path d="M8.8 12.2l2.2 2.2 4.4-4.6"></path></svg>
+                <div><b>Scan scheduled</b>VLAN 7 will be scanned tonight at 02:00 IST.</div>
+              </div>
+              <div class="ep-alert ep-alert-warn">
+                <svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.5"></path></svg>
+                <div><b>195 unmanaged devices</b>Hosts seen on the network without an agent.</div>
+              </div>
+              <div class="ep-alert ep-alert-critical">
+                <svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.5"></path></svg>
+                <div><b>12 critical CVEs</b>Patch before the next maintenance window.</div>
+              </div>
+              <div class="ep-alert ep-alert-success">
+                <svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"></path><path d="M8.8 12.2l2.2 2.2 4.4-4.6"></path></svg>
+                <div><b>Agent updated</b>209 endpoints are on 4.12.0.</div>
+              </div>
+              <div class="ep-toast"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"></path><path d="M8.8 12.2l2.2 2.2 4.4-4.6"></path></svg>Token copied to clipboard</div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Table</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Toolbar → optional bulk bar → table → pagination.</p></div>
+          <div style="min-width:0">
+            <div class="ep-card" style="overflow:hidden">
+              <div class="ep-toolbar">
+                <div class="ep-input-icon"><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20l-4.3-4.3"></path></svg><input class="ep-input" placeholder="Search hostname, IP, user…"/></div>
+                <select class="ep-select"><option>Status: All</option></select>
+                <select class="ep-select"><option>OS: All</option></select>
+                <select class="ep-select"><option>Device type: All</option></select>
+                <div class="ep-r">
+                  <span class="ep-seg"><span class="ep-on">All 292</span><span>Online 209</span><span>Offline 83</span></span>
+                  <div class="ep-btn ep-btn-sm"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg>Columns</div>
+                </div>
+              </div>
+              <div class="ep-bulk">
+                <b>2 selected</b>
+                <div class="ep-btn ep-btn-sm"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path><path d="M4 7.5l8 4.5 8-4.5M12 12v9"></path></svg>Deploy package</div>
+                <div class="ep-btn ep-btn-sm"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><path d="M12 12l6-6"></path></svg>Run scan</div>
+                <div class="ep-btn ep-btn-sm ep-btn-danger">Remove agent</div>
+                <span class="ep-link" style="margin-left:auto">Clear selection</span>
+              </div>
+              <table class="ep-tbl">
+                <thead>
+                  <tr><th class="ep-cb"><input aria-label="Select all" type="checkbox"/></th><th class="ep-sort">Endpoint</th><th>Type</th><th>Operating system</th><th>Network</th><th>Status</th><th>Top severity</th><th>Agent</th><th>Last seen</th><th></th></tr>
+                </thead>
+                <tbody>
+                  <tr class="ep-sel"><td class="ep-cb"><input aria-label="Select SXG-LT-0142" checked="" type="checkbox"/></td><td class="ep-host"><b class="ep-link" style="color:var(--ep-ink)">SXG-LT-0142</b><small>10.20.6.114</small></td><td>Laptop</td><td>Windows 10 Pro</td><td>VLAN 6</td><td><span class="ep-pill" style="--ep-c:var(--ep-ok)">Online</span></td><td><span class="ep-badge ep-b-crit">Critical</span></td><td class="ep-mono" style="color:var(--ep-ink-muted)">4.12.0</td><td style="color:var(--ep-ink-subtle)">2 min ago</td><td style="text-align:right"><span aria-label="Row actions" class="ep-iconbtn" style="display:inline-grid;width:28px;height:28px"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span></td></tr>
+                  <tr class=""><td class="ep-cb"><input aria-label="Select SXG-DT-0087" type="checkbox"/></td><td class="ep-host"><b class="ep-link" style="color:var(--ep-ink)">SXG-DT-0087</b><small>10.20.2.31</small></td><td>Desktop</td><td>Windows 10 Pro</td><td>VLAN 2</td><td><span class="ep-pill" style="--ep-c:var(--ep-ok)">Online</span></td><td><span class="ep-badge ep-b-high">High</span></td><td class="ep-mono" style="color:var(--ep-ink-muted)">4.12.0</td><td style="color:var(--ep-ink-subtle)">4 min ago</td><td style="text-align:right"><span aria-label="Row actions" class="ep-iconbtn" style="display:inline-grid;width:28px;height:28px"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span></td></tr>
+                  <tr class="ep-sel"><td class="ep-cb"><input aria-label="Select SXG-LT-0209" checked="" type="checkbox"/></td><td class="ep-host"><b class="ep-link" style="color:var(--ep-ink)">SXG-LT-0209</b><small>10.20.6.58</small></td><td>Laptop</td><td>Windows 11 Home</td><td>VLAN 6</td><td><span class="ep-pill" style="--ep-c:var(--ep-neutral)">Offline</span></td><td><span class="ep-badge ep-b-high">High</span></td><td class="ep-mono" style="color:var(--ep-ink-muted)">4.11.2</td><td style="color:var(--ep-ink-subtle)">3 h ago</td><td style="text-align:right"><span aria-label="Row actions" class="ep-iconbtn" style="display:inline-grid;width:28px;height:28px"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span></td></tr>
+                </tbody>
+              </table>
+              <div class="ep-pagination">
+                Showing
+                <b style="color:var(--ep-ink)">1–8</b>
+                of 292 endpoints
+                <select class="ep-select" style="width:auto;height:30px;margin-left:8px"><option>25 per page</option></select>
+                <div class="ep-r"><span class="ep-page-btn"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M15 6l-6 6 6 6"></path></svg></span><span class="ep-page-btn ep-on">1</span><span class="ep-page-btn">2</span><span class="ep-page-btn">3</span><span class="ep-page-btn">…</span><span class="ep-page-btn">12</span><span class="ep-page-btn"><svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Empty &amp; loading</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Empty states name the next action. Use skeletons, not spinners, for cards.</p></div>
+          <div style="min-width:0">
+            <div class="ep-row ep-r3" style="grid-template-columns:1fr 1fr">
+              <div class="ep-card">
+                <div class="ep-empty">
+                  <div class="ep-eic"><svg aria-hidden="true" class="ep-ic" fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="20"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><path d="M12 12l6-6"></path></svg></div>
+                  <b>No scan data for VLAN 7</b>
+                  Run a network scan to see which hosts have the agent.
+                  <div class="ep-btn ep-pri ep-btn-sm" style="margin-top:8px">Schedule scan</div>
+                </div>
+              </div>
+              <div class="ep-card">
+                <div class="ep-cb" style="display:flex;flex-direction:column;gap:12px"><span class="ep-skel" style="width:40%"></span><span class="ep-skel" style="height:28px;width:30%"></span><span class="ep-skel"></span><span class="ep-skel" style="width:80%"></span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Menu &amp; modal</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Destructive confirmations name the object and the consequence.</p></div>
+          <div style="min-width:0">
+            <div style="display:flex;gap:24px;align-items:flex-start">
+              <div class="ep-menu">
+                <div><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><rect height="12" rx="2" width="18" x="3" y="4"></rect><path d="M8 20h8M12 16v4"></path></svg>View details</div>
+                <div><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><path d="M12 12l6-6"></path></svg>Run scan</div>
+                <div><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path><path d="M4 7.5l8 4.5 8-4.5M12 12v9"></path></svg>Deploy package</div>
+                <hr/>
+                <div class="ep-danger">Remove agent</div>
+              </div>
+              <div class="ep-modal-wrap" style="flex:1">
+                <div class="ep-modal">
+                  <header>
+                    <div><h3>Remove agent from 2 endpoints?</h3><p>SXG-LT-0142 and SXG-LT-0209 will stop reporting and lose their policies. You can re-enroll them later.</p></div>
+                  </header>
+                  <div class="ep-mb"><label class="ep-check"><input type="checkbox"/>Also uninstall the agent software</label></div>
+                  <footer>
+                    <div class="ep-btn">Cancel</div>
+                    <div class="ep-btn ep-btn-danger-solid">Remove agent</div>
+                  </footer>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section style="display:grid;grid-template-columns:240px 1fr;gap:24px;padding:28px 0;border-top:1px solid var(--ep-border)">
+          <div><h3 style="font-size:15px;font-weight:600">Navigation</h3><p style="font-size:12.5px;color:var(--ep-ink-subtle);margin-top:4px">Sidebar with grouped modules; top bar with breadcrumb, search, time range.</p></div>
+          <div style="min-width:0">
+            <div style="display:flex;gap:16px;align-items:flex-start">
+              <div style="width:248px;border:1px solid var(--ep-border);border-radius:10px;overflow:hidden">
+                <aside class="ep-sb" style="height:700px">
+                  <div class="ep-brandrow">
+                    <svg aria-hidden="true" height="28" viewbox="0 0 28 28" width="28"><rect height="28" rx="7" style="fill:var(--ep-brand)" width="28"></rect><path d="M14 6l6.5 2.6v4.8c0 4-2.8 7.1-6.5 8.2-3.7-1.1-6.5-4.2-6.5-8.2V8.6z" fill="none" stroke="#fff" stroke-linejoin="round" stroke-width="1.8"></path><path d="M11 13.8l2.2 2.2 4-4.2" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>
+                    <div><b>Endpoint Pro</b><small>Systematix Group</small></div>
+                  </div>
+                  <div class="ep-ov">Operations</div>
+                  <div class="ep-ni ep-on"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><rect height="7" rx="1.5" width="7" x="3.5" y="3.5"></rect><rect height="7" rx="1.5" width="7" x="13.5" y="3.5"></rect><rect height="7" rx="1.5" width="7" x="3.5" y="13.5"></rect><rect height="7" rx="1.5" width="7" x="13.5" y="13.5"></rect></svg><span>Dashboard</span></div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><rect height="12" rx="2" width="18" x="3" y="4"></rect><path d="M8 20h8M12 16v4"></path></svg><span>Endpoint Manager</span><svg aria-hidden="true" class="ep-ic ep-chev" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M9 6l6 6-6 6"></path></svg></div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><rect height="5" rx="1" width="6" x="9" y="3"></rect><rect height="5" rx="1" width="6" x="3" y="16"></rect><rect height="5" rx="1" width="6" x="15" y="16"></rect><path d="M12 8v4M6 16v-2h12v2"></path></svg><span>Network Manager</span><svg aria-hidden="true" class="ep-ic ep-chev" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M9 6l6 6-6 6"></path></svg></div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path><path d="M4 7.5l8 4.5 8-4.5M12 12v9"></path></svg><span>Software Manager</span><svg aria-hidden="true" class="ep-ic ep-chev" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M9 6l6 6-6 6"></path></svg></div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"></path></svg><span>Security Manager</span><svg aria-hidden="true" class="ep-ic ep-chev" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M6 9l6 6 6-6"></path></svg></div>
+                  <div class="ep-sub">
+                    <div class="ep-cnt"><span>Vulnerabilities</span><span class="ep-num">74</span></div>
+                    <div class="ep-cnt"><span>Patches</span><span class="ep-num"></span></div>
+                    <div class="ep-cnt"><span>Security configuration</span><span class="ep-num"></span></div>
+                    <div class="ep-cnt"><span>Zero Trust</span><span class="ep-num"></span></div>
+                  </div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"></path></svg><span>Data Manager</span><svg aria-hidden="true" class="ep-ic ep-chev" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M9 6l6 6-6 6"></path></svg></div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"></path><path d="M16 4.8a3.5 3.5 0 010 6.4M18 14.8c1.9.7 3.1 2.4 3.5 5.2"></path></svg><span>User Manager</span><svg aria-hidden="true" class="ep-ic ep-chev" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M9 6l6 6-6 6"></path></svg></div>
+                  <div class="ep-ov">Administration</div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><circle cx="8" cy="15" r="4.5"></circle><path d="M11.2 11.8L20 3M16.5 6.5l2.5 2.5M14 9l2 2"></path></svg><span>Licensing</span></div>
+                  <div class="ep-ni"><svg aria-hidden="true" class="ep-ic" fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="16"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg><span>Administrators</span></div>
+                  <div class="ep-sbfoot">
+                    <div class="ep-av">CI</div>
+                    <div><b>CIO Office</b><small>cio@systematixgroup.in</small></div>
+                  </div>
+                </aside>
+              </div>
+              <div style="flex:1;min-width:0;border:1px solid var(--ep-border);border-radius:10px;overflow:hidden">
+                <header class="ep-tb">
+                  <div class="ep-crumb">Overview <svg aria-hidden="true" class="ep-ic" fill="none" height="12" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="12"><path d="M9 6l6 6-6 6"></path></svg> <b>Dashboard</b></div>
+                  <div class="ep-search"><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20l-4.3-4.3"></path></svg><span>Search endpoints, IPs, CVEs, users…</span><span class="ep-kbd">Ctrl K</span></div>
+                  <div class="ep-tbr">
+                    <div class="ep-btn"><svg aria-hidden="true" class="ep-ic" fill="none" height="15" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="15"><rect height="15" rx="2" width="17" x="3.5" y="5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>Last 24 hours<svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M6 9l6 6 6-6"></path></svg></div>
+                    <div class="ep-iconbtn"><svg aria-hidden="true" class="ep-ic" fill="none" height="18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="18"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"></path><path d="M10 20.5a2 2 0 004 0"></path></svg><span class="ep-dot"></span></div>
+                    <div class="ep-tenant">
+                      <div class="ep-av" style="width:28px;height:28px">CI</div>
+                      <svg aria-hidden="true" class="ep-ic" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" width="14"><path d="M6 9l6 6 6-6"></path></svg>
+                    </div>
+                  </div>
+                </header>
+                <div style="padding:0 20px">
+                  <div class="ep-tabs" style="margin-top:12px">
+                    <div class="ep-on">Overview</div>
+                    <div>Vulnerabilities</div>
+                    <div>Network coverage</div>
+                    <div>Compliance</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>

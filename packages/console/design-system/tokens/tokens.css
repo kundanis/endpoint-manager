@@ -1,0 +1,99 @@
+/* Endpoint Pro — Meridian design tokens (light enterprise).
+   Source of truth for every colour, size and radius in the UI.
+   Never hard-code a hex value in components: use var(--ep-*). */
+
+:root {
+  /* ---- Colour ---- */
+  --ep-bg: #f4f5f7; /* App canvas behind cards. */
+  --ep-surface: #ffffff; /* Cards, panels, table body. */
+  --ep-surface-2: #f1f3f6; /* Table headers, hover rows, inset wells, track of bars. */
+  --ep-sidebar-bg: #ffffff; /* Primary navigation rail. */
+  --ep-sidebar-ink: #1a2231; /* Nav labels on sidebar-bg. */
+  --ep-sidebar-ink-muted: #5a6474; /* Nav section headers and sub-items on sidebar-bg. */
+  --ep-sidebar-active-bg: #fbeced; /* Background of the active nav item. */
+  --ep-sidebar-border: #e3e6eb; /* Divider between sidebar and canvas. */
+  --ep-border: #e3e6eb; /* Card outlines, table row dividers (decorative hairline). */
+  --ep-border-strong: #8a93a2; /* Input and control borders; 3:1 against surface. */
+  --ep-ink: #111827; /* Primary text on surface and bg. */
+  --ep-ink-muted: #4b5565; /* Secondary text, labels, axis text. */
+  --ep-ink-subtle: #646c7a; /* Metadata and timestamps; still 4.5:1 on surface. */
+  --ep-brand: #b3141b; /* Primary action, active nav marker, logo. Use sparingly; never to mean severity. */
+  --ep-brand-ink: #ffffff; /* Text and icons on brand. */
+  --ep-brand-soft: #fdeced; /* Selected row, active tab underlay, subtle brand tint. */
+  --ep-accent: #0f6e8c; /* Links, focus of attention in charts, informational highlights. */
+  --ep-focus: #1d5fd1; /* Focus ring (2px) on every interactive element. */
+  --ep-sev-critical: #c01e24; /* Critical severity, failures. Text and fills. */
+  --ep-sev-critical-soft: #fdecec; /* Background of critical badges and banners. */
+  --ep-sev-high: #b04a06; /* High severity. */
+  --ep-sev-high-soft: #fdf0e6; /* Background of high badges. */
+  --ep-sev-medium: #8a6100; /* Medium severity, warnings, unmanaged devices. */
+  --ep-sev-medium-soft: #fcf4dc; /* Background of medium badges. */
+  --ep-warn-fill: #dfa112; /* Fill for warning/unmanaged bars and rings, where sev-medium text colour would read muddy. Fills only. */
+  --ep-sev-low: #1f5fbf; /* Low severity, informational. */
+  --ep-sev-low-soft: #e9f0fc; /* Background of low badges. */
+  --ep-ok: #13784a; /* Healthy, online, managed, compliant. */
+  --ep-ok-soft: #e5f4ec; /* Background of healthy badges. */
+  --ep-neutral: #8d95a3; /* Offline, not assessed, unknown. Fills only, not text. */
+  --ep-chart-1: #2563c9; /* Categorical series 1. */
+  --ep-chart-2: #13784a; /* Categorical series 2. */
+  --ep-chart-3: #c87708; /* Categorical series 3. */
+  --ep-chart-4: #7a4bc8; /* Categorical series 4. */
+  --ep-chart-5: #0f8fa3; /* Categorical series 5. */
+  --ep-chart-6: #c2417a; /* Categorical series 6. */
+
+  /* ---- Typography ---- */
+  --ep-font-sans: Inter, "Segoe UI", system-ui, sans-serif;
+  --ep-font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --ep-text-metric-xl-size: 32px; --ep-text-metric-xl-line: 36px; --ep-text-metric-xl-weight: 600; --ep-text-metric-xl-tracking: -0.02em;
+  --ep-text-page-title-size: 22px; --ep-text-page-title-line: 28px; --ep-text-page-title-weight: 600; --ep-text-page-title-tracking: -0.01em;
+  --ep-text-card-title-size: 14px; --ep-text-card-title-line: 20px; --ep-text-card-title-weight: 600;
+  --ep-text-body-size: 14px; --ep-text-body-line: 20px; --ep-text-body-weight: 400;
+  --ep-text-body-sm-size: 13px; --ep-text-body-sm-line: 18px; --ep-text-body-sm-weight: 400;
+  --ep-text-label-size: 12px; --ep-text-label-line: 16px; --ep-text-label-weight: 500;
+  --ep-text-overline-size: 11px; --ep-text-overline-line: 16px; --ep-text-overline-weight: 600; --ep-text-overline-tracking: 0.06em;
+  --ep-text-mono-sm-size: 12.5px; --ep-text-mono-sm-line: 18px; --ep-text-mono-sm-weight: 400;
+
+  /* ---- Spacing (4px grid) ---- */
+  --ep-space-1: 4px; /* Icon-to-label gap. */
+  --ep-space-2: 8px; /* Inline gaps, badge padding. */
+  --ep-space-3: 12px; /* Control padding, row gap in lists. */
+  --ep-space-4: 16px; /* Card gutter between cards. */
+  --ep-space-5: 20px; /* Card inner padding. */
+  --ep-space-6: 24px; /* Page side padding; section gap. */
+  --ep-space-8: 32px; /* Gap between page sections. */
+  --ep-space-12: 48px; /* Empty-state breathing room. */
+
+  /* ---- Radius ---- */
+  --ep-radius-sm: 4px; /* Badges, bars, checkboxes. */
+  --ep-radius-md: 6px; /* Buttons, inputs, nav items. */
+  --ep-radius-lg: 10px; /* Cards and panels. */
+  --ep-radius-pill: 999px; /* Status pills and avatars. */
+
+  /* ---- Elevation ---- */
+  --ep-shadow-card: 0 1px 2px #1118270f; /* Resting cards. Dark theme relies on the border, not shadow. */
+  --ep-shadow-pop: 0 12px 32px #1118271f; /* Menus, popovers, command palette. */
+
+  /* ---- Layout ---- */
+  --ep-brand-hover: #9a1117; /* Primary button hover (brand darkened). */
+  --ep-selected: #eef3fc; /* Selected table rows and the bulk-action bar. Neutral blue so it never reads as severity. */
+  --ep-sidebar-width: 248px;
+  --ep-topbar-height: 56px;
+  --ep-content-max: 1600px;
+  --ep-control-height: 34px;
+  --ep-control-height-sm: 30px;
+
+  /* ---- Motion ---- */
+  --ep-ease: cubic-bezier(.2,0,0,1);
+  --ep-dur-fast: 120ms;
+  --ep-dur: 180ms;
+}
+
+/* Type helper classes */
+.ep-text-metric-xl{font-family:var(--ep-font-sans);font-size:var(--ep-text-metric-xl-size);line-height:var(--ep-text-metric-xl-line);font-weight:var(--ep-text-metric-xl-weight);letter-spacing:var(--ep-text-metric-xl-tracking);}
+.ep-text-page-title{font-family:var(--ep-font-sans);font-size:var(--ep-text-page-title-size);line-height:var(--ep-text-page-title-line);font-weight:var(--ep-text-page-title-weight);letter-spacing:var(--ep-text-page-title-tracking);}
+.ep-text-card-title{font-family:var(--ep-font-sans);font-size:var(--ep-text-card-title-size);line-height:var(--ep-text-card-title-line);font-weight:var(--ep-text-card-title-weight);}
+.ep-text-body{font-family:var(--ep-font-sans);font-size:var(--ep-text-body-size);line-height:var(--ep-text-body-line);font-weight:var(--ep-text-body-weight);}
+.ep-text-body-sm{font-family:var(--ep-font-sans);font-size:var(--ep-text-body-sm-size);line-height:var(--ep-text-body-sm-line);font-weight:var(--ep-text-body-sm-weight);}
+.ep-text-label{font-family:var(--ep-font-sans);font-size:var(--ep-text-label-size);line-height:var(--ep-text-label-line);font-weight:var(--ep-text-label-weight);}
+.ep-text-overline{font-family:var(--ep-font-sans);font-size:var(--ep-text-overline-size);line-height:var(--ep-text-overline-line);font-weight:var(--ep-text-overline-weight);letter-spacing:var(--ep-text-overline-tracking);text-transform:uppercase;}
+.ep-text-mono-sm{font-family:var(--ep-font-mono);font-size:var(--ep-text-mono-sm-size);line-height:var(--ep-text-mono-sm-line);font-weight:var(--ep-text-mono-sm-weight);}

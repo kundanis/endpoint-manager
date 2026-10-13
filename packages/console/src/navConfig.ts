@@ -33,24 +33,24 @@ export const NAV_MODULES: NavModule[] = [
     licenseModule: "ENDPOINT_MANAGER",
     items: [
       { path: "/endpoints", label: "Endpoints" },
-      { path: "/enrollment-tokens", label: "Enrollment Tokens" },
+      { path: "/enrollment-tokens", label: "Enrollment tokens" },
       { path: "/commands", label: "Commands" },
       { path: "/packages", label: "Packages" },
-      { path: "/agent-updates", label: "Agent Updates" },
-      { path: "/asset-settings", label: "Asset Settings" },
+      { path: "/agent-updates", label: "Agent updates" },
+      { path: "/asset-settings", label: "Asset settings" },
     ],
   },
   {
     key: "network",
     label: "Network Manager",
     licenseModule: "NETWORK_MANAGER",
-    items: [{ path: "/network-scan", label: "Network Scan" }],
+    items: [{ path: "/network-scan", label: "Network scan" }],
   },
   {
     key: "software",
     label: "Software Manager",
     licenseModule: "SOFTWARE_MANAGER",
-    items: [{ path: "/software-licenses", label: "Software Licenses" }],
+    items: [{ path: "/software-licenses", label: "Software licenses" }],
   },
   {
     key: "security",
@@ -59,7 +59,7 @@ export const NAV_MODULES: NavModule[] = [
     items: [
       { path: "/vulnerabilities", label: "Vulnerabilities" },
       { path: "/patches", label: "Patches" },
-      { path: "/security-config", label: "Security Configuration" },
+      { path: "/security-config", label: "Security configuration" },
       { path: "/zero-trust", label: "Zero Trust" },
       // EDR (Lite) hidden from the menu — every agent had it disabled first (see
       // edrEnabled on the Agent model), so no endpoint is actively scanning even though
@@ -71,18 +71,18 @@ export const NAV_MODULES: NavModule[] = [
     label: "Data Manager",
     licenseModule: "DATA_MANAGER",
     items: [
-      { path: "/data-discovery", label: "Data Discovery" },
+      { path: "/data-discovery", label: "Data discovery" },
       { path: "/dlp", label: "DLP" },
-      { path: "/data-movement", label: "Data Movement" },
+      { path: "/data-movement", label: "Data movement" },
       { path: "/epm", label: "EPM" },
-      { path: "/access-exceptions", label: "Access Exceptions" },
+      { path: "/access-exceptions", label: "Access exceptions" },
     ],
   },
   {
     key: "user",
     label: "User Manager",
     licenseModule: "USER_MANAGER",
-    items: [{ path: "/user-productivity", label: "User Productivity" }],
+    items: [{ path: "/user-productivity", label: "User productivity" }],
   },
   {
     key: "licensing",

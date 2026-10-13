@@ -1,12 +1,24 @@
-// A shield-with-checkmark mark (endpoint protection) — uses currentColor so it
-// picks up whatever text color its container sets (white in the dark sidebar,
-// the accent color in the light header).
+// Meridian brand tile (design-system/docs/COMPONENTS.md §2): a brand-red rounded square with
+// a white shield-check mark. Placeholder until the official Systematix mark is supplied.
 export default function Logo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path d="M12 2 4 5v6c0 5 3.4 9 8 11 4.6-2 8-6 8-11V5l-8-3z" fill="currentColor" opacity="0.15" />
-      <path d="M12 2 4 5v6c0 5 3.4 9 8 11 4.6-2 8-6 8-11V5l-8-3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M8.5 12.5 11 15l4.5-5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
+      <rect width="28" height="28" rx="7" style={{ fill: "var(--ep-brand)" }} />
+      <path
+        d="M14 6.5 8.5 8.6v4.2c0 3.5 2.3 6.3 5.5 7.7 3.2-1.4 5.5-4.2 5.5-7.7V8.6L14 6.5z"
+        fill="none"
+        style={{ stroke: "var(--ep-brand-ink)" }}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m11.6 13.6 1.7 1.7 3.2-3.6"
+        fill="none"
+        style={{ stroke: "var(--ep-brand-ink)" }}
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

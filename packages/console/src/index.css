@@ -1,391 +1,500 @@
+/* App-level CSS. Loaded after design-system/tokens/tokens.css and design-system/css/meridian.css
+   (see main.tsx). Every colour here is a var(--ep-*) token — see design-system/CLAUDE.md.
+
+   Sections:
+   1. Legacy variable bridge   — old --accent/--online/... names resolve to Meridian tokens.
+   2. Shell additions          — small app-* glue the ep-* shell needs in React.
+   3. Login page               — Meridian card, outside the app shell.
+   4. Legacy page bridge       — element defaults for pages not yet migrated to ep-* markup.
+   5. Legacy page components   — .panel, .data-table, .tile, ... restyled to the Meridian look.
+
+   Sections 1, 4 and 5 are migration scaffolding: delete each rule once no page uses it
+   (design-system/docs/MIGRATION_PLAN.md, phase 4 cleanup). */
+
+/* ------------------------------------------------------------------------------------------
+   1. Legacy variable bridge
+   ------------------------------------------------------------------------------------------ */
 :root {
   color-scheme: light;
-  --bg: #f4f6fb;
-  --panel-bg: #ffffff;
-  --border: #dde1e6;
-  --text: #1a1d23;
-  --text-muted: #5b6270;
-  --accent: #8b0000;
-  --accent-hover: #6e0000;
-  --accent-soft: #fbe9e7;
-  --header-grad: linear-gradient(120deg, #6e0000 0%, #b3121b 100%);
-  --danger: #e63946;
-  --danger-soft: #fdeaea;
-  --warn: #b3720a;
-  --warn-soft: #fff4e0;
-  --online: #1b8a5a;
-  --online-soft: #e4f7ee;
-  --offline: #6b7280;
-  --offline-soft: #eef0f3;
-  --stripe: #f7f9fd;
+  --bg: var(--ep-bg);
+  --panel-bg: var(--ep-surface);
+  --border: var(--ep-border);
+  --text: var(--ep-ink);
+  --text-muted: var(--ep-ink-muted);
+  --accent: var(--ep-brand);
+  --accent-hover: var(--ep-brand-hover);
+  --accent-soft: var(--ep-brand-soft);
+  --danger: var(--ep-sev-critical);
+  --danger-soft: var(--ep-sev-critical-soft);
+  --warn: var(--ep-sev-medium);
+  --warn-soft: var(--ep-sev-medium-soft);
+  --online: var(--ep-ok);
+  --online-soft: var(--ep-ok-soft);
+  --offline: var(--ep-neutral);
+  --offline-soft: var(--ep-surface-2);
+  --stripe: var(--ep-surface-2);
 }
 
-* {
+/* meridian.css scopes its box-sizing reset to .ep-app; the login page lives outside it. */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+/* ------------------------------------------------------------------------------------------
+   2. Shell additions
+   ------------------------------------------------------------------------------------------ */
+.ep-sb {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 
-h1 {
-  font-size: 1.5rem;
-  margin: 0 0 1rem;
-  color: var(--text);
-}
-
-h2 {
-  font-size: 1.1rem;
-  margin: 0 0 0.75rem;
-  color: var(--accent);
-}
-
-h3 {
-  font-size: 0.95rem;
-  margin: 1.25rem 0 0.6rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.app-shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: row;
-}
-
-.app-sidebar {
-  width: 220px;
-  flex-shrink: 0;
+.app-nav {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.25rem 1rem;
-  background: var(--header-grad);
-  box-shadow: 2px 0 10px rgba(139, 0, 0, 0.25);
+  gap: 2px;
 }
 
-/* Preserves the vertical position the module list originally started at (below
-   the brand block) now that the brand itself lives only in the top header. */
-.sidebar-spacer {
-  height: 28px;
-}
-
-.module-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.module-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.module-nav .module-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Module groups toggle in place, so they're buttons rendered with the .ep-ni look. */
+button.ep-ni {
   width: 100%;
-  text-align: left;
-  padding: 0.6rem 0.75rem;
-  border: none;
-  border-radius: 6px;
+  border: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.8);
-  text-decoration: none;
-  font-weight: 500;
-  cursor: pointer;
+  color: var(--ep-sidebar-ink);
+  font-family: inherit;
+  line-height: inherit;
+  text-align: left;
 }
 
-.module-nav .module-link:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+.ep-sub > a {
+  display: block;
 }
 
-.module-nav .module-link.active {
-  background: #fff;
-  color: var(--accent);
+.app-ni-locked,
+.app-ni-locked .ep-ic {
+  color: var(--ep-ink-subtle);
 }
 
-.module-nav .module-link .chevron {
-  color: inherit;
-  font-size: 0.7rem;
-}
-
-.module-nav .module-link.locked {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.module-nav .module-link.locked:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.module-nav .module-link.active.locked {
-  color: rgba(139, 0, 0, 0.55);
-}
-
-.module-nav .module-link svg {
-  flex: none;
-  margin: 0 0.35rem;
-}
-
-.submodule-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.3rem 0 0.5rem 0.75rem;
-}
-
-.submodule-link {
-  padding: 0.4rem 0.65rem;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.65);
-  text-decoration: none;
-  font-size: 0.85rem;
-}
-
-.submodule-link:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
-.submodule-link.active {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  font-weight: 600;
-}
-
-.app-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+.app-sbfoot-id {
   min-width: 0;
 }
 
-.app-subheader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--panel-bg);
-  border-bottom: 1px solid var(--border);
+.app-sbfoot-id small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.header-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 1.5rem;
+.app-account {
+  position: relative;
 }
 
-.user-menu {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.9rem;
-  color: var(--text-muted);
-}
-
-.user-menu button {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.user-menu button:hover:not(:disabled) {
-  background: #f5d5d0;
-}
-
-.app-content {
-  flex: 1;
-  padding: 1.5rem;
-  width: 100%;
-}
-
-.app-footer {
-  padding: 0.75rem 1.5rem;
-  text-align: center;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  border-top: 1px solid var(--border);
-}
-
-.page-loading {
-  padding: 2rem;
-  text-align: center;
-  color: var(--text-muted);
-}
-
-.login-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.login-form {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 2rem;
-  width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  margin-bottom: 0.75rem;
-}
-
-input,
-select,
-textarea {
-  font: inherit;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  background: #fff;
-}
-
-button {
-  font: inherit;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
-  background: var(--accent);
-  color: #fff;
+.app-account-trigger {
+  border: 0;
+  border-left: 1px solid var(--ep-border);
+  background: transparent;
+  font-family: inherit;
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
-  background: var(--accent-hover);
+.app-av-sm {
+  width: 28px;
+  height: 28px;
 }
 
-button:disabled {
-  opacity: 0.6;
+.app-account-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 260px;
+}
+
+.app-account-menu .app-account-id {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.app-account-menu .app-account-id:hover {
+  background: none;
+}
+
+.app-account-id b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.app-account-id small {
+  color: var(--ep-ink-subtle);
+  font-size: 12px;
+}
+
+.app-drawer-toggle {
+  display: none;
+}
+
+.app-drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .app-drawer-toggle {
+    display: grid;
+  }
+
+  .app-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    background: color-mix(in srgb, var(--ep-ink) 40%, transparent);
+  }
+}
+
+.ep-pg {
+  flex: 1;
+}
+
+.app-footer {
+  padding: 12px 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ep-ink-subtle);
+  border-top: 1px solid var(--ep-border);
+}
+
+/* ------------------------------------------------------------------------------------------
+   3. Login page (rendered outside .ep-app, so it carries its own focus ring)
+   ------------------------------------------------------------------------------------------ */
+.app-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--ep-bg);
+}
+
+.app-login-card {
+  width: 360px;
+  max-width: 100%;
+  margin: 0;
+}
+
+.app-login-card .ep-brandrow {
+  padding: 20px 20px 0;
+}
+
+.app-login-card h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app-login-card .ep-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-login-card .ep-section > p {
+  margin: 0;
+}
+
+.app-login-card .ep-btn {
+  justify-content: center;
+}
+
+.app-login :focus-visible {
+  outline: 2px solid var(--ep-focus);
+  outline-offset: 2px;
+  border-radius: var(--ep-radius-md);
+}
+
+.page-loading {
+  padding: 32px;
+  text-align: center;
+  color: var(--ep-ink-muted);
+}
+
+/* ------------------------------------------------------------------------------------------
+   4. Legacy page bridge
+   meridian.css resets margin/padding on everything inside .ep-app. Pages not yet migrated
+   still rely on element defaults, so restore them here, scoped to page content that has no
+   Meridian page header (.ep-ph). A migrated page renders .ep-ph and drops out of this scope
+   automatically. ":where(...)" keeps these at the same weight as the reset (later wins) and
+   below any class-based rule, so section 5 and per-page classes still apply on top.
+   Elements carrying an ep-* class are excluded so shared Meridian components render exactly.
+   ------------------------------------------------------------------------------------------ */
+.ep-pg:where(:not(:has(.ep-ph))) :where(p, ul, ol, dl, pre, blockquote) {
+  margin: 1em 0;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(ul, ol) {
+  padding-left: 40px;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(dd) {
+  margin-left: 40px;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(td, th) {
+  padding: 2px 4px;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(hr) {
+  margin: 0.5em 0;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(legend) {
+  padding: 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ep-ink-muted);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(h1) {
+  margin: 0 0 16px;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ep-ink);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(h2) {
+  margin: 0 0 12px;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--ep-ink);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(h3) {
+  margin: 20px 0 10px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ep-ink);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(h4) {
+  margin: 16px 0 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ep-ink);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(label:not([class*="ep-"])) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ep-ink);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(input:not([class*="ep-"]), select:not([class*="ep-"]), textarea:not([class*="ep-"])) {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 400;
+  padding: 6px 10px;
+  border: 1px solid var(--ep-border-strong);
+  border-radius: var(--ep-radius-md);
+  color: var(--ep-ink);
+  background: var(--ep-surface);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(input:not([type="checkbox"], [type="radio"], [type="file"], [class*="ep-"]), select:not([class*="ep-"])) {
+  min-height: var(--ep-control-height);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--ep-brand);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(input:not([class*="ep-"]), select:not([class*="ep-"]), textarea:not([class*="ep-"])):focus {
+  outline: none;
+  border-color: var(--ep-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ep-focus) 18%, transparent);
+}
+
+/* Legacy buttons: secondary by default, primary only for explicit form submits — Meridian
+   allows one brand-red action per view, so the old "every button is red" look is retired. */
+.ep-pg:where(:not(:has(.ep-ph))) :where(button:not([class*="ep-"])) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--ep-control-height);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid var(--ep-border-strong);
+  border-radius: var(--ep-radius-md);
+  background: var(--ep-surface);
+  color: var(--ep-ink);
+  cursor: pointer;
+  transition: background var(--ep-dur-fast) var(--ep-ease), border-color var(--ep-dur-fast) var(--ep-ease);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(button:not([class*="ep-"]):hover:not(:disabled)) {
+  background: var(--ep-surface-2);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(button[type="submit"]:not([class*="ep-"])) {
+  background: var(--ep-brand);
+  border-color: var(--ep-brand);
+  color: var(--ep-brand-ink);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(button[type="submit"]:not([class*="ep-"]):hover:not(:disabled)) {
+  background: var(--ep-brand-hover);
+  border-color: var(--ep-brand-hover);
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(button:not([class*="ep-"]):disabled) {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
+.ep-pg:where(:not(:has(.ep-ph))) :where(fieldset) {
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(code) {
+  font-family: var(--ep-font-mono);
+  font-size: 12.5px;
+}
+
+.ep-pg:where(:not(:has(.ep-ph))) :where(a:not([class*="ep-"])) {
+  color: var(--ep-accent);
+}
+
+/* ------------------------------------------------------------------------------------------
+   5. Legacy page components, restyled to the Meridian look
+   ------------------------------------------------------------------------------------------ */
 .button-like {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: var(--ep-control-height);
+  padding: 0 12px;
   font: inherit;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
-  background: var(--accent);
-  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--ep-border-strong);
+  border-radius: var(--ep-radius-md);
+  background: var(--ep-surface);
+  color: var(--ep-ink);
   cursor: pointer;
   text-decoration: none;
 }
 
 .button-like:hover {
-  background: var(--accent-hover);
-  color: #fff;
+  background: var(--ep-surface-2);
+  color: var(--ep-ink);
 }
 
 .panel {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
-  border-radius: 8px;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 1px 3px rgba(20, 30, 60, 0.05);
-}
-
-.tab-bar {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 1.25rem;
-}
-
-.tab-link {
-  padding: 0.6rem 1rem;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.tab-link:hover {
-  color: var(--accent);
-}
-
-.tab-link.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-lg);
+  box-shadow: var(--ep-shadow-card);
+  padding: 20px;
+  margin-bottom: 16px;
 }
 
 .panel > summary {
   cursor: pointer;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ep-ink);
 }
 
 .panel[open] > summary {
-  margin-bottom: 0.75rem;
+  margin-bottom: 12px;
 }
 
-fieldset {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 0.75rem;
-  padding: 0.75rem;
+.tab-bar {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--ep-border);
+  margin-bottom: 20px;
+}
+
+.tab-link {
+  padding: 10px 0;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--ep-ink-muted);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.tab-link:hover {
+  color: var(--ep-ink);
+}
+
+.tab-link.active {
+  color: var(--ep-ink);
+  border-bottom-color: var(--ep-brand);
 }
 
 .checkbox-row {
   flex-direction: row;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 400;
 }
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-lg);
+  box-shadow: var(--ep-shadow-card);
   overflow: hidden;
-  margin-bottom: 1.5rem;
+  margin-bottom: 16px;
+  font-size: 13px;
 }
 
 .data-table th,
 .data-table td {
   text-align: left;
-  padding: 0.6rem 0.9rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.9rem;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ep-border);
+  vertical-align: middle;
 }
 
 .data-table th {
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  font-weight: 700;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  background: var(--ep-surface-2);
+  color: var(--ep-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.data-table tbody tr:nth-child(even) {
-  background: var(--stripe);
+.data-table th:first-child,
+.data-table td:first-child {
+  padding-left: 20px;
 }
 
 .data-table tr:last-child td {
@@ -395,189 +504,202 @@ fieldset {
 /* Small per-endpoint summary sub-row (Zero Trust/vulnerability counts + quarantine
    action) directly under each endpoint's main row in the Endpoints table. */
 .agent-summary-row td {
-  padding: 0.35rem 0.9rem 0.7rem;
-  background: var(--stripe);
+  padding: 6px 12px 12px;
+  background: var(--ep-surface-2);
 }
 
 .agent-summary-row-content {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.quarantine-toggle-btn {
-  font-size: 0.78rem;
-  padding: 0.3rem 0.7rem;
-  background: var(--danger);
+.ep-pg .quarantine-toggle-btn {
+  min-height: var(--ep-control-height-sm);
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--ep-sev-critical);
+  border-color: var(--ep-sev-critical);
+  background: var(--ep-surface);
 }
 
-.quarantine-toggle-btn:hover:not(:disabled) {
-  background: #c22e3a;
+.ep-pg .quarantine-toggle-btn:hover:not(:disabled) {
+  background: var(--ep-sev-critical-soft);
 }
 
 .clickable-row {
   cursor: pointer;
 }
 
-.clickable-row:hover {
-  background: var(--accent-soft);
+.clickable-row:hover td {
+  background: var(--ep-surface-2);
 }
 
-.selected-row {
-  background: var(--accent-soft);
+.selected-row td {
+  background: var(--ep-selected);
 }
 
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--ep-radius-sm);
+  font-size: 12px;
   font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .status-badge svg {
-  width: 0.8rem;
-  height: 0.8rem;
+  width: 12px;
+  height: 12px;
   flex: none;
 }
 
 .status-badge.online {
-  background: var(--online-soft);
-  color: var(--online);
+  background: var(--ep-ok-soft);
+  color: var(--ep-ok);
 }
 .status-badge.online svg {
-  fill: var(--online);
+  fill: var(--ep-ok);
 }
 
 .status-badge.offline {
-  background: var(--offline-soft);
-  color: var(--offline);
+  background: var(--ep-surface-2);
+  color: var(--ep-ink-muted);
 }
 .status-badge.offline svg {
-  fill: var(--offline);
+  fill: var(--ep-neutral);
 }
 
 .status-badge.danger {
-  background: var(--danger-soft);
-  color: var(--danger);
+  background: var(--ep-sev-critical-soft);
+  color: var(--ep-sev-critical);
 }
 .status-badge.danger svg {
-  fill: var(--danger);
+  fill: var(--ep-sev-critical);
 }
 
 .status-badge.warn {
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: var(--ep-sev-medium-soft);
+  color: var(--ep-sev-medium);
 }
 .status-badge.warn svg {
-  fill: var(--warn);
+  fill: var(--ep-sev-medium);
 }
 
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
-  border-radius: 8px;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
+  gap: 16px;
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-lg);
+  box-shadow: var(--ep-shadow-card);
+  padding: 20px;
+  margin-bottom: 16px;
+  font-size: 13px;
 }
 
 .detail-grid strong {
   display: block;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-  margin-bottom: 0.2rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ep-ink-subtle);
+  margin-bottom: 2px;
 }
 
 .mono-cell {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 0.85rem;
+  font-family: var(--ep-font-mono);
+  font-size: 12.5px;
   white-space: pre-wrap;
 }
 
 .output-block {
-  margin: 0.25rem 0;
-  padding: 0.5rem;
-  background: #f4f5f7;
-  border-radius: 4px;
-  font-size: 0.8rem;
+  margin: 4px 0;
+  padding: 8px 10px;
+  background: var(--ep-surface-2);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+  font-family: var(--ep-font-mono);
+  font-size: 12px;
   max-height: 200px;
   overflow: auto;
   white-space: pre-wrap;
 }
 
 .error-text {
-  color: var(--danger);
-  font-size: 0.85rem;
+  color: var(--ep-sev-critical);
+  font-size: 12.5px;
 }
 
 .info-text {
-  color: var(--online);
-  font-size: 0.85rem;
+  color: var(--ep-ok);
+  font-size: 12.5px;
 }
 
 .warn-text {
-  color: var(--warn);
-  font-size: 0.85rem;
+  color: var(--ep-sev-medium);
+  font-size: 12.5px;
 }
 
 /* KPI tile row — dashboard-style summary counts, click to filter a table below.
-   Uses the original theme's semantic colors (--online/--danger), not a new palette. */
+   Restyled to the .ep-kpi look; selection uses the neutral accent, never brand red. */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.875rem;
-  margin-bottom: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .tile {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem 1.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-lg);
+  box-shadow: var(--ep-shadow-card);
+  padding: 16px 18px;
   cursor: pointer;
-  transition: box-shadow 0.12s;
+  transition: border-color var(--ep-dur-fast) var(--ep-ease), background var(--ep-dur-fast) var(--ep-ease);
 }
 
 .tile:hover {
-  box-shadow: 0 0 0 1px var(--text-muted) inset;
+  border-color: var(--ep-border-strong);
 }
 
 .tile.active {
-  box-shadow: 0 0 0 2px var(--accent) inset;
+  border-color: var(--ep-accent);
+  background: var(--ep-selected);
 }
 
 .tile .tile-label {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  margin-bottom: 0.4rem;
+  color: var(--ep-ink-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .tile .tile-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1;
+  font-size: 30px;
+  line-height: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .tile.accent-good .tile-value {
-  color: var(--online);
+  color: var(--ep-ok);
 }
 
 .tile.accent-critical .tile-value {
-  color: var(--danger);
+  color: var(--ep-sev-critical);
 }
 
 .tile.accent-warn .tile-value {
-  color: var(--warn);
+  color: var(--ep-sev-medium);
 }
 
 /* Dashboard KPI tiles are informational, not click-to-filter like AgentsPage's. */
@@ -586,20 +708,19 @@ fieldset {
 }
 
 .tile.static:hover {
-  box-shadow: none;
+  border-color: var(--ep-border);
 }
 
 /* Dashboard donut charts */
 .dashboard-chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .dashboard-chart-card h3 {
   margin-top: 0;
-  font-size: 0.95rem;
 }
 
 .dashboard-donut-wrap {
@@ -616,105 +737,89 @@ fieldset {
 }
 
 .dashboard-donut-center-value {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 600;
   line-height: 1;
-  color: var(--text);
+  color: var(--ep-ink);
   font-variant-numeric: tabular-nums;
 }
 
 .dashboard-donut-center-label {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-top: 0.2rem;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ep-ink-subtle);
+  margin-top: 4px;
 }
 
-.dashboard-legend {
+.ep-pg .dashboard-legend {
   list-style: none;
   padding: 0;
-  margin: 0.5rem 0 0;
-  font-size: 0.8rem;
-  color: var(--text);
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ep-ink);
 }
 
 .dashboard-legend li {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.15rem 0;
+  gap: 8px;
+  padding: 2px 0;
 }
 
 .dashboard-legend-swatch {
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
-/* Category-accent cards — colored top border per topic, used for grouping
-   condition/rule authoring forms. Deliberately distinct hues per category
-   (not tied to the app's red accent) so categories stay visually distinguishable. */
+/* Category-accent cards — coloured top border per topic, used for grouping condition/rule
+   authoring forms. Categorical chart tokens keep categories distinguishable without
+   reusing brand or severity colours; titles stay ink per Meridian. */
 .card {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--border);
-  border-radius: 8px;
-  padding: 1.125rem 1.25rem;
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-border);
+  border-top: 3px solid var(--ep-border);
+  border-radius: var(--ep-radius-lg);
+  box-shadow: var(--ep-shadow-card);
+  padding: 18px 20px;
 }
 
-.card h2 {
-  font-size: 0.95rem;
-  color: var(--text);
+.ep-pg .card h2 {
+  font-size: 14px;
+  color: var(--ep-ink);
 }
 
-.card .hint {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  margin: -0.3rem 0 0.6rem;
+.ep-pg .card .hint {
+  color: var(--ep-ink-subtle);
+  font-size: 12px;
+  margin: -6px 0 10px;
 }
 
 .card.accent-blue {
-  border-top-color: #2a78d6;
-}
-.card.accent-blue h2 {
-  color: #2a78d6;
-}
-.card.accent-orange {
-  border-top-color: #d6532a;
-}
-.card.accent-orange h2 {
-  color: #d6532a;
-}
-.card.accent-teal {
-  border-top-color: #0d9488;
-}
-.card.accent-teal h2 {
-  color: #0d9488;
+  border-top-color: var(--ep-chart-1);
 }
 .card.accent-green {
-  border-top-color: #3fa34d;
-}
-.card.accent-green h2 {
-  color: #3fa34d;
+  border-top-color: var(--ep-chart-2);
 }
 .card.accent-gold {
-  border-top-color: #b6862a;
-}
-.card.accent-gold h2 {
-  color: #b6862a;
+  border-top-color: var(--ep-chart-3);
 }
 .card.accent-purple {
-  border-top-color: #7c5fd6;
+  border-top-color: var(--ep-chart-4);
 }
-.card.accent-purple h2 {
-  color: #7c5fd6;
+.card.accent-teal {
+  border-top-color: var(--ep-chart-5);
+}
+.card.accent-orange {
+  border-top-color: var(--ep-chart-6);
 }
 
 .chevron {
   display: inline-block;
-  transition: transform 0.15s;
-  color: var(--text-muted);
+  transition: transform var(--ep-dur) var(--ep-ease);
+  color: var(--ep-ink-subtle);
 }
 
 .chevron.open {
@@ -723,40 +828,48 @@ fieldset {
 
 /* User / group suffix after an endpoint hostname (components/EndpointLabel.tsx). */
 .endpoint-label-meta {
-  color: var(--text-muted);
+  color: var(--ep-ink-subtle);
 }
 
-/* Online/offline dot in front of every endpoint name (see EndpointStatusDot). Offline uses
-   --danger rather than the grey --offline so a down endpoint stands out at a glance. */
+/* Online/offline dot in front of every endpoint name (see EndpointStatusDot).
+   Meridian: online = ok, offline = neutral (status is never colour alone — the label
+   or status column carries the word). */
 .endpoint-status-dot {
   display: inline-block;
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  margin-right: 0.35rem;
+  margin-right: 6px;
   vertical-align: middle;
   flex: none;
 }
 .endpoint-status-dot.online {
-  background: var(--online);
+  background: var(--ep-ok);
 }
 .endpoint-status-dot.offline {
-  background: var(--danger);
+  background: var(--ep-neutral);
 }
 
 /* Removable active-filter label (e.g. Endpoints page filters set by a Dashboard link). */
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  margin-right: 0.5rem;
-  padding: 0.15rem 0.25rem 0.15rem 0.6rem;
-  border: 1px solid var(--text-muted);
-  border-radius: 999px;
-  font-size: 0.85rem;
+  gap: 6px;
+  margin-right: 8px;
+  padding: 1px 2px 1px 10px;
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-pill);
+  background: var(--ep-surface);
+  color: var(--ep-ink-muted);
+  font-size: 12.5px;
 }
-.filter-chip button {
-  padding: 0 0.4rem;
+
+.ep-pg .filter-chip button {
+  min-height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--ep-radius-pill);
+  background: transparent;
   line-height: 1.2;
 }
 

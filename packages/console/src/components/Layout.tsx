@@ -1,11 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import {
+  ChevronDown,
+  ChevronRight,
+  Database,
+  KeyRound,
+  LayoutGrid,
+  Lock,
+  LogOut,
+  Menu,
+  Monitor,
+  Network,
+  Package,
+  Settings,
+  Shield,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
 import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
 import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
-import LockIcon from "./LockIcon";
+
+// Lucide icon per nav module (design-system/docs/COMPONENTS.md §18).
+const MODULE_ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutGrid,
+  endpoint: Monitor,
+  network: Network,
+  software: Package,
+  security: Shield,
+  data: Database,
+  user: Users,
+  licensing: KeyRound,
+  "admin-users": Settings,
+};
+
+// Modules listed under the "Administration" sidebar heading; everything else is "Operations".
+const ADMIN_MODULE_KEYS = new Set(["licensing", "admin-users"]);
+
+const ICON_PROPS = { size: 16, strokeWidth: 1.7, className: "ep-ic", "aria-hidden": true } as const;
 
 // Unlike isModuleLocked/isModuleUngranted below (which gray a module out but keep it
 // visible), a hidden module/item is removed from the nav entirely — see
@@ -21,10 +55,13 @@ function visibleItems(module: NavModule, visibility: ModuleVisibilityView | unde
   return items.filter((item) => !visibility.hiddenItemPaths.includes(item.path));
 }
 
-function isModuleActive(pathname: string, moduleKey: string): boolean {
-  const module = NAV_MODULES.find((m) => m.key === moduleKey)!;
-  if (module.path) return pathname === module.path || pathname.startsWith(`${module.path}/`);
-  return (module.items ?? []).some((item) => pathname === item.path || pathname.startsWith(`${item.path}/`));
+function pathMatches(pathname: string, path: string): boolean {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+function isModuleActive(pathname: string, module: NavModule): boolean {
+  if (module.path) return pathMatches(pathname, module.path);
+  return (module.items ?? []).some((item) => pathMatches(pathname, item.path));
 }
 
 function isModuleLocked(module: NavModule, licenseStatus: ReturnType<typeof useLicenseStatus>["data"]): boolean {
@@ -42,6 +79,68 @@ function isModuleUngranted(module: NavModule, me: ReturnType<typeof useMe>["data
   return !me.moduleGrants.includes(module.licenseModule);
 }
 
+function initialsFor(email: string | undefined): string {
+  const local = (email ?? "").split("@")[0].replace(/[^a-zA-Z0-9]/g, "");
+  return (local.slice(0, 2) || "?").toUpperCase();
+}
+
+function roleLabel(role: string | undefined): string {
+  if (role === "SUPER_ADMIN") return "Super administrator";
+  if (role) return "Administrator";
+  return "";
+}
+
+// Avatar button + dropdown in the top bar; the only home of "Log out" (COMPONENTS.md §3).
+function AccountMenu({ email, role, onLogout }: { email?: string; role?: string; onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="app-account" ref={wrapRef}>
+      <button
+        type="button"
+        className="ep-tenant app-account-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="ep-av app-av-sm">{initialsFor(email)}</span>
+        <ChevronDown {...ICON_PROPS} />
+      </button>
+      {open && (
+        <div className="ep-menu app-account-menu" role="menu">
+          <div className="app-account-id">
+            <b>{email}</b>
+            <small>{roleLabel(role)}</small>
+          </div>
+          <hr />
+          <button type="button" role="menuitem" onClick={onLogout}>
+            <LogOut {...ICON_PROPS} />
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Layout() {
   // Live push stream: refreshes data the moment the server says it changed (see serverEvents).
   useServerEvents();
@@ -51,12 +150,16 @@ export default function Layout() {
   const logout = useLogout();
   const location = useLocation();
 
-  const activeModule = NAV_MODULES.find((m) => isModuleActive(location.pathname, m.key)) ?? NAV_MODULES[0];
+  const matchedModule = NAV_MODULES.find((m) => isModuleActive(location.pathname, m));
+  const activeModule = matchedModule ?? NAV_MODULES[0];
+  const activeItem = matchedModule?.items?.find((item) => pathMatches(location.pathname, item.path));
   // Every module starts minimized, including whichever one owns the landing route (e.g.
   // "/" -> "/endpoints" -> Endpoint Manager) — the active module button is still
   // highlighted via isActive below, just collapsed until clicked.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const isFirstRender = useRef(true);
+  // Below 960px the sidebar is a drawer (ep-open), toggled from the top bar.
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Whichever module you navigate INTO after the initial load auto-expands — doesn't
   // collapse others, just guarantees you can see where you are once you've moved around.
@@ -69,6 +172,10 @@ export default function Layout() {
     setExpanded((prev) => (prev.has(activeModule.key) ? prev : new Set(prev).add(activeModule.key)));
   }, [activeModule.key]);
 
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
   function toggleModule(key: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -78,77 +185,116 @@ export default function Layout() {
     });
   }
 
-  return (
-    <div className="app-shell">
-      <aside className="app-sidebar">
-        <div className="sidebar-spacer" />
-        <nav className="module-nav">
-          {NAV_MODULES.filter((module) => !module.superAdminOnly || me?.role === "SUPER_ADMIN")
-            .filter((module) => !isModuleHidden(module, visibility))
-            .filter((module) => !module.items || visibleItems(module, visibility).length > 0)
-            .map((module) => {
-            if (module.path) {
-              return (
-                <div key={module.key} className="module-group">
-                  <NavLink to={module.path} className={({ isActive }) => `module-link ${isActive ? "active" : ""}`}>
-                    {module.label}
-                  </NavLink>
-                </div>
-              );
-            }
+  const navModules = NAV_MODULES.filter((module) => !module.superAdminOnly || me?.role === "SUPER_ADMIN")
+    .filter((module) => !isModuleHidden(module, visibility))
+    .filter((module) => !module.items || visibleItems(module, visibility).length > 0);
 
-            const isExpanded = expanded.has(module.key);
-            const isActive = module.key === activeModule.key;
-            const locked = isModuleLocked(module, licenseStatus);
-            const ungranted = isModuleUngranted(module, me);
-            return (
-              <div key={module.key} className="module-group">
-                <button
-                  type="button"
-                  className={`module-link ${isActive ? "active" : ""} ${locked || ungranted ? "locked" : ""}`}
-                  onClick={() => toggleModule(module.key)}
-                  title={locked ? "Not included in your license" : ungranted ? "You don't have access to this module" : undefined}
-                >
-                  {module.label}
-                  {(locked || ungranted) && <LockIcon />}
-                  <span className={`chevron ${isExpanded ? "open" : ""}`}>&#9656;</span>
-                </button>
-                {isExpanded && (
-                  <div className="submodule-list">
-                    {visibleItems(module, visibility).map((item) => (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive: subActive }) => `submodule-link ${subActive ? "active" : ""}`}
-                      >
-                        {item.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-      </aside>
-      <div className="app-main">
-        <header className="app-subheader">
-          <div className="header-brand">
-            <Logo size={34} />
-            Endpoint Pro
+  function renderModule(module: NavModule) {
+    const Icon = MODULE_ICONS[module.key] ?? LayoutGrid;
+
+    if (module.path) {
+      return (
+        <NavLink key={module.key} to={module.path} className={({ isActive }) => `ep-ni ${isActive ? "ep-on" : ""}`}>
+          <Icon {...ICON_PROPS} />
+          <span>{module.label}</span>
+        </NavLink>
+      );
+    }
+
+    const isExpanded = expanded.has(module.key);
+    const locked = isModuleLocked(module, licenseStatus);
+    const ungranted = isModuleUngranted(module, me);
+    const Chevron = isExpanded ? ChevronDown : ChevronRight;
+    // A module with an active sub-page stays un-highlighted itself; only the sub-item gets
+    // ep-on-sub (COMPONENTS.md §2). Collapsed, the module is the only place to show where
+    // you are, so it takes ep-on until expanded.
+    const showActive = module.key === matchedModule?.key && !isExpanded;
+    return (
+      <div key={module.key}>
+        <button
+          type="button"
+          className={`ep-ni ${showActive ? "ep-on" : ""} ${locked || ungranted ? "app-ni-locked" : ""}`}
+          aria-expanded={isExpanded}
+          onClick={() => toggleModule(module.key)}
+          title={locked ? "Not included in your license" : ungranted ? "You don't have access to this module" : undefined}
+        >
+          <Icon {...ICON_PROPS} />
+          <span>{module.label}</span>
+          {(locked || ungranted) && <Lock {...ICON_PROPS} size={13} aria-label="Locked" aria-hidden={false} />}
+          <Chevron {...ICON_PROPS} className="ep-ic ep-chev" />
+        </button>
+        {isExpanded && (
+          <div className="ep-sub">
+            {visibleItems(module, visibility).map((item) => (
+              <NavLink key={item.path} to={item.path} className={({ isActive }) => (isActive ? "ep-on-sub" : "")}>
+                {item.label}
+              </NavLink>
+            ))}
           </div>
-          <div className="user-menu">
-            <span>{me?.email}</span>
-            <button type="button" onClick={() => logout.mutate()}>
-              Log out
-            </button>
+        )}
+      </div>
+    );
+  }
+
+  const operations = navModules.filter((m) => !ADMIN_MODULE_KEYS.has(m.key));
+  const administration = navModules.filter((m) => ADMIN_MODULE_KEYS.has(m.key));
+
+  return (
+    <div className="ep-app">
+      <aside className={`ep-sb ${drawerOpen ? "ep-open" : ""}`} aria-label="Main navigation">
+        <div className="ep-brandrow">
+          <Logo size={28} />
+          <div>
+            <b>Endpoint Pro</b>
+            <small>Systematix Group</small>
+          </div>
+        </div>
+        <nav className="app-nav">
+          {operations.length > 0 && <div className="ep-ov">Operations</div>}
+          {operations.map(renderModule)}
+          {administration.length > 0 && <div className="ep-ov">Administration</div>}
+          {administration.map(renderModule)}
+        </nav>
+        <div className="ep-sbfoot">
+          <div className="ep-av">{initialsFor(me?.email)}</div>
+          <div className="app-sbfoot-id">
+            <b>{roleLabel(me?.role)}</b>
+            <small>{me?.email}</small>
+          </div>
+        </div>
+      </aside>
+      {drawerOpen && <div className="app-drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
+      <main className="ep-main">
+        <header className="ep-tb">
+          <button
+            type="button"
+            className="ep-iconbtn app-drawer-toggle"
+            aria-label="Open navigation"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen((v) => !v)}
+          >
+            <Menu {...ICON_PROPS} />
+          </button>
+          <nav className="ep-crumb" aria-label="Breadcrumb">
+            {matchedModule && activeItem ? (
+              <>
+                {matchedModule.label}
+                <ChevronRight {...ICON_PROPS} size={14} />
+                <b>{activeItem.label}</b>
+              </>
+            ) : (
+              <b>{matchedModule?.label ?? ""}</b>
+            )}
+          </nav>
+          <div className="ep-tbr">
+            <AccountMenu email={me?.email} role={me?.role} onLogout={() => logout.mutate()} />
           </div>
         </header>
-        <main className="app-content">
+        <div className="ep-pg">
           <Outlet />
-        </main>
+        </div>
         <footer className="app-footer">Designed &amp; Developed by Kundan Zamvar - 2026</footer>
-      </div>
+      </main>
     </div>
   );
 }

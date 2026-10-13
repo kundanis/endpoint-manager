@@ -2,14 +2,12 @@ import { useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { useDashboardSummary, useIsItemHidden } from "../api/hooks";
+import { CHART_SEMANTIC, CHART_SERIES, CHART_SURFACE } from "../chartTheme";
 
-// Validated categorical theme (node scripts/validate_palette.js from the dataviz skill):
-// this app's own 6 card-accent hues failed as a categorical palette in their original
-// order (gold<->green collided under deuteranopia, green<->teal too close for normal
-// vision) — green was dropped entirely since it collided with both neighbors regardless
-// of ordering; these 5, in this fixed order, pass all checks (light mode, white surface).
-const CATEGORICAL_HUES = ["#2a78d6", "#d6532a", "#0d9488", "#7c5fd6", "#b6862a"];
-const OTHER_HUE = "var(--offline)";
+// Meridian chart palette (chartTheme.ts / DESIGN_SYSTEM.md §6): categorical series in fixed
+// order, and the long-tail "Other" bucket always neutral.
+const CATEGORICAL_HUES = CHART_SERIES;
+const OTHER_HUE = CHART_SEMANTIC.neutral;
 const MAX_CATEGORICAL_SLICES = 5;
 
 interface DonutDatum {
@@ -56,7 +54,7 @@ function DonutChart({ title, data, totalLabel }: { title: string; data: DonutDat
                   innerRadius={55}
                   outerRadius={82}
                   paddingAngle={2}
-                  stroke="var(--panel-bg)"
+                  stroke={CHART_SURFACE}
                   strokeWidth={2}
                   isAnimationActive={false}
                 >
@@ -146,8 +144,8 @@ export default function DashboardPage() {
   if (!summary) return <p>Loading dashboard…</p>;
 
   const statusData: DonutDatum[] = [
-    { name: "Online", value: summary.onlineCount, color: "var(--online)", to: endpointsLink("?status=ONLINE") },
-    { name: "Offline", value: summary.offlineCount, color: "var(--offline)", to: endpointsLink("?status=OFFLINE") },
+    { name: "Online", value: summary.onlineCount, color: CHART_SEMANTIC.ok, to: endpointsLink("?status=ONLINE") },
+    { name: "Offline", value: summary.offlineCount, color: CHART_SEMANTIC.neutral, to: endpointsLink("?status=OFFLINE") },
   ];
 
   const deviceTypeData: DonutDatum[] = [
@@ -180,19 +178,19 @@ export default function DashboardPage() {
   // Trust is per policy on the Zero Trust page; "Not assessed" means no enabled policy
   // covers the endpoint, so it opens the page itself (where policies get assigned).
   const trustData: DonutDatum[] = [
-    { name: "Trusted", value: summary.trustSummary.trusted, color: "var(--online)", to: "/zero-trust?trust=trusted" },
-    { name: "Not trusted", value: summary.trustSummary.notTrusted, color: "var(--danger)", to: "/zero-trust?trust=not-trusted" },
-    { name: "Not assessed", value: summary.trustSummary.notAssigned, color: "var(--offline)", to: "/zero-trust" },
+    { name: "Trusted", value: summary.trustSummary.trusted, color: CHART_SEMANTIC.ok, to: "/zero-trust?trust=trusted" },
+    { name: "Not trusted", value: summary.trustSummary.notTrusted, color: CHART_SEMANTIC.critical, to: "/zero-trust?trust=not-trusted" },
+    { name: "Not assessed", value: summary.trustSummary.notAssigned, color: CHART_SEMANTIC.neutral, to: "/zero-trust" },
   ];
 
   // "Has vulnerabilities" opens the CVE list (where remediation happens); "Clean" has no
   // CVEs to show, so it lists the clean endpoints instead.
   const vulnerabilityData: DonutDatum[] = [
-    { name: "Clean", value: summary.vulnerabilitySummary.clean, color: "var(--online)", to: endpointsLink("?vuln=none") },
+    { name: "Clean", value: summary.vulnerabilitySummary.clean, color: CHART_SEMANTIC.ok, to: endpointsLink("?vuln=none") },
     {
       name: "Has vulnerabilities",
       value: summary.vulnerabilitySummary.withVulnerabilities,
-      color: "var(--danger)",
+      color: CHART_SEMANTIC.critical,
       to: "/vulnerabilities",
     },
   ];
@@ -357,8 +355,8 @@ export default function DashboardPage() {
                   title={v.vlanName}
                   totalLabel="Hosts"
                   data={[
-                    { name: "Managed", value: v.managed, color: "var(--online)", to: "/network-scan" },
-                    { name: "Unmanaged (network device)", value: v.unmanaged, color: "var(--warn)", to: "/network-scan" },
+                    { name: "Managed", value: v.managed, color: CHART_SEMANTIC.ok, to: "/network-scan" },
+                    { name: "Unmanaged (network device)", value: v.unmanaged, color: CHART_SEMANTIC.warn, to: "/network-scan" },
                   ]}
                 />
               ))}
