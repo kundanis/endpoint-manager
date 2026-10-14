@@ -115,11 +115,11 @@ function CoverageCard({ summary, onOpenNetworkScan }: { summary: DashboardSummar
           title="No VLANs set up yet"
           action={
             <Button size="sm" onClick={onOpenNetworkScan}>
-              Set up network scan
+              Set up network discovery
             </Button>
           }
         >
-          Add a VLAN on the Network scan page to see which hosts have the agent.
+          Add a VLAN on the Network discovery page to see which hosts have the agent.
         </EmptyState>
       ) : (
         <CoverageTable nameHeader="Network" rows={rows} />
@@ -216,7 +216,7 @@ function UnmanagedDevicesCard({ summary, onOpenNetworkScan }: { summary: Dashboa
       hint="seen by network scan without an agent"
       actions={
         <Link className="ep-link" to="/network-scan">
-          Open network scan
+          Open network discovery
         </Link>
       }
     >

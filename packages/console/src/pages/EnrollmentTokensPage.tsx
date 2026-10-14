@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Ban, ClipboardCheck, Copy, Download, KeyRound, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Ban, ClipboardCheck, Copy, Download, KeyRound, Plus, Radar } from "lucide-react";
 import {
   useAgentConnectionSettings,
   useAssetGroups,
@@ -7,6 +8,8 @@ import {
   useDownloadAgentInstaller,
   useDownloadAgentSetup,
   useEnrollmentTokens,
+  useIsItemHidden,
+  useNetworkDeviceSummary,
   useRemoteInstallJob,
   useRevokeEnrollmentToken,
   useSaveAgentConnectionSettings,
@@ -33,6 +36,68 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime } from "../format";
+
+const UNMANAGED_PREVIEW_ROWS = 4;
+
+// Onboarding shortcut: how many devices the latest network discovery scans found without the
+// agent, so whoever is enrolling machines sees what's still missing. Renders nothing when the
+// Network discovery page is hidden, or when this admin can't use Network Manager (the server
+// refuses the summary - license or per-admin grant).
+function DevicesWithoutAgentCard() {
+  const hidden = useIsItemHidden("/network-scan");
+  const { data: summary, isError } = useNetworkDeviceSummary();
+  if (hidden || isError || !summary) return null;
+
+  const scanned = summary.perVlan.some((v) => v.hasScan);
+  const hosts = summary.unmanagedHosts;
+  const openLink = (
+    <Link className="ep-link" to="/network-scan">
+      Open network discovery
+    </Link>
+  );
+
+  return (
+    <Card title="Devices without the agent" actions={openLink}>
+      {!scanned ? (
+        <EmptyState icon={Radar} title="No network scans yet">
+          Scan your VLANs on the Network discovery page to find devices that still need the agent.
+        </EmptyState>
+      ) : hosts.length === 0 ? (
+        <div className="app-stack-sm">
+          <div>
+            <Badge tone="ok">All covered</Badge>
+          </div>
+          <p className="app-text">Every device found on scanned VLANs already has the agent.</p>
+        </div>
+      ) : (
+        <div className="app-stack-sm">
+          <p className="app-text">
+            <Badge tone="med">{hosts.length}</Badge> {hosts.length === 1 ? "device" : "devices"} on scanned VLANs{" "}
+            {hosts.length === 1 ? "doesn't" : "don't"} have the agent yet. Some may be printers, switches or phones.
+          </p>
+          <div className="app-table-wrap">
+            <table className="ep-tbl">
+              <tbody>
+                {hosts.slice(0, UNMANAGED_PREVIEW_ROWS).map((h) => (
+                  <tr key={`${h.vlanName}-${h.ipAddress}`}>
+                    <td className="ep-host">
+                      <b className={h.hostname ? undefined : "app-unnamed"}>{h.hostname ?? "Unknown hostname"}</b>
+                      <small>{h.ipAddress}</small>
+                    </td>
+                    <td className="app-muted">{h.vlanName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {hosts.length > UNMANAGED_PREVIEW_ROWS && (
+            <span className="app-muted">+{hosts.length - UNMANAGED_PREVIEW_ROWS} more on the Network discovery page</span>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 type Protocol = "http" | "https";
 interface AddressParts {
@@ -523,7 +588,8 @@ export default function EnrollmentTokensPage() {
 
       <Row layout="21">
         <ServerConnectionPanel />
-        <Card title="Download the agent installer" style={{ alignSelf: "start" }}>
+        <div className="app-stack" style={{ alignSelf: "start" }}>
+        <Card title="Download the agent installer">
           <div className="app-stack">
             <p className="app-text">
               The self-elevating installer (<span className="ep-mono">EndpointProAgentSetup.exe</span>). It already
@@ -543,6 +609,8 @@ export default function EnrollmentTokensPage() {
             </div>
           </div>
         </Card>
+        <DevicesWithoutAgentCard />
+        </div>
       </Row>
 
       {creating && (

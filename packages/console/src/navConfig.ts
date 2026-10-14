@@ -44,7 +44,7 @@ export const NAV_MODULES: NavModule[] = [
     key: "network",
     label: "Network Manager",
     licenseModule: "NETWORK_MANAGER",
-    items: [{ path: "/network-scan", label: "Network scan" }],
+    items: [{ path: "/network-scan", label: "Network discovery" }],
   },
   {
     key: "software",

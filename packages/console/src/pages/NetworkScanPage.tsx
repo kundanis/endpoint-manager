@@ -592,7 +592,7 @@ export default function NetworkScanPage() {
 
   const header = (
     <PageHeader
-      title="Network scan"
+      title="Network discovery"
       description="Scan VLANs for hosts and see which ones don't have the agent installed yet."
       actions={
         <>

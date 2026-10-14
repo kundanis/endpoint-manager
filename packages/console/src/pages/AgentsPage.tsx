@@ -411,7 +411,7 @@ function NetworkDevicesPanel() {
         </div>
         {totalCount === 0 ? (
           <EmptyState icon={Radar} title="No unmanaged devices found">
-            Scan a VLAN on the Network scan page to discover devices without the agent.
+            Scan a VLAN on the Network discovery page to find devices without the agent.
           </EmptyState>
         ) : filteredHosts.length === 0 ? (
           <EmptyState icon={SearchX} title="No devices match">
