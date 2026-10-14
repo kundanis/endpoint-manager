@@ -124,51 +124,171 @@ async function collectSystemFacts(): Promise<SystemFacts> {
 
 // Deliberately reads the Uninstall registry keys rather than Get-WmiObject Win32_Product,
 // which triggers a repair/reconfigure pass on every installed MSI as a side effect of querying it.
+//
+// The agent runs as SYSTEM, whose HKCU is SYSTEM's own hive - so per-user installs (VS Code
+// user setup, Zoom, Teams, ...) live under each signed-in user's HKEY_USERS\<SID> instead.
+// Output is forced to UTF-8 (no BOM) so names like "Intel® Graphics" survive the pipe.
+//
+// Each app's key is read on its own inside try/catch: a single malformed value (e.g. a
+// REG_DWORD with bad data) makes Get-ItemProperty throw a terminating error that
+// -ErrorAction SilentlyContinue does not stop, and with one wildcard call that wiped out the
+// entire list - an endpoint then reported no software at all.
 const INSTALLED_SOFTWARE_PS_SCRIPT = `
-$paths = @(
-  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
-  'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
-  'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+$roots = @(
+  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
 )
-Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue |
-  Where-Object { $_.DisplayName } |
-  Select-Object DisplayName, DisplayVersion, Publisher, InstallDate |
-  ConvertTo-Json -Compress
+try {
+  Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction Stop |
+    Where-Object { $_.PSChildName -match '^S-1-5-21-[0-9-]+$' } |
+    ForEach-Object { $roots += "Registry::HKEY_USERS\\$($_.PSChildName)\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" }
+} catch { }
+$rows = foreach ($root in $roots) {
+  $keys = @()
+  try { $keys = Get-ChildItem -Path $root -ErrorAction Stop } catch { continue }
+  foreach ($key in $keys) {
+    try {
+      $p = Get-ItemProperty -Path $key.PSPath -ErrorAction Stop
+      if ($p.DisplayName) {
+        [PSCustomObject]@{
+          DisplayName    = [string]$p.DisplayName
+          DisplayVersion = [string]$p.DisplayVersion
+          Publisher      = [string]$p.Publisher
+          InstallDate    = [string]$p.InstallDate
+        }
+      }
+    } catch { }
+  }
+}
+ConvertTo-Json -InputObject @($rows) -Compress
 `;
 
 interface RawUninstallEntry {
-  DisplayName?: string;
-  DisplayVersion?: string;
-  Publisher?: string;
-  InstallDate?: string;
+  DisplayName?: unknown;
+  DisplayVersion?: unknown;
+  Publisher?: unknown;
+  InstallDate?: unknown;
+}
+
+// Registry values are usually strings, but a few installers write numbers (or nothing).
+function regString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  return s ? s : null;
+}
+
+// The same app can appear twice (e.g. HKCU and its HKEY_USERS\<SID> twin).
+function dedupeSoftware(entries: InstalledSoftwareEntry[]): InstalledSoftwareEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((e) => {
+    const key = `${e.name}\u0000${e.version ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function collectSoftwareViaPowerShell(): Promise<InstalledSoftwareEntry[]> {
+  const { stdout } = await execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALLED_SOFTWARE_PS_SCRIPT],
+    { maxBuffer: 20 * 1024 * 1024, timeout: 120_000 },
+  );
+  const trimmed = stdout.replace(/^﻿/, "").trim();
+  if (!trimmed) return [];
+  const parsed: RawUninstallEntry | RawUninstallEntry[] = JSON.parse(trimmed);
+  const rows = Array.isArray(parsed) ? parsed : [parsed];
+  return rows
+    .map((r) => ({
+      name: regString(r.DisplayName) ?? "",
+      version: regString(r.DisplayVersion),
+      publisher: regString(r.Publisher),
+      installDate: regString(r.InstallDate),
+    }))
+    .filter((e) => e.name);
+}
+
+// Fallback without PowerShell: `reg query <Uninstall key> /s` per hive. Blocks look like
+//   HKEY_LOCAL_MACHINE\SOFTWARE\...\Uninstall\{GUID}
+//       DisplayName    REG_SZ    Git
+//       DisplayVersion    REG_SZ    2.55.0
+// Exported for tests.
+export function parseRegQueryUninstall(output: string): InstalledSoftwareEntry[] {
+  const entries: InstalledSoftwareEntry[] = [];
+  let current: Record<string, string> | null = null;
+  const flush = () => {
+    if (current?.DisplayName) {
+      entries.push({
+        name: current.DisplayName,
+        version: current.DisplayVersion || null,
+        publisher: current.Publisher || null,
+        installDate: current.InstallDate || null,
+      });
+    }
+  };
+  for (const line of output.split(/\r?\n/)) {
+    if (line.startsWith("HKEY_")) {
+      flush();
+      current = {};
+      continue;
+    }
+    const value = /^\s+(DisplayName|DisplayVersion|Publisher|InstallDate)\s+REG_\w+\s*(.*)$/.exec(line);
+    if (value && current) current[value[1]] = value[2].trim();
+  }
+  flush();
+  return entries;
+}
+
+const UNINSTALL_SUBKEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+
+async function regQuery(key: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("reg.exe", ["query", key, "/s"], { maxBuffer: 50 * 1024 * 1024, timeout: 120_000 });
+    return stdout;
+  } catch (err) {
+    // Exit code 1 = key not found (normal for a user with no per-user installs).
+    const e = err as { stdout?: string };
+    return e.stdout ?? "";
+  }
+}
+
+async function collectSoftwareViaReg(): Promise<InstalledSoftwareEntry[]> {
+  const keys = [
+    `HKLM\\${UNINSTALL_SUBKEY}`,
+    `HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall`,
+  ];
+  // Signed-in users' hives (skip the *_Classes companions).
+  const users = await regQuery("HKU");
+  for (const line of users.split(/\r?\n/)) {
+    const hive = line.trim();
+    if (/^HKEY_USERS\\S-1-5-21-[\d-]+$/.test(hive)) keys.push(`${hive}\\${UNINSTALL_SUBKEY}`);
+  }
+  const outputs = await Promise.all(keys.map(regQuery));
+  return outputs.flatMap(parseRegQueryUninstall);
 }
 
 async function collectInstalledSoftware(): Promise<InstalledSoftwareEntry[]> {
   if (process.platform !== "win32") return [];
 
+  let entries: InstalledSoftwareEntry[] = [];
   try {
-    const { stdout } = await execFileAsync(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALLED_SOFTWARE_PS_SCRIPT],
-      { maxBuffer: 10 * 1024 * 1024 },
-    );
-
-    const trimmed = stdout.trim();
-    if (!trimmed) return [];
-
-    const parsed: RawUninstallEntry | RawUninstallEntry[] = JSON.parse(trimmed);
-    const rows = Array.isArray(parsed) ? parsed : [parsed];
-
-    return rows.map((r) => ({
-      name: r.DisplayName ?? "Unknown",
-      version: r.DisplayVersion ?? null,
-      publisher: r.Publisher ?? null,
-      installDate: r.InstallDate ?? null,
-    }));
+    entries = await collectSoftwareViaPowerShell();
+    console.log(`Installed software collected via PowerShell: ${entries.length} entries`);
   } catch (err) {
-    console.error("Failed to collect installed software", err);
-    return [];
+    console.error("Installed software via PowerShell failed - falling back to reg.exe", err);
   }
+  if (entries.length === 0) {
+    try {
+      entries = await collectSoftwareViaReg();
+      console.log(`Installed software collected via reg.exe: ${entries.length} entries`);
+    } catch (err) {
+      console.error("Failed to collect installed software", err);
+      return [];
+    }
+  }
+  return dedupeSoftware(entries);
 }
 
 // Win32_Battery no longer reliably exposes DesignCapacity/FullChargeCapacity on modern

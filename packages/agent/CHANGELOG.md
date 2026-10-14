@@ -6,6 +6,15 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.9
+- Fix: the installed-software list could come back empty. One malformed registry entry
+  made the whole query fail; each app is now read on its own, with a reg.exe fallback if
+  PowerShell can't be used at all.
+- New: per-user installs (VS Code, Zoom, Teams, ... installed for one user) are listed for
+  every signed-in user, not only machine-wide installs.
+- New: the agent writes a log to app\logs\agent.log (administrators only), so problems on
+  an endpoint can be diagnosed.
+
 ## 0.2.8
 - Fix: the endpoint's IP and MAC address now come from its real network adapter. Previously
   the first adapter listed was used, which on machines with a VPN (e.g. Tailscale) or

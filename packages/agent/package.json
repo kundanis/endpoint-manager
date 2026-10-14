@@ -1,13 +1,14 @@
 {
   "name": "@em/agent",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "package": "powershell -ExecutionPolicy Bypass -File scripts/package-installer.ps1"
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/package-installer.ps1",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@em/shared": "*",
