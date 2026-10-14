@@ -87,7 +87,9 @@ COPY --from=builder /src/packages/server/.env.example ./.env.example
 COPY --from=bytecode /build/dist ./dist
 
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Strip CRLF in case the build machine is Windows (a CR in the shebang line makes the container
+# fail with "exec ... no such file or directory").
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # uploads (user content) and agent-installer (downloadable installers) persist via volumes.
 VOLUME ["/app/uploads"]

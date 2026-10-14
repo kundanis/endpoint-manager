@@ -133,10 +133,20 @@ mkdir -p "$INSTALL_DIR/agent-installer" "$INSTALL_DIR/backups"
 PREVIOUS="$(env_get APP_VERSION)"
 if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEASE_VERSION" ]; then
   log "Upgrading $PREVIOUS -> $RELEASE_VERSION"
-  if [ -n "$(compose ps -q db 2>/dev/null)" ]; then
+  db_name="$(env_get DB_NAME)"; db_name="${db_name:-EndpointManagerDb}"
+  sqlcmd_q() {  # run a query in the db container (tools18 first, then the older path)
+    compose exec -T db sh -c "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -h -1 -W -b -Q \"$1\" 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -h -1 -W -b -Q \"$1\""
+  }
+  db_exists=0
+  if [ -n "$(compose ps -q db 2>/dev/null)" ]      && sqlcmd_q "SET NOCOUNT ON; SELECT CASE WHEN DB_ID('$db_name') IS NULL THEN 0 ELSE 1 END" 2>/dev/null | grep -q '^1'; then
+    db_exists=1
+  fi
+  if [ "$db_exists" -eq 0 ]; then
+    echo "No existing database [$db_name] yet (previous start never completed) - nothing to back up."
+  fi
+  if [ "$db_exists" -eq 1 ]; then
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     bak="pre-upgrade-${PREVIOUS}-${stamp}.bak"
-    db_name="$(env_get DB_NAME)"; db_name="${db_name:-EndpointManagerDb}"
     echo "Backing up database [$db_name] before upgrading..."
     if compose exec -T db sh -c "mkdir -p /var/opt/mssql/backup && (/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\" || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\")" >/dev/null \
        && compose cp "db:/var/opt/mssql/backup/$bak" "$INSTALL_DIR/backups/$bak"; then

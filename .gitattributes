@@ -1,0 +1,14 @@
+# Files that run or are parsed on Linux must keep LF line endings, even when checked out on
+# Windows with core.autocrlf=true (CRLF in a shebang script breaks it: "no such file or directory").
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+docker-compose*.yml text eol=lf
+.env.example    text eol=lf
+docker/customer/** text eol=lf
+VERSION         text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1           text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
