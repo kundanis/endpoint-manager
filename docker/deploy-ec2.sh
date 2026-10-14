@@ -134,7 +134,9 @@ imds_token="$(curl -fs -m 2 -X PUT http://169.254.169.254/latest/api/token \
   -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' 2>/dev/null || true)"
 ip="$(curl -fs -m 2 -H "X-aws-ec2-metadata-token: ${imds_token}" \
   http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
-[ -n "$ip" ] || ip="$(hostname -I | awk '{print $1}')"
+# Best effort only - never fail the install over a cosmetic lookup (minimal images lack hostname).
+[ -n "$ip" ] || ip="$( (hostname -I 2>/dev/null || true) | awk '{print $1}')"
+[ -n "$ip" ] || ip="<server-ip>"
 log "Endpoint One is running"
 echo "  Console:  http://${ip}:4000"
 echo "  Next:     sign in, then Endpoint Hub -> Enrollment tokens -> Server connection details:"

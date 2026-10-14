@@ -70,6 +70,51 @@ try {
   docker image inspect $image | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "Image $image not found (drop -SkipBuild to build it)." }
 
+  # --- Smoke tests: a failing image never becomes a release -------------------------------
+  # Each check guards against a failure seen in a real deployment:
+  #   1. the entrypoint script actually executes (CRLF made it "no such file or directory");
+  #   2. it has no CR characters at all;
+  #   3. the server bytecode boots and serves /health AND the console page.
+  # The DB-dependent startup path (migrations, seed) is not exercised here - no database is
+  # created; it runs on the target server, guarded by deploy.sh's health wait.
+  Step "Smoke-testing $image"
+  $marker = docker run --rm $image echo "entrypoint-ok" 2>&1 | Out-String
+  if ($marker -notmatch "entrypoint-ok") { throw "SMOKE FAIL: the image's entrypoint does not execute:`n$marker" }
+  Write-Host "  entrypoint executes ........ OK"
+
+  $crLines = (docker run --rm --entrypoint grep $image -c "`r" /usr/local/bin/docker-entrypoint.sh 2>$null | Out-String).Trim()
+  if ($crLines -ne "0") { throw "SMOKE FAIL: docker-entrypoint.sh in the image has CRLF line endings ($crLines lines)." }
+  Write-Host "  entrypoint line endings .... OK (LF)"
+
+  $smokeDir = Join-Path $env:TEMP "endpoint-one-smoke"
+  New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+  # Single quotes only inside the JS: it's passed through a file, never a command line.
+  Write-LfFile (Join-Path $smokeDir "smoke.cjs") @'
+require('/app/dist/bootstrap.cjs');
+setTimeout(async () => {
+  let ok = true;
+  try {
+    const h = await fetch('http://127.0.0.1:4000/health');
+    if (!h.ok) { console.log('SMOKE FAIL health ' + h.status); ok = false; }
+    const r = await fetch('http://127.0.0.1:4000/');
+    const t = await r.text();
+    if (r.status !== 200 || !/<title>Endpoint One/i.test(t)) { console.log('SMOKE FAIL console ' + r.status + ' ' + t.slice(0, 80)); ok = false; }
+  } catch (e) { console.log('SMOKE FAIL ' + e.message); ok = false; }
+  console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
+  process.exit(ok ? 0 : 1);
+}, 5000);
+'@
+  $smokeOut = docker run --rm -v "${smokeDir}:/smoke:ro" `
+    -e "DATABASE_URL=sqlserver://smoke-no-db:1433;database=x;user=x;password=x;encrypt=true;trustServerCertificate=true" `
+    -e "JWT_SECRET=smoke-test-secret-not-used-anywhere" `
+    -e "FIELD_ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" `
+    -e "PORT=4000" --entrypoint node $image /smoke/smoke.cjs 2>&1 | Out-String
+  if ($smokeOut -notmatch "SMOKE OK") {
+    $fails = ($smokeOut -split "`n" | Where-Object { $_ -match "SMOKE FAIL" }) -join "`n"
+    throw "SMOKE FAIL: the server did not boot and serve the console:`n$fails"
+  }
+  Write-Host "  server boots + console ..... OK"
+
   # --- Bundle folder ------------------------------------------------------------------------
   Step "Assembling $bundleName"
   if (Test-Path $bundleDir) { Remove-Item $bundleDir -Recurse -Force }
@@ -111,6 +156,16 @@ Offline: $([bool]$Offline)
     docker save -o (Join-Path $bundleDir "images\mssql-server.tar") mcr.microsoft.com/mssql/server:2022-latest
     if ($LASTEXITCODE -ne 0) { throw "docker save mssql failed" }
   }
+
+  # --- Bundle text files must be clean Linux files ----------------------------------------
+  foreach ($f in "deploy.sh", "docker-compose.yml", "INSTALL.md", "VERSION", "RELEASE-INFO.txt") {
+    $bytes = [System.IO.File]::ReadAllBytes((Join-Path $bundleDir $f))
+    $bad = @($bytes | Where-Object { $_ -lt 32 -and $_ -ne 9 -and $_ -ne 10 }).Count
+    if ($bad -gt 0) { throw "SMOKE FAIL: bundle file $f contains $bad CR/control characters." }
+  }
+  $deployText = Get-Content (Join-Path $bundleDir "deploy.sh") -Raw
+  if ($deployText -notmatch '(?m)^#!/usr/bin/env bash$') { throw "SMOKE FAIL: deploy.sh lost its shebang line." }
+  Write-Host "  bundle files are clean LF . OK"
 
   # --- Checksums (sha256sum -c format) ------------------------------------------------------
   Step "Writing SHA256SUMS"

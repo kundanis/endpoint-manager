@@ -38,6 +38,43 @@ env_set() {
 }
 compose() { (cd "$INSTALL_DIR" && docker compose "$@"); }
 
+# Public IP of the admin's SSH session (empty when local, private or unknown). Used to let the
+# installing admin reach the console, which otherwise only answers private networks.
+detect_ssh_public_ip() {
+  local ip
+  ip="$(who -m 2>/dev/null | sed -n 's/.*(\([0-9a-fA-F.:]*\)).*/\1/p' | head -1)"
+  case "$ip" in
+    ''|10.*|192.168.*|127.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|::1|fe80:*|fc*|fd*) echo "" ;;
+    *) echo "$ip" ;;
+  esac
+}
+
+print_access() {
+  local allowed_now
+  allowed_now="$(env_get ADMIN_ALLOWED_NETWORKS)"
+  echo
+  if [ -n "$allowed_now" ]; then
+    echo "  Admin console reachable from: private networks + ${allowed_now}"
+  else
+    echo "  Admin console reachable from PRIVATE NETWORKS ONLY - from the internet it shows {\"error\":\"Not found\"}."
+  fi
+  echo "  To allow another public IP:  sudo sed -i 's|^ADMIN_ALLOWED_NETWORKS=.*|ADMIN_ALLOWED_NETWORKS=<ip>[,<ip>]|' $INSTALL_DIR/.env"
+  echo "                               cd $INSTALL_DIR && sudo docker compose up -d --force-recreate server"
+}
+
+# Requests the console page from this host (always allowed - private source address) to prove
+# the server actually serves the web UI, not just /health.
+check_console() {
+  local port body
+  port="$(env_get APP_PORT)"; port="${port:-4000}"
+  body="$(curl -fsS -m 10 "http://127.0.0.1:${port}/" 2>/dev/null || true)"
+  if printf '%s' "$body" | grep -qi '<!doctype html'; then
+    echo "  Console page check: OK"
+  else
+    warn "The server is healthy but did not return the console page on http://127.0.0.1:${port}/ - check: docker compose logs --tail 100 server"
+  fi
+}
+
 wait_healthy() {
   log "Waiting for the server to become healthy (first start creates and migrates the database)"
   local status="starting"
@@ -57,7 +94,9 @@ print_url() {
   # EC2 public IP via IMDSv2 when available; otherwise the first local address.
   token="$(curl -fs -m 2 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' 2>/dev/null || true)"
   ip="$(curl -fs -m 2 -H "X-aws-ec2-metadata-token: ${token}" http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
-  [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  # Best effort only - never fail the install over a cosmetic lookup (minimal images lack hostname).
+  [ -n "$ip" ] || ip="$( (hostname -I 2>/dev/null || true) | awk '{print $1}')"
+  [ -n "$ip" ] || ip="<server-ip>"
   echo "  Console:  http://${ip}:${port}"
   echo "  Version:  $(env_get APP_VERSION)"
   echo "  Manage:   cd $INSTALL_DIR && docker compose ps | logs -f server | restart"
@@ -80,6 +119,7 @@ if [ "$MODE" = "rollback" ]; then
   wait_healthy
   log "Rolled back to $prev"
   print_url
+  check_console
   exit 0
 fi
 
@@ -175,14 +215,7 @@ if [ "$FIRST_INSTALL" -eq 1 ]; then
   admin_email="${ADMIN_EMAIL:-admin@endpointone.local}"
   # The admin console only answers private networks plus ADMIN_ALLOWED_NETWORKS. Default to
   # the public IP this SSH session comes from, so the installing admin can open it right away.
-  allowed="${ADMIN_ALLOWED_NETWORKS:-}"
-  if [ -z "$allowed" ]; then
-    ssh_ip="$(who -m 2>/dev/null | sed -n 's/.*(\([0-9a-fA-F.:]*\)).*/\1/p' | head -1)"
-    case "$ssh_ip" in
-      ''|10.*|192.168.*|127.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;;
-      *) allowed="$ssh_ip" ;;
-    esac
-  fi
+  allowed="${ADMIN_ALLOWED_NETWORKS:-$(detect_ssh_public_ip)}"
   (
     umask 077
     cat > "$INSTALL_DIR/.env" <<EOF
@@ -208,9 +241,25 @@ if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEAS
 fi
 env_set APP_VERSION "$RELEASE_VERSION"
 
+# Installs from before ADMIN_ALLOWED_NETWORKS existed have no such line: add it, with the
+# installing admin's public IP, so the console isn't silently hidden after the upgrade. An
+# existing line (even empty) is the admin's own choice and is never touched.
+if ! grep -qE '^ADMIN_ALLOWED_NETWORKS=' "$INSTALL_DIR/.env"; then
+  printf '# Public IPs/CIDRs allowed to open the admin console (comma-separated). Private networks always are.\n' >> "$INSTALL_DIR/.env"
+  env_set ADMIN_ALLOWED_NETWORKS "${ADMIN_ALLOWED_NETWORKS:-$(detect_ssh_public_ip)}"
+fi
+
+# Guard against the configured version drifting from the bundle (e.g. a variable clobbered by
+# an OS file) - compose would otherwise fail later with a confusing "No such image".
+written_version="$(env_get APP_VERSION)"
+[ "$written_version" = "$RELEASE_VERSION" ] \
+  || die "Internal error: .env has APP_VERSION=$written_version but this bundle is $RELEASE_VERSION."
+
 # --- Images -----------------------------------------------------------------------------------
 log "Loading the Endpoint One image ($RELEASE_VERSION)"
 docker load -i "$SERVER_IMAGE_TAR"
+docker image inspect "endpoint-one-server:$RELEASE_VERSION" >/dev/null 2>&1 \
+  || die "The bundle's image did not load as endpoint-one-server:$RELEASE_VERSION - the bundle may be corrupt."
 if [ -f "$BUNDLE_DIR/images/mssql-server.tar" ]; then
   log "Loading the bundled SQL Server image (offline bundle)"
   docker load -i "$BUNDLE_DIR/images/mssql-server.tar"
@@ -223,6 +272,7 @@ wait_healthy
 
 log "Endpoint One $RELEASE_VERSION is running"
 print_url
+check_console
 if [ "$FIRST_INSTALL" -eq 1 ]; then
   echo
   echo "  First administrator (also in $INSTALL_DIR/.env - change the password after signing in):"
@@ -230,15 +280,8 @@ if [ "$FIRST_INSTALL" -eq 1 ]; then
   echo "    password: $(env_get ADMIN_PASSWORD)"
   echo
   echo "  BACK UP $INSTALL_DIR/.env now (FIELD_ENCRYPTION_KEY cannot be recovered)."
-  allowed_now="$(env_get ADMIN_ALLOWED_NETWORKS)"
-  echo
-  if [ -n "$allowed_now" ]; then
-    echo "  Admin console reachable from: private networks + ${allowed_now}"
-  else
-    echo "  Admin console reachable from private networks only. To allow your office's public IP:"
-    echo "    set ADMIN_ALLOWED_NETWORKS=<ip> in $INSTALL_DIR/.env, then: cd $INSTALL_DIR && sudo docker compose up -d"
-  fi
 fi
+print_access
 if ! ls "$INSTALL_DIR"/agent-installer/EndpointProAgentSetup.exe >/dev/null 2>&1; then
   warn "No agent installer in $INSTALL_DIR/agent-installer - 'Download agent installer' will report it missing."
 fi
