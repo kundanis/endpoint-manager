@@ -466,7 +466,8 @@ export default function PackagesPage() {
                   <option value="MSI">MSI (Windows)</option>
                   <option value="DEB">DEB (Linux — dpkg)</option>
                   <option value="RPM">RPM (Linux — rpm/yum)</option>
-                  <option value="SH">Shell script (Linux — self-installing .sh)</option>
+                  <option value="SH">Shell script (Linux/macOS — self-installing .sh)</option>
+                  <option value="PKG">PKG (macOS — installer)</option>
                 </select>
               </Field>
               <Field label="Silent install args" htmlFor="package-silent-args">

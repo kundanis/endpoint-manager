@@ -61,6 +61,8 @@ get_installed_version() {
 
 AXIOS_VERSION="$(get_installed_version axios)"
 SYSTEMINFORMATION_VERSION="$(get_installed_version systeminformation)"
+# @em/shared requires zod at runtime (its schemas), so it must ship too.
+ZOD_VERSION="$(get_installed_version zod)"
 
 cat > "$DEPS_STAGING_DIR/package.json" << EOF
 {
@@ -68,7 +70,8 @@ cat > "$DEPS_STAGING_DIR/package.json" << EOF
   "private": true,
   "dependencies": {
     "axios": "$AXIOS_VERSION",
-    "systeminformation": "$SYSTEMINFORMATION_VERSION"
+    "systeminformation": "$SYSTEMINFORMATION_VERSION",
+    "zod": "$ZOD_VERSION"
   }
 }
 EOF

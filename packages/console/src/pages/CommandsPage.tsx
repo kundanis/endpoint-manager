@@ -165,8 +165,8 @@ function ManageTemplatesPanel() {
               <select id="template-shell" className="ep-select" value={shell} onChange={(e) => setShell(e.target.value as Shell)}>
                 <option value="powershell">PowerShell (Windows)</option>
                 <option value="cmd">cmd (Windows)</option>
-                <option value="bash">bash (Linux)</option>
-                <option value="sh">sh (Linux)</option>
+                <option value="bash">bash (Linux/macOS)</option>
+                <option value="sh">sh (Linux/macOS)</option>
               </select>
             </Field>
             <Field label="Description" htmlFor="template-description" span2>
@@ -317,8 +317,8 @@ export default function CommandsPage() {
                     <select id="command-shell" className="ep-select" value={shell} onChange={(e) => setShell(e.target.value as Shell)}>
                       <option value="powershell">PowerShell (Windows)</option>
                       <option value="cmd">cmd (Windows)</option>
-                      <option value="bash">bash (Linux)</option>
-                      <option value="sh">sh (Linux)</option>
+                      <option value="bash">bash (Linux/macOS)</option>
+                      <option value="sh">sh (Linux/macOS)</option>
                     </select>
                   </Field>
                   <Field label="Timeout (seconds)" htmlFor="command-timeout">

@@ -18,7 +18,7 @@ export const agentUpdatesRouter = Router();
 // packaging script with a manifest), which the console renders as "no build information
 // available" rather than an error.
 agentUpdatesRouter.get("/latest-build", (_req, res) => {
-  res.json({ windows: getLatestAgentBuild("win32"), linux: getLatestAgentBuild("linux") });
+  res.json({ windows: getLatestAgentBuild("win32"), linux: getLatestAgentBuild("linux"), macos: getLatestAgentBuild("darwin") });
 });
 
 agentUpdatesRouter.post("/jobs", async (req, res, next) => {

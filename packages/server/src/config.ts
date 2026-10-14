@@ -85,6 +85,10 @@ export const config = {
   // agentBuild.service.ts / agentUpdate.service.ts's per-platform job-splitting).
   agentInstallerTarballPathLinux: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "linux", "EndpointProAgentLinux.tar.gz"),
   agentManifestPathLinux: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "linux", "agent-manifest.json"),
+  // And again for the macOS agent (@em/agent-macos): one tarball carrying both the arm64 and
+  // x64 Node runtimes, so a single build serves every Mac.
+  agentInstallerTarballPathMac: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "macos", "EndpointProAgentMac.tar.gz"),
+  agentManifestPathMac: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "macos", "agent-manifest.json"),
   nvdApiKey: parsed.data.NVD_API_KEY,
   nvdRequestDelayMs: parsed.data.NVD_REQUEST_DELAY_MS,
   tlsPfxPath: parsed.data.TLS_PFX_PATH ? path.resolve(process.cwd(), parsed.data.TLS_PFX_PATH) : undefined,

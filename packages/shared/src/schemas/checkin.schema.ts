@@ -30,7 +30,7 @@ export type CommandTaskWire = z.infer<typeof commandTaskWireSchema>;
 export const deploymentTaskWireSchema = z.object({
   id: z.string(),
   packageId: z.string(),
-  installerType: z.enum(["EXE", "MSI", "DEB", "RPM", "SH"]),
+  installerType: z.enum(["EXE", "MSI", "DEB", "RPM", "SH", "PKG"]),
   silentArgs: z.string(),
   sha256: z.string(),
 });

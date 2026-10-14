@@ -7,6 +7,7 @@ import {
   useCreateEnrollmentToken,
   useDownloadAgentInstaller,
   useDownloadAgentSetup,
+  useDownloadUnixAgent,
   useEnrollmentTokens,
   useIsItemHidden,
   useNetworkDeviceSummary,
@@ -31,6 +32,7 @@ import {
   Pagination,
   Row,
   RowMenu,
+  Segmented,
   Skeleton,
   useConfirm,
   usePagedList,
@@ -337,6 +339,124 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
   );
 }
 
+// Fallback for insecure contexts (plain http:// on a real host/IP, not localhost) -
+// navigator.clipboard is only defined in secure contexts, so a deployment running without
+// TLS in front of it (see docs/tls-setup.md) falls through to this instead of throwing on an
+// undefined navigator.clipboard.
+function legacyCopy(text: string): boolean {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  let succeeded = false;
+  try {
+    succeeded = document.execCommand("copy");
+  } catch {
+    succeeded = false;
+  }
+  document.body.removeChild(textarea);
+  return succeeded;
+}
+
+function copyText(text: string): Promise<boolean> {
+  if (!navigator.clipboard) return Promise.resolve(legacyCopy(text));
+  return navigator.clipboard.writeText(text).then(
+    () => true,
+    () => legacyCopy(text),
+  );
+}
+
+type UnixPlatform = "macos" | "linux";
+
+const UNIX_INSTALLERS: Record<UnixPlatform, { label: string; file: string; folder: string; requirement: string }> = {
+  macos: {
+    label: "macOS",
+    file: "EndpointProAgentMac.tar.gz",
+    folder: "EndpointProAgentMac",
+    requirement: "macOS 12 or later, Apple silicon or Intel. Node.js is bundled - nothing else to install.",
+  },
+  linux: {
+    label: "Linux",
+    file: "EndpointProAgentLinux.tar.gz",
+    folder: "EndpointProAgentLinux",
+    requirement: "systemd-based distributions. Installs Node.js 18+ from the system package manager if it's missing.",
+  },
+};
+
+// Mac and Linux installs: a tarball plus one terminal command. Nothing is baked into the
+// tarball, so the command carries this server's addresses (from Server connection details,
+// in the agent's failover order) and - right after creating one - the token itself.
+function UnixInstallCard({ token }: { token: string | null }) {
+  const [platform, setPlatform] = useState<UnixPlatform>("macos");
+  const [copied, setCopied] = useState(false);
+  const { data: settings } = useAgentConnectionSettings();
+  const download = useDownloadUnixAgent();
+  const info = UNIX_INSTALLERS[platform];
+
+  const serverUrls = [settings?.localUrl ?? settings?.detectedLocalUrl, settings?.webUrl, settings?.publicUrl].filter(
+    (u): u is string => Boolean(u),
+  );
+  const serverUrl = serverUrls.length > 0 ? serverUrls.join(",") : window.location.origin;
+  const command =
+    `mkdir -p /tmp/${info.folder} && tar -xzf ${info.file} -C /tmp/${info.folder} && ` +
+    `sudo bash /tmp/${info.folder}/install.sh --server-url "${serverUrl}" --enrollment-token "${token ?? "<enrollment-token>"}"`;
+
+  function choose(next: UnixPlatform) {
+    setPlatform(next);
+    setCopied(false);
+    download.reset();
+  }
+
+  return (
+    <Card
+      title="Install on Mac or Linux"
+      actions={
+        <Segmented
+          label="Platform"
+          value={platform}
+          onChange={choose}
+          options={[
+            { value: "macos", label: "macOS" },
+            { value: "linux", label: "Linux" },
+          ]}
+        />
+      }
+    >
+      <div className="app-stack">
+        <p className="app-text">
+          Download <span className="ep-mono">{info.file}</span>, copy it to the {info.label} machine and run the command
+          below in Terminal from the folder it's in. {info.requirement}
+        </p>
+        {download.isError && (
+          <Alert tone="critical" title={`${info.label} agent not available`}>
+            {(download.error as Error).message}
+          </Alert>
+        )}
+        <div className="app-actions-row">
+          <Button icon={Download} onClick={() => download.mutate(platform)} disabled={download.isPending}>
+            {download.isPending ? "Preparing…" : `Download ${info.label} agent`}
+          </Button>
+        </div>
+        <div className="ep-code">
+          {command}
+          <Button size="sm" icon={copied ? ClipboardCheck : Copy} onClick={() => copyText(command).then(setCopied)}>
+            {copied ? "Copied" : "Copy command"}
+          </Button>
+        </div>
+        {!token && (
+          <p className="app-text">
+            Replace <span className="ep-mono">&lt;enrollment-token&gt;</span> with a token - or create one first and the
+            command here fills it in.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default function EnrollmentTokensPage() {
   const { data: tokens, isLoading, error, refetch } = useEnrollmentTokens();
   const { data: groups } = useAssetGroups();
@@ -391,37 +511,8 @@ export default function EnrollmentTokensPage() {
     revokeToken.mutate(id);
   }
 
-  function legacyCopy(token: string): boolean {
-    // Fallback for insecure contexts (plain http:// on a real host/IP, not localhost) —
-    // navigator.clipboard is only defined in secure contexts, so a deployment running
-    // without TLS in front of it (the default here — see docs/tls-setup.md) falls
-    // through to this instead of throwing on an undefined navigator.clipboard.
-    const textarea = document.createElement("textarea");
-    textarea.value = token;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    let succeeded = false;
-    try {
-      succeeded = document.execCommand("copy");
-    } catch {
-      succeeded = false;
-    }
-    document.body.removeChild(textarea);
-    return succeeded;
-  }
-
   function handleCopy(token: string) {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(token).then(
-        () => setCopied(true),
-        () => setCopied(legacyCopy(token)),
-      );
-    } else {
-      setCopied(legacyCopy(token));
-    }
+    copyText(token).then(setCopied);
   }
 
   return (
@@ -609,6 +700,7 @@ export default function EnrollmentTokensPage() {
             </div>
           </div>
         </Card>
+        <UnixInstallCard token={justCreated?.token ?? null} />
         <DevicesWithoutAgentCard />
         </div>
       </Row>

@@ -275,6 +275,17 @@ export function useDownloadAgentInstaller() {
   });
 }
 
+// The self-installing Mac/Linux tarballs - GET /admin/agent-installer/:platform.
+export function useDownloadUnixAgent() {
+  return useMutation({
+    mutationFn: (platform: "macos" | "linux") =>
+      api.getDownload(
+        `/admin/agent-installer/${platform}`,
+        platform === "macos" ? "EndpointProAgentMac.tar.gz" : "EndpointProAgentLinux.tar.gz",
+      ),
+  });
+}
+
 export function useRevokeEnrollmentToken() {
   const qc = useQueryClient();
   return useMutation({
@@ -465,7 +476,7 @@ export function useDispatchDeployment() {
 export function useAgentLatestBuild() {
   return useQuery({
     queryKey: ["agentLatestBuild"],
-    queryFn: () => api.get<{ windows: AgentBuildInfo | null; linux: AgentBuildInfo | null }>("/admin/agent-updates/latest-build"),
+    queryFn: () => api.get<{ windows: AgentBuildInfo | null; linux: AgentBuildInfo | null; macos: AgentBuildInfo | null }>("/admin/agent-updates/latest-build"),
     refetchInterval: 30000,
   });
 }

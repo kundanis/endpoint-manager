@@ -17,6 +17,7 @@ import {
 } from "@em/shared";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
+import { agentUpdatePackageFor } from "../services/agentBuild.service";
 import { config } from "../config";
 import { createEnrollmentToken } from "../services/enrollment.service";
 import {
@@ -498,6 +499,25 @@ adminRouter.get("/agent-installer", async (_req, res, next) => {
     res.send(exe);
   } catch (err) {
     if (err instanceof AgentInstallerMissingError) return res.status(404).json({ error: err.message });
+    next(err);
+  }
+});
+
+// The Linux and macOS installers are self-installing tarballs; unlike the Windows .exe
+// nothing is baked into them - the server URL and enrollment token go on install.sh's
+// command line (shown next to the download in the console).
+adminRouter.get("/agent-installer/:platform(linux|macos)", (req, res, next) => {
+  try {
+    const { filePath, filename } = agentUpdatePackageFor(req.params.platform === "macos" ? "darwin" : "linux");
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: `No ${req.params.platform === "macos" ? "macOS" : "Linux"} agent build is staged on this server` });
+    }
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", next);
+    stream.pipe(res);
+  } catch (err) {
     next(err);
   }
 });

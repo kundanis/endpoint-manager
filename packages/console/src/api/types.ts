@@ -362,7 +362,7 @@ export interface AgentBuildInfo {
 
 export interface AgentUpdateJobListItem {
   id: string;
-  platform: string; // "win32" | "linux" - a job is always platform-homogeneous
+  platform: string; // "win32" | "linux" | "darwin" - a job is always platform-homogeneous
   targetVersion: string;
   targetGroupNames: string[];
   // Parallel arrays, one entry per targeted task, same order.

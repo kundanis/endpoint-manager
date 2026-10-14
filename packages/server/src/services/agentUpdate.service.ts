@@ -50,7 +50,7 @@ interface CreateAgentUpdateJobParams {
   createdByAdminId: string;
 }
 
-const KNOWN_PLATFORMS: AgentPlatform[] = ["win32", "linux"];
+const KNOWN_PLATFORMS: AgentPlatform[] = ["win32", "linux", "darwin"];
 
 // Unlike createDeploymentJob/createPatchJob, there's no packageId/updateIds the caller
 // picks - the target is always whatever build is currently staged on this server FOR THAT
@@ -88,7 +88,7 @@ export async function createAgentUpdateJob(
   for (const agent of candidates) {
     const platform = KNOWN_PLATFORMS.includes(agent.osPlatform as AgentPlatform) ? (agent.osPlatform as AgentPlatform) : null;
     // An agent enrolled from a platform with no packaging pipeline at all (anything other
-    // than win32/linux) can never have a build - same bucket as "build not staged yet" from
+    // than win32/linux/darwin) can never have a build - same bucket as "build not staged yet" from
     // the caller's point of view.
     if (!platform) {
       noBuildAgentIds.push(agent.id);

@@ -11,7 +11,7 @@
     images/endpoint-one-server-<Version>.tar   the server image (V8 bytecode, no readable JS)
     images/mssql-server.tar                    SQL Server image (only with -Offline)
     docker-compose.yml, deploy.sh, INSTALL.md  customer install/upgrade tooling and guide
-    agent-installer/                           agent setup files from docker\agent-installer
+    agent-installer/                           agent setup files from docker\agent-installer (incl. linux\, macos\)
     VERSION, RELEASE-INFO.txt, SHA256SUMS
   Copy that one file to the customer server and follow INSTALL.md (sudo bash deploy.sh).
 
@@ -171,13 +171,24 @@ Image:   $image
 Offline: $([bool]$Offline)
 "@
 
-  $installers = Get-ChildItem (Join-Path $PSScriptRoot "agent-installer") -File -ErrorAction SilentlyContinue |
+  # Windows files at the top level, the Linux and macOS agents in linux\ and macos\ (the
+  # layout config.ts expects under AGENT_INSTALLER_DIR).
+  $installerRoot = Join-Path $PSScriptRoot "agent-installer"
+  $installers = Get-ChildItem $installerRoot -File -Recurse -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne ".gitkeep" }
   if ($installers) {
-    $installers | Copy-Item -Destination (Join-Path $bundleDir "agent-installer")
-    $manifest = Join-Path $PSScriptRoot "agent-installer\agent-manifest.json"
-    $agentVersion = if (Test-Path $manifest) { (Get-Content $manifest -Raw | ConvertFrom-Json).version } else { "unknown" }
-    Write-Host "Agent installers included (agent $agentVersion): $($installers.Name -join ', ')"
+    foreach ($file in $installers) {
+      $relative = $file.FullName.Substring($installerRoot.Length).TrimStart("\")
+      $dest = Join-Path (Join-Path $bundleDir "agent-installer") $relative
+      New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+      Copy-Item $file.FullName -Destination $dest
+    }
+    foreach ($platform in @(@{ Name = "Windows"; Dir = "" }, @{ Name = "Linux"; Dir = "linux" }, @{ Name = "macOS"; Dir = "macos" })) {
+      $manifest = Join-Path (Join-Path $installerRoot $platform.Dir) "agent-manifest.json"
+      if (Test-Path $manifest) {
+        Write-Host "Agent included: $($platform.Name) $((Get-Content $manifest -Raw | ConvertFrom-Json).version)"
+      }
+    }
   } else {
     Write-Warning "docker\agent-installer is empty - the bundle has no agent installer. Build with 'npm run package -w @em/agent' and copy the 3 files there."
   }

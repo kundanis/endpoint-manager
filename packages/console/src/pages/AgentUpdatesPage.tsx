@@ -40,7 +40,8 @@ import { formatBytes, formatDateTime, formatRelative } from "../format";
 
 // Pattern B — list page with a rollout KPI strip (design-system/docs/PAGE_PATTERNS.md).
 
-const PLATFORM_LABELS: Record<string, string> = { win32: "Windows", linux: "Linux" };
+const PLATFORM_LABELS: Record<string, string> = { win32: "Windows", linux: "Linux", darwin: "macOS" };
+const PACKAGE_SUFFIX: Record<string, string> = { linux: "-linux", darwin: "-macos" };
 
 const NON_TERMINAL_STATUSES = new Set(["PENDING", "DISPATCHED", "DOWNLOADING", "APPLYING"]);
 // A normal update resolves within well under a minute of being dispatched (see
@@ -137,7 +138,7 @@ function BuildPanel({ platform, build }: { platform: string; build: AgentBuildIn
       {!build ? (
         <EmptyState icon={PackageX} title={`No ${platformLabel} agent build is staged`}>
           <span>
-            Run <code className="ep-mono">npm run package -w @em/agent{platform === "linux" ? "-linux" : ""}</code> and redeploy this
+            Run <code className="ep-mono">npm run package -w @em/agent{PACKAGE_SUFFIX[platform] ?? ""}</code> and redeploy this
             server to make a new version available here.
           </span>
         </EmptyState>
@@ -342,7 +343,7 @@ export default function AgentUpdatesPage() {
       { agentIds, groupIds },
       {
         onSuccess: (result) => {
-          // A mixed Windows+Linux selection fans out into more than one job server-side
+          // A mixed Windows/Linux/macOS selection fans out into more than one job server-side
           // (see createAgentUpdateJob) - just show whichever one was created most recently.
           setSelectedJobId(result.jobIds[result.jobIds.length - 1]);
           setLastSkipped(result.skippedAgentIds);
@@ -364,11 +365,12 @@ export default function AgentUpdatesPage() {
     dispatchTo(selectedAgentIds, selectedGroupIds);
   }
 
-  const anyBuildAvailable = Boolean(build?.windows || build?.linux);
+  const anyBuildAvailable = Boolean(build?.windows || build?.linux || build?.macos);
 
   function latestVersionFor(osPlatform: string): string | null {
     if (osPlatform === "linux") return build?.linux?.version ?? null;
     if (osPlatform === "win32") return build?.windows?.version ?? null;
+    if (osPlatform === "darwin") return build?.macos?.version ?? null;
     return null;
   }
 
@@ -494,6 +496,7 @@ export default function AgentUpdatesPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: 16 }}>
           <BuildPanel platform="win32" build={build?.windows ?? null} />
           <BuildPanel platform="linux" build={build?.linux ?? null} />
+          <BuildPanel platform="darwin" build={build?.macos ?? null} />
         </div>
       )}
 
@@ -501,7 +504,7 @@ export default function AgentUpdatesPage() {
         <Card
           flush
           title="Roll out to endpoints"
-          hint="Windows and Linux endpoints can be selected together; each gets its own platform's build"
+          hint="Windows, Linux and macOS endpoints can be selected together; each gets its own platform's build"
           actions={
             <Button size="sm" icon={Upload} type="submit" form="agent-update-form" disabled={dispatchUpdate.isPending || nothingSelected}>
               {dispatchUpdate.isPending ? "Pushing…" : "Push update"}
@@ -516,6 +519,7 @@ export default function AgentUpdatesPage() {
                 <option value="">Platform: All</option>
                 <option value="win32">Windows</option>
                 <option value="linux">Linux</option>
+                <option value="darwin">macOS</option>
               </select>
               <select className="ep-select" aria-label="Current version" value={versionFilter} onChange={(e) => setVersionFilter(e.target.value)}>
                 <option value="">Version: All</option>

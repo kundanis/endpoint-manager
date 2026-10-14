@@ -291,7 +291,8 @@ function AgentVersionValue({ agent }: { agent: AgentDetail }) {
       </Badge>
     );
   } else {
-    const latestForThisAgent = agent.osPlatform === "linux" ? latestBuild?.linux : latestBuild?.windows;
+    const latestForThisAgent =
+      agent.osPlatform === "linux" ? latestBuild?.linux : agent.osPlatform === "darwin" ? latestBuild?.macos : latestBuild?.windows;
     if (latestForThisAgent && latestForThisAgent.version !== agent.agentVersion) {
       const lastAttemptFailed = task?.status === "FAILED" && task.targetVersion === latestForThisAgent.version;
       extra = (

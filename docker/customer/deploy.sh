@@ -272,7 +272,8 @@ install -m 0644 "$BUNDLE_DIR/INSTALL.md" "$INSTALL_DIR/INSTALL.md"
 install -m 0644 "$BUNDLE_DIR/VERSION" "$INSTALL_DIR/VERSION"
 install -m 0755 "$BUNDLE_DIR/deploy.sh" "$INSTALL_DIR/deploy.sh"
 if ls "$BUNDLE_DIR"/agent-installer/* >/dev/null 2>&1; then
-  cp -f "$BUNDLE_DIR"/agent-installer/* "$INSTALL_DIR/agent-installer/"
+  # -R: the Linux and macOS agents live in linux/ and macos/ sub-folders.
+  cp -Rf "$BUNDLE_DIR"/agent-installer/* "$INSTALL_DIR/agent-installer/"
   echo "Agent installers updated."
 fi
 

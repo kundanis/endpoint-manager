@@ -80,6 +80,12 @@ Open `http://<server-ip>:4000` and sign in.
 3. Run it as administrator on each Windows endpoint (or deploy it with GPO, Intune or SCCM).
 4. Endpoints appear under **Endpoint Hub → Endpoints** within a minute.
 
+**Mac and Linux:** on the same page, **Install on Mac or Linux** downloads the tarball and shows
+the exact Terminal command (server addresses and, right after creating a token, the token are
+filled in). Copy the tarball to the machine and run that command; it needs `sudo`. The macOS
+agent needs macOS 12 or later and bundles its own Node.js. Uninstall with
+`sudo /Library/EndpointProAgent/uninstall.sh`.
+
 Remote "Install on endpoint" from the console and the server-side network scan need a Windows
 server, so they aren't available in this Linux deployment. Use the setup file; the
 agent-driven VLAN scan (Network Insight) works normally.
@@ -178,6 +184,6 @@ stays in place until the new one has been validated and converted.
 | `deploy.sh` says unhealthy | `docker compose logs --tail 200 server`. The usual causes are too little RAM for SQL Server, or the disk is full. |
 | Console not reachable | Security group / firewall allows TCP 4000; `docker compose ps` shows `server` as healthy. |
 | Browser shows `{"error":"Not found"}` | Your public IP isn't in `ADMIN_ALLOWED_NETWORKS` (see section 3). The server log shows "Blocked request from a public address" with your IP. |
-| "Installer not available" in the console | The bundle had no agent installer: copy `EndpointProAgentSetup.exe`, `EndpointProAgentInstaller.zip` and `agent-manifest.json` into `/opt/endpoint-one/agent-installer/` (no restart needed). |
+| "Installer not available" in the console | The bundle had no agent installer: copy `EndpointProAgentSetup.exe`, `EndpointProAgentInstaller.zip` and `agent-manifest.json` into `/opt/endpoint-one/agent-installer/` (no restart needed). The macOS agent goes in `agent-installer/macos/` (`EndpointProAgentMac.tar.gz`, `agent-manifest.json`), the Linux one in `agent-installer/linux/`. |
 | Endpoint installed but not listed | On the endpoint: `Test-NetConnection <server-ip> -Port 4000`; check that Server connection details holds an address the endpoint can reach. |
 | Database exceeds 10 GB | SQL Server Express limit: set `MSSQL_PID=Standard` in `.env` (requires a licence), then run `docker compose up -d`. |

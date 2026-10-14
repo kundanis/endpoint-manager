@@ -25,7 +25,7 @@ import {
   webBlockSyncResultPayloadSchema,
   zeroTrustScanResultPayloadSchema,
 } from "@em/shared";
-import { config } from "../config";
+import { agentUpdatePackageFor } from "../services/agentBuild.service";
 import { prisma } from "../db";
 import { AgentUpdateTaskNotOwnedError, recordAgentUpdateStatus } from "../services/agentUpdate.service";
 import { handleCheckin, recordInventory } from "../services/checkin.service";
@@ -179,9 +179,7 @@ agentRouter.post("/deployments/:taskId/status", async (req, res, next) => {
 agentRouter.get("/self-update/package", async (req, res, next) => {
   try {
     const agent = await prisma.agent.findUnique({ where: { id: req.agentId! }, select: { osPlatform: true } });
-    const isLinux = agent?.osPlatform === "linux";
-    const filePath = isLinux ? config.agentInstallerTarballPathLinux : config.agentInstallerZipPath;
-    const filename = isLinux ? "EndpointProAgentLinux.tar.gz" : "EndpointProAgentInstaller.zip";
+    const { filePath, filename } = agentUpdatePackageFor(agent?.osPlatform);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: "No agent build is currently staged on this server for this platform" });

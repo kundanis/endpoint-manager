@@ -4,18 +4,29 @@ import { agentBuildManifestSchema } from "@em/shared";
 import { config } from "../config";
 
 // Matches Agent.osPlatform verbatim (stored exactly as process.platform reported it at
-// enrollment — see enrollment.service.ts) — only these two are meaningfully supported by
+// enrollment — see enrollment.service.ts) — only these three are meaningfully supported by
 // any packaging pipeline today. An agent enrolled from any other platform simply never has
 // a build available to it (getLatestAgentBuild returns null), which degrades to "no update
 // available" rather than an error.
-export type AgentPlatform = "win32" | "linux";
+export type AgentPlatform = "win32" | "linux" | "darwin";
 
 function manifestPathFor(platform: AgentPlatform): string {
-  return platform === "linux" ? config.agentManifestPathLinux : config.agentManifestPath;
+  if (platform === "linux") return config.agentManifestPathLinux;
+  if (platform === "darwin") return config.agentManifestPathMac;
+  return config.agentManifestPath;
 }
 
 function installerPathFor(platform: AgentPlatform): string {
-  return platform === "linux" ? config.agentInstallerTarballPathLinux : config.agentInstallerZipPath;
+  if (platform === "linux") return config.agentInstallerTarballPathLinux;
+  if (platform === "darwin") return config.agentInstallerTarballPathMac;
+  return config.agentInstallerZipPath;
+}
+
+// The file an agent of this platform downloads for self-update, and the name it is served as.
+export function agentUpdatePackageFor(osPlatform: string | null | undefined): { filePath: string; filename: string } {
+  if (osPlatform === "linux") return { filePath: config.agentInstallerTarballPathLinux, filename: "EndpointProAgentLinux.tar.gz" };
+  if (osPlatform === "darwin") return { filePath: config.agentInstallerTarballPathMac, filename: "EndpointProAgentMac.tar.gz" };
+  return { filePath: config.agentInstallerZipPath, filename: "EndpointProAgentInstaller.zip" };
 }
 
 // Read fresh off disk on every call rather than cached in memory or the DB - this file
