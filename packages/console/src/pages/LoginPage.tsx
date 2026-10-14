@@ -28,7 +28,6 @@ export default function LoginPage() {
           <Logo size={28} />
           <div>
             <b>Endpoint One</b>
-            <small>Systematix Group</small>
           </div>
         </div>
         <div className="ep-section">

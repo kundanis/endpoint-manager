@@ -229,7 +229,7 @@ const DEPLOYMENT_TYPES: SoftwareLicenseDeploymentType[] = ["ON_PREMISE", "VENDOR
 const DEPLOYMENT_TYPE_LABELS: Record<SoftwareLicenseDeploymentType, string> = {
   ON_PREMISE: "On-Premise",
   VENDOR_CLOUD: "Vendor Cloud",
-  SYSTEMATIX_CLOUD: "Systematix Cloud",
+  SYSTEMATIX_CLOUD: "In-house cloud",
   HYBRID: "Hybrid",
 };
 const ACCESS_TYPES: SoftwareLicenseAccessType[] = ["INTERNAL", "PUBLIC", "VPN"];

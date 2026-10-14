@@ -1,5 +1,5 @@
 // Meridian brand tile (design-system/docs/COMPONENTS.md §2): a brand-red rounded square with
-// a white shield-check mark. Placeholder until the official Systematix mark is supplied.
+// a white shield-check mark. Placeholder until the official product mark is supplied.
 export default function Logo({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">

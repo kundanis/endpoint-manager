@@ -35,7 +35,7 @@ Conventions:
   <div class="ep-brandrow">
     <!-- logo: 28px tile, radius 7px, fill var(--ep-brand), white shield-check mark -->
     <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">…</svg>
-    <div><b>Endpoint Pro</b><small>Systematix Group</small></div>
+    <div><b>Endpoint One</b></div>
   </div>
 
   <div class="ep-ov">Operations</div>
@@ -59,7 +59,7 @@ Conventions:
 
   <div class="ep-sbfoot">
     <div class="ep-av">CI</div>
-    <div><b>CIO Office</b><small>cio@systematixgroup.in</small></div>
+    <div><b>CIO Office</b><small>admin@example.com</small></div>
   </div>
 </aside>
 ```

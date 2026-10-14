@@ -232,7 +232,6 @@ export default function Layout() {
           <Logo size={28} />
           <div>
             <b>Endpoint One</b>
-            <small>Systematix Group</small>
           </div>
         </div>
         <nav className="app-nav">

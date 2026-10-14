@@ -1,6 +1,6 @@
 # Endpoint Pro — Meridian design system
 
-This is the design system for revamping the Endpoint Pro frontend in the **Meridian** direction: a light enterprise look that keeps Systematix crimson as the brand colour. It's written so that **Claude Code** (or any developer) can apply it to the existing codebase without guessing.
+This is the design system for revamping the Endpoint One frontend in the **Meridian** direction: a light enterprise look that keeps crimson as the brand colour. It's written so that **Claude Code** (or any developer) can apply it to the existing codebase without guessing.
 
 ## What's inside
 
