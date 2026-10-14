@@ -9,7 +9,7 @@ import type {
   DeploymentTaskWire,
   PatchTaskWire,
 } from "@em/shared";
-import { DEFAULT_POLL_INTERVAL_SEC } from "@em/shared";
+import { DEFAULT_POLL_INTERVAL_SEC, selectPrimaryNetworkInterface } from "@em/shared";
 import { agentClient, setServerUrls } from "./httpClient";
 import { enroll } from "./enrollment";
 import { collectInventory } from "./inventory";
@@ -21,25 +21,11 @@ import { processAgentUpdate } from "./selfUpdater";
 import { agentConfig } from "./config";
 import type { AxiosInstance } from "axios";
 
-// This is the Linux agent's "Core + Patch Management" scope — inventory, remote command
-// execution, software deployment (DEB/RPM/SH), OS package patch scanning/installing, and
-// agent self-update. Everything else the Windows agent has (Security/Data Manager modules:
-// DLP, USB control, app control, web/command/IP block, EDR, Zero Trust, security config
-// baseline, network scanning, user productivity) was a deliberate scoping decision, not an
-// oversight — see the conversation where this was decided. No watchdog task-check either:
-// systemd's own Restart=always on the unit (see the packaged .service file) already covers
-// what the Windows agent's dual-Scheduled-Task tamper-resistance hack exists to work around.
+// Computed fresh on every check-in - DHCP leases, VPN connects/disconnects and NIC changes
+// can all shift this while the agent keeps running. The adapter choice (skipping VPN and
+// virtual adapters) is selectPrimaryNetworkInterface's in @em/shared.
 function getLocalNetworkInfo(): { ipAddress: string | null; macAddress: string | null } {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] ?? []) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        const macAddress = iface.mac && iface.mac !== "00:00:00:00:00:00" ? iface.mac : null;
-        return { ipAddress: iface.address, macAddress };
-      }
-    }
-  }
-  return { ipAddress: null, macAddress: null };
+  return selectPrimaryNetworkInterface(os.networkInterfaces());
 }
 
 export function startCheckinLoop(agentId: string, apiKey: string): void {

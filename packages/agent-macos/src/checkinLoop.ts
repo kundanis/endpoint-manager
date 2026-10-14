@@ -9,7 +9,7 @@ import type {
   DeploymentTaskWire,
   PatchTaskWire,
 } from "@em/shared";
-import { DEFAULT_POLL_INTERVAL_SEC } from "@em/shared";
+import { DEFAULT_POLL_INTERVAL_SEC, selectPrimaryNetworkInterface } from "@em/shared";
 import { agentClient, setServerUrls } from "./httpClient";
 import { enroll } from "./enrollment";
 import { collectInventory } from "./inventory";
@@ -21,22 +21,11 @@ import { processAgentUpdate } from "./selfUpdater";
 import { agentConfig } from "./config";
 import type { AxiosInstance } from "axios";
 
-// The macOS agent's v1 scope mirrors the Linux agent's "Core + Patch Management": inventory,
-// remote command execution, software deployment (PKG/SH), softwareupdate scanning/installing,
-// and agent self-update. The Windows-only Security Posture / Data Governance modules are a
-// deliberate scope decision. No watchdog either: launchd's KeepAlive on the daemon (see the
-// packaged com.endpointone.agent.plist) restarts the agent if it exits or is killed.
+// Computed fresh on every check-in - DHCP leases, VPN connects/disconnects and NIC changes
+// can all shift this while the agent keeps running. The adapter choice (skipping VPN and
+// virtual adapters) is selectPrimaryNetworkInterface's in @em/shared.
 function getLocalNetworkInfo(): { ipAddress: string | null; macAddress: string | null } {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] ?? []) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        const macAddress = iface.mac && iface.mac !== "00:00:00:00:00:00" ? iface.mac : null;
-        return { ipAddress: iface.address, macAddress };
-      }
-    }
-  }
-  return { ipAddress: null, macAddress: null };
+  return selectPrimaryNetworkInterface(os.networkInterfaces());
 }
 
 export function startCheckinLoop(agentId: string, apiKey: string): void {

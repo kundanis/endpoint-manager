@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.8
+- Fix: the endpoint's IP and MAC address now come from its real network adapter. Previously
+  the first adapter listed was used, which on machines with a VPN (e.g. Tailscale) or
+  Hyper-V/WSL was a virtual adapter - showing the VPN IP and no MAC address at all.
+
 ## 0.2.7
 - Fix: after re-enrolling (0.2.6), the agent kept sending its old, rejected identity on every
   request after the first, so the endpoint showed online once and then went offline. It now

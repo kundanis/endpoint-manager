@@ -9,6 +9,8 @@ section after the fact.
 ## 0.1.1
 - Re-enrolls automatically when the server no longer recognises this agent's saved
   identity (e.g. the server was reinstalled), instead of failing every check-in.
+- Reports the IP and MAC of the real network adapter, skipping VPN, Docker and other
+  virtual adapters.
 - Supports several server addresses with automatic failover (LAN, web URL, public IP).
 - Fix: the package now includes zod, which the agent needs at runtime; without it the
   service failed to start.
