@@ -112,16 +112,75 @@ export const publicClient = withFailover(
   }),
 );
 
-export function agentClient(agentId: string, apiKey: string) {
-  return withFailover(
-    axios.create({
-      baseURL: currentUrl,
-      timeout: 15_000,
-      httpsAgent,
-      headers: {
-        "X-Agent-Id": agentId,
-        "X-Agent-Key": apiKey,
-      },
-    }),
+type ReenrollConfig = InternalAxiosRequestConfig & { reenrollRetried?: boolean };
+
+// The server's answer for an agent id/key it doesn't recognise (server agentAuth.ts).
+const INVALID_CREDENTIALS = "Invalid agent credentials";
+
+// `reenroll` (optional) recovers from a stale saved identity: if the server rejects the
+// credentials before they have ever been accepted in this run, the agent enrolls again with
+// its token, swaps in the new identity and retries the request once. Once any request has
+// succeeded, a later rejection means the record was removed on purpose (admin Delete, or
+// the uninstall flow's own confirm call) - the agent must NOT resurrect itself then, so it
+// keeps failing exactly as before.
+export function agentClient(
+  agentId: string,
+  apiKey: string,
+  reenroll?: () => Promise<{ agentId: string; apiKey: string }>,
+) {
+  const client = axios.create({
+    baseURL: currentUrl,
+    timeout: 15_000,
+    httpsAgent,
+    headers: {
+      "X-Agent-Id": agentId,
+      "X-Agent-Key": apiKey,
+    },
+  });
+
+  let credentialsAccepted = false;
+  let reenrolling: Promise<boolean> | null = null;
+
+  // Concurrent rejected requests share one enrollment attempt.
+  function reenrollOnce(): Promise<boolean> {
+    if (!reenrolling) {
+      reenrolling = (async () => {
+        try {
+          console.log("Server rejected this agent's saved identity - re-enrolling with the enrollment token");
+          const next = await reenroll!();
+          client.defaults.headers.common["X-Agent-Id"] = next.agentId;
+          client.defaults.headers.common["X-Agent-Key"] = next.apiKey;
+          return true;
+        } catch (err) {
+          console.error("Re-enrollment failed (check the enrollment token)", err instanceof Error ? err.message : err);
+          return false;
+        }
+      })().finally(() => {
+        // Allow a later retry (e.g. after an admin fixes the token) on the next rejection.
+        setTimeout(() => {
+          reenrolling = null;
+        }, 60_000).unref();
+      });
+    }
+    return reenrolling;
+  }
+
+  client.interceptors.response.use(
+    (response) => {
+      credentialsAccepted = true;
+      return response;
+    },
+    async (error) => {
+      const config = error?.config as ReenrollConfig | undefined;
+      const rejected = error?.response?.status === 401 && error.response.data?.error === INVALID_CREDENTIALS;
+      if (!reenroll || !rejected || credentialsAccepted || !config || config.reenrollRetried) throw error;
+      if (!(await reenrollOnce())) throw error;
+      config.reenrollRetried = true;
+      config.headers["X-Agent-Id"] = client.defaults.headers.common["X-Agent-Id"];
+      config.headers["X-Agent-Key"] = client.defaults.headers.common["X-Agent-Key"];
+      return client.request(config);
+    },
   );
+
+  return withFailover(client);
 }

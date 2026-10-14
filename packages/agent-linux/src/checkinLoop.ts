@@ -11,6 +11,7 @@ import type {
 } from "@em/shared";
 import { DEFAULT_POLL_INTERVAL_SEC } from "@em/shared";
 import { agentClient, setServerUrls } from "./httpClient";
+import { enroll } from "./enrollment";
 import { collectInventory } from "./inventory";
 import { executeCommand } from "./commandExecutor";
 import { processDeployment } from "./packageInstaller";
@@ -42,7 +43,7 @@ function getLocalNetworkInfo(): { ipAddress: string | null; macAddress: string |
 }
 
 export function startCheckinLoop(agentId: string, apiKey: string): void {
-  const client = agentClient(agentId, apiKey);
+  const client = agentClient(agentId, apiKey, enroll);
   let pollIntervalSec = DEFAULT_POLL_INTERVAL_SEC;
 
   async function sendInventory() {

@@ -6,6 +6,13 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.6
+- Fix: an endpoint that was previously enrolled against a different server (or before the
+  server's database was reset) now re-enrolls by itself with its enrollment token, instead
+  of being rejected forever with "Invalid agent credentials" and never appearing in the
+  console. Only an identity that has never been accepted since the agent started is
+  replaced - an endpoint deleted by an admin, or one being uninstalled, does not come back.
+
 ## 0.2.5
 - New: LAN/WAN failover. The agent knows every address the server can be reached on (local
   IP, web URL, public IP - set under Enrollment Tokens -> Server connection details) and
