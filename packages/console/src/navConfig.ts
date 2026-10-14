@@ -29,7 +29,7 @@ export const NAV_MODULES: NavModule[] = [
   },
   {
     key: "endpoint",
-    label: "Endpoint Manager",
+    label: "Endpoint Hub",
     licenseModule: "ENDPOINT_MANAGER",
     items: [
       { path: "/endpoints", label: "Endpoints" },
@@ -42,19 +42,19 @@ export const NAV_MODULES: NavModule[] = [
   },
   {
     key: "network",
-    label: "Network Manager",
+    label: "Network Insight",
     licenseModule: "NETWORK_MANAGER",
     items: [{ path: "/network-scan", label: "Network discovery" }],
   },
   {
     key: "software",
-    label: "Software Manager",
+    label: "App Center",
     licenseModule: "SOFTWARE_MANAGER",
     items: [{ path: "/software-licenses", label: "Software licenses" }],
   },
   {
     key: "security",
-    label: "Security Manager",
+    label: "Security Posture",
     licenseModule: "SECURITY_MANAGER",
     items: [
       { path: "/vulnerabilities", label: "Vulnerabilities" },
@@ -68,7 +68,7 @@ export const NAV_MODULES: NavModule[] = [
   },
   {
     key: "data",
-    label: "Data Manager",
+    label: "Data Governance",
     licenseModule: "DATA_MANAGER",
     items: [
       { path: "/data-discovery", label: "Data discovery" },
@@ -80,7 +80,7 @@ export const NAV_MODULES: NavModule[] = [
   },
   {
     key: "user",
-    label: "User Manager",
+    label: "Identity Governance",
     licenseModule: "USER_MANAGER",
     items: [{ path: "/user-productivity", label: "User productivity" }],
   },
@@ -96,3 +96,10 @@ export const NAV_MODULES: NavModule[] = [
     superAdminOnly: true,
   },
 ];
+
+// Display name of each licensed module, taken from its sidebar label - the single source for
+// every page that names a module (locked-module screen, admin access grants, licensing,
+// module visibility). Rename a module here and every page follows.
+export const LICENSE_MODULE_LABELS = Object.fromEntries(
+  NAV_MODULES.filter((m) => m.licenseModule).map((m) => [m.licenseModule!, m.label]),
+) as Record<LicenseModuleKey, string>;

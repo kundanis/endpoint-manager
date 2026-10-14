@@ -36,7 +36,7 @@ const MODULE_ICONS: Record<string, LucideIcon> = {
   "admin-users": Settings,
 };
 
-// Modules listed under the "Administration" sidebar heading; everything else is "Operations".
+// Modules listed under the "Administration" sidebar heading; everything else is "Command Center".
 const ADMIN_MODULE_KEYS = new Set(["licensing", "admin-users"]);
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.7, className: "ep-ic", "aria-hidden": true } as const;
@@ -231,12 +231,12 @@ export default function Layout() {
         <div className="ep-brandrow">
           <Logo size={28} />
           <div>
-            <b>Endpoint Pro</b>
+            <b>Endpoint One</b>
             <small>Systematix Group</small>
           </div>
         </div>
         <nav className="app-nav">
-          {operations.length > 0 && <div className="ep-ov">Operations</div>}
+          {operations.length > 0 && <div className="ep-ov">Command Center</div>}
           {operations.map(renderModule)}
           {administration.length > 0 && <div className="ep-ov">Administration</div>}
           {administration.map(renderModule)}

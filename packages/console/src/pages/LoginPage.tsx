@@ -27,7 +27,7 @@ export default function LoginPage() {
         <div className="ep-brandrow">
           <Logo size={28} />
           <div>
-            <b>Endpoint Pro</b>
+            <b>Endpoint One</b>
             <small>Systematix Group</small>
           </div>
         </div>

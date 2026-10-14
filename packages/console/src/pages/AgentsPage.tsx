@@ -528,7 +528,7 @@ export default function AgentsPage() {
   if (isLoading) {
     return (
       <>
-        <PageHeader title="Endpoints" description="All devices with the Endpoint Pro agent installed" />
+        <PageHeader title="Endpoints" description="All devices with the Endpoint One agent installed" />
         <Card>
           <Skeleton lines={6} />
         </Card>
@@ -607,7 +607,7 @@ export default function AgentsPage() {
     <>
       <PageHeader
         title="Endpoints"
-        description="All devices with the Endpoint Pro agent installed"
+        description="All devices with the Endpoint One agent installed"
         actions={
           <>
             <Button icon={Download} onClick={exportCsv} disabled={filteredAgents.length === 0}>

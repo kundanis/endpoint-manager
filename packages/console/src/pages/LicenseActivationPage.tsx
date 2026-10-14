@@ -12,7 +12,7 @@ import {
   useTestLicenseServerConnection,
 } from "../api/hooks";
 import { CHART_SEMANTIC } from "../chartTheme";
-import { NAV_MODULES } from "../navConfig";
+import { LICENSE_MODULE_LABELS, NAV_MODULES } from "../navConfig";
 import {
   Alert,
   Badge,
@@ -45,14 +45,7 @@ const VALIDITY_LABELS: Record<string, string> = {
   PERPETUAL: "Perpetual",
 };
 
-const MODULE_LABELS: Record<string, string> = {
-  ENDPOINT_MANAGER: "Endpoint Manager",
-  NETWORK_MANAGER: "Network Manager",
-  SOFTWARE_MANAGER: "Software Manager",
-  SECURITY_MANAGER: "Security Manager",
-  DATA_MANAGER: "Data Manager",
-  USER_MANAGER: "User Manager",
-};
+const MODULE_LABELS = LICENSE_MODULE_LABELS;
 const ALL_MODULE_KEYS = Object.keys(MODULE_LABELS);
 
 function LicenseApiPanel() {

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { KeyRound, Pencil, Trash2, UserPlus, Users } from "lucide-react";
 import type { AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
 import { useAdminUsers, useCreateAdminUser, useDeleteAdminUser, useMe, useUpdateAdminUser } from "../api/hooks";
+import { LICENSE_MODULE_LABELS } from "../navConfig";
 import {
   Alert,
   Badge,
@@ -35,14 +36,7 @@ const MODULE_KEYS: LicenseModuleKey[] = [
   "DATA_MANAGER",
   "USER_MANAGER",
 ];
-const MODULE_LABELS: Record<LicenseModuleKey, string> = {
-  ENDPOINT_MANAGER: "Endpoint Manager",
-  NETWORK_MANAGER: "Network Manager",
-  SOFTWARE_MANAGER: "Software Manager",
-  SECURITY_MANAGER: "Security Manager",
-  DATA_MANAGER: "Data Manager",
-  USER_MANAGER: "User Manager",
-};
+const MODULE_LABELS = LICENSE_MODULE_LABELS;
 
 const ADMIN_FORM_ID = "admin-user-form";
 

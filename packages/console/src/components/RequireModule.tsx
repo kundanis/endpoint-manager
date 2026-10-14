@@ -3,19 +3,11 @@ import { Navigate, useLocation } from "react-router-dom";
 import { Lock, ShieldOff } from "lucide-react";
 import { useLicenseStatus, useMe, useModuleVisibility } from "../api/hooks";
 import type { LicenseModuleKey } from "../api/types";
+import { LICENSE_MODULE_LABELS } from "../navConfig";
 import { Card, EmptyState, PageHeader, Skeleton } from "./ui";
 
-// Mirrors requireModule.ts's MODULE_LABELS equivalent on the server — kept as a plain
-// local const rather than imported, same as every other module-key label map in this
-// project (console never imports runtime values across the licensing wire boundary).
-const MODULE_LABELS: Record<LicenseModuleKey, string> = {
-  ENDPOINT_MANAGER: "Endpoint Manager",
-  NETWORK_MANAGER: "Network Manager",
-  SOFTWARE_MANAGER: "Software Manager",
-  SECURITY_MANAGER: "Security Manager",
-  DATA_MANAGER: "Data Manager",
-  USER_MANAGER: "User Manager",
-};
+// Module display names come from navConfig.ts (the sidebar labels).
+const MODULE_LABELS = LICENSE_MODULE_LABELS;
 
 // Route-level guard, not a per-page check — wrapped around each route element in App.tsx
 // instead of touching every individual page component. Purely a UX layer: the real
