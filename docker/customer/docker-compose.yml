@@ -46,11 +46,21 @@ services:
       LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
       # Public IPs/CIDRs allowed to open the admin console (private networks always are).
       ADMIN_ALLOWED_NETWORKS: ${ADMIN_ALLOWED_NETWORKS:-}
+      # HTTPS (set by `deploy.sh --install-cert`). With a certificate installed the server
+      # serves HTTPS on 4443 (published as HTTPS_PORT, default 443) and keeps plain HTTP on
+      # 4000 so agents enrolled with an http:// address keep checking in. Without one, only
+      # HTTP on 4000 is served and these are ignored.
+      TLS_PFX_PATH: ${TLS_PFX_PATH:-}
+      TLS_PFX_PASSPHRASE: ${TLS_PFX_PASSPHRASE:-}
+      TLS_CA_CHAIN_PATH: ${TLS_CA_CHAIN_PATH:-}
+      TLS_PORT: "4443"
     ports:
       - "${APP_PORT:-4000}:4000"
+      - "${HTTPS_PORT:-443}:4443"
     volumes:
       - uploads:/app/uploads
       - ./agent-installer:/app/agent-installer
+      - ./certs:/app/certs:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

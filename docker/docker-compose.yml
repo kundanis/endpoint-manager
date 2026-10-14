@@ -59,12 +59,21 @@ services:
       LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
       # Public IPs/CIDRs allowed to open the admin console (private networks always are).
       ADMIN_ALLOWED_NETWORKS: ${ADMIN_ALLOWED_NETWORKS:-}
+      # HTTPS: put server.pfx in docker/certs/ and set TLS_PFX_PATH=/app/certs/server.pfx +
+      # TLS_PFX_PASSPHRASE in .env. HTTPS on 4443 (published as HTTPS_PORT, default 443);
+      # plain HTTP stays on 4000 for agents. Ignored when no certificate is configured.
+      TLS_PFX_PATH: ${TLS_PFX_PATH:-}
+      TLS_PFX_PASSPHRASE: ${TLS_PFX_PASSPHRASE:-}
+      TLS_CA_CHAIN_PATH: ${TLS_CA_CHAIN_PATH:-}
+      TLS_PORT: "4443"
     ports:
       - "4000:4000"
+      - "${HTTPS_PORT:-443}:4443"
     volumes:
       - uploads:/app/uploads
       # Place built agent installers here so Console -> Download agent installer works.
       - ./agent-installer:/app/agent-installer
+      - ./certs:/app/certs:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

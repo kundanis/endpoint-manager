@@ -98,6 +98,10 @@ print_url() {
   [ -n "$ip" ] || ip="$( (hostname -I 2>/dev/null || true) | awk '{print $1}')"
   [ -n "$ip" ] || ip="<server-ip>"
   echo "  Console:  http://${ip}:${port}"
+  if [ -n "$(env_get TLS_PFX_PATH)" ]; then
+    local hp; hp="$(env_get HTTPS_PORT)"; hp="${hp:-443}"
+    echo "  HTTPS:    https://<certificate name>$( [ "$hp" = "443" ] || echo ":$hp" )/  (HTTP on ${port} stays for agents)"
+  fi
   echo "  Version:  $(env_get APP_VERSION)"
   echo "  Manage:   cd $INSTALL_DIR && docker compose ps | logs -f server | restart"
 }
@@ -120,6 +124,70 @@ if [ "$MODE" = "rollback" ]; then
   log "Rolled back to $prev"
   print_url
   check_console
+  exit 0
+fi
+
+# --- Install an HTTPS certificate -------------------------------------------------------------
+#   sudo bash deploy.sh --install-cert <certificate.pem> <private-key.pem> [chain.pem]
+# Converts the PEM pair to the PFX the server loads, after checking that it parses, matches its
+# key and hasn't expired; then restarts the server with HTTPS on HTTPS_PORT (default 443).
+# Plain HTTP stays on 4000 for agents. Re-run with a renewed certificate to replace it.
+if [ "${1:-}" = "--install-cert" ]; then
+  cert="${2:-}"; key="${3:-}"; chain="${4:-}"
+  usage="Usage: sudo bash deploy.sh --install-cert <certificate.pem> <private-key.pem> [chain.pem]"
+  [ -f "$INSTALL_DIR/.env" ] || die "No installation in $INSTALL_DIR - install Endpoint One first."
+  [ -n "$cert" ] && [ -f "$cert" ] || die "Certificate file not found. $usage"
+  [ -n "$key" ] && [ -f "$key" ] || die "Private key file not found. $usage"
+  [ -z "$chain" ] || [ -f "$chain" ] || die "Chain file not found: $chain"
+  command -v openssl >/dev/null 2>&1 || die "openssl is required (install the openssl package)."
+
+  log "Checking the certificate"
+  openssl x509 -in "$cert" -noout >/dev/null 2>&1 \
+    || die "$cert is not a PEM certificate. If it's DER/.cer, convert it: openssl x509 -inform der -in $cert -out cert.pem"
+  openssl pkey -in "$key" -passin pass: -noout >/dev/null 2>&1 \
+    || die "Can't read $key - it must be an unencrypted PEM private key. If it has a passphrase: openssl pkey -in $key -out key-nopass.pem"
+  cert_pub="$(openssl x509 -in "$cert" -noout -pubkey | openssl sha256)"
+  key_pub="$(openssl pkey -in "$key" -passin pass: -pubout | openssl sha256)"
+  [ "$cert_pub" = "$key_pub" ] || die "The certificate and the private key don't belong together."
+  openssl x509 -in "$cert" -noout -checkend 0 >/dev/null 2>&1 || die "The certificate has expired."
+  openssl x509 -in "$cert" -noout -subject -issuer -enddate | sed 's/^/  /'
+  names="$(openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null | tail -n +2 | tr -d ' ' || true)"
+  [ -n "$names" ] && echo "  Names: $names"
+  openssl x509 -in "$cert" -noout -checkend 2592000 >/dev/null 2>&1 || warn "The certificate expires within 30 days."
+
+  certs_dir="$INSTALL_DIR/certs"
+  mkdir -p "$certs_dir" && chmod 700 "$certs_dir"
+  pass="$(openssl rand -hex 24)"
+  chain_args=()
+  if [ -n "$chain" ]; then
+    install -m 0644 "$chain" "$certs_dir/chain.pem"
+    chain_args=(-certfile "$chain")
+  fi
+  # Write to a temp file first so a failed export never replaces a working certificate.
+  openssl pkcs12 -export -out "$certs_dir/server.pfx.new" -inkey "$key" -in "$cert" ${chain_args[@]+"${chain_args[@]}"} \
+    -passin pass: -passout "pass:$pass" || die "Creating the PFX failed."
+  chmod 600 "$certs_dir/server.pfx.new"
+  mv -f "$certs_dir/server.pfx.new" "$certs_dir/server.pfx"
+
+  env_set TLS_PFX_PATH "/app/certs/server.pfx"
+  env_set TLS_PFX_PASSPHRASE "$pass"
+  if [ -n "$chain" ]; then env_set TLS_CA_CHAIN_PATH "/app/certs/chain.pem"; else env_set TLS_CA_CHAIN_PATH ""; fi
+  grep -qE '^HTTPS_PORT=' "$INSTALL_DIR/.env" || env_set HTTPS_PORT "443"
+
+  log "Restarting the server with HTTPS"
+  compose up -d --force-recreate server
+  wait_healthy
+  https_port="$(env_get HTTPS_PORT)"; https_port="${https_port:-443}"
+  if curl -fsSk -m 10 "https://127.0.0.1:${https_port}/" 2>/dev/null | grep -qi '<!doctype html'; then
+    echo "  HTTPS check: OK"
+  else
+    warn "The server restarted but https://127.0.0.1:${https_port}/ did not answer - check: docker compose logs --tail 100 server"
+  fi
+  log "HTTPS is enabled"
+  echo "  Console:  https://<one of the certificate's names>$( [ "$https_port" = "443" ] || echo ":$https_port" )/"
+  echo "  Next:     point that DNS name at this server, allow TCP ${https_port} in the firewall/security group,"
+  echo "            and add https://<name>$( [ "$https_port" = "443" ] || echo ":$https_port" ) under Enrollment tokens -> Server connection details."
+  echo "  Agents already installed keep using http://<server>:4000 - nothing to change on endpoints."
   exit 0
 fi
 
@@ -168,7 +236,8 @@ systemctl is-active --quiet docker 2>/dev/null || systemctl start docker 2>/dev/
 # --- Install files ----------------------------------------------------------------------------
 FIRST_INSTALL=0
 [ -f "$INSTALL_DIR/.env" ] || FIRST_INSTALL=1
-mkdir -p "$INSTALL_DIR/agent-installer" "$INSTALL_DIR/backups"
+mkdir -p "$INSTALL_DIR/agent-installer" "$INSTALL_DIR/backups" "$INSTALL_DIR/certs"
+chmod 700 "$INSTALL_DIR/certs"
 
 PREVIOUS="$(env_get APP_VERSION)"
 if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEASE_VERSION" ]; then

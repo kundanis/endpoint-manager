@@ -115,6 +115,44 @@ setTimeout(async () => {
   }
   Write-Host "  server boots + console ..... OK"
 
+  # HTTPS exactly as `deploy.sh --install-cert` sets it up: an openssl-made PFX, TLS on 4443,
+  # plain HTTP kept on 4000 for agents. Self-signed, generated inside the container.
+  Write-LfFile (Join-Path $smokeDir "smoke-tls.cjs") @'
+const { execSync } = require('child_process');
+execSync('openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/k.pem -out /tmp/c.pem -days 1 -subj /CN=smoke.local', { stdio: 'ignore' });
+execSync('openssl pkcs12 -export -out /tmp/s.pfx -inkey /tmp/k.pem -in /tmp/c.pem -passout pass:smoke', { stdio: 'ignore' });
+process.env.TLS_PFX_PATH = '/tmp/s.pfx';
+process.env.TLS_PFX_PASSPHRASE = 'smoke';
+process.env.TLS_PORT = '4443';
+require('/app/dist/bootstrap.cjs');
+setTimeout(() => {
+  require('https').get({ host: '127.0.0.1', port: 4443, path: '/', rejectUnauthorized: false }, (res) => {
+    let body = '';
+    res.on('data', (d) => (body += d));
+    res.on('end', async () => {
+      let ok = res.statusCode === 200 && /<title>Endpoint One/i.test(body);
+      if (!ok) console.log('SMOKE FAIL https console ' + res.statusCode);
+      try {
+        const h = await fetch('http://127.0.0.1:4000/health');
+        if (!h.ok) { ok = false; console.log('SMOKE FAIL http alongside https ' + h.status); }
+      } catch (e) { ok = false; console.log('SMOKE FAIL http alongside https ' + e.message); }
+      console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
+      process.exit(ok ? 0 : 1);
+    });
+  }).on('error', (e) => { console.log('SMOKE FAIL https ' + e.message); process.exit(1); });
+}, 5000);
+'@
+  $tlsOut = docker run --rm -v "${smokeDir}:/smoke:ro" `
+    -e "DATABASE_URL=sqlserver://smoke-no-db:1433;database=x;user=x;password=x;encrypt=true;trustServerCertificate=true" `
+    -e "JWT_SECRET=smoke-test-secret-not-used-anywhere" `
+    -e "FIELD_ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" `
+    -e "PORT=4000" --entrypoint node $image /smoke/smoke-tls.cjs 2>&1 | Out-String
+  if ($tlsOut -notmatch "SMOKE OK") {
+    $fails = ($tlsOut -split "`n" | Where-Object { $_ -match "SMOKE FAIL" }) -join "`n"
+    throw "SMOKE FAIL: HTTPS mode did not work:`n$fails"
+  }
+  Write-Host "  https + http side by side .. OK"
+
   # --- Bundle folder ------------------------------------------------------------------------
   Step "Assembling $bundleName"
   if (Test-Path $bundleDir) { Remove-Item $bundleDir -Recurse -Force }

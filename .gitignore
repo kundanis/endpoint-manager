@@ -57,3 +57,7 @@ docker/agent-installer/*
 *.db-shm
 *.db-wal
 *.db-journal
+
+# TLS certificates/keys for the Docker deployment - never committed
+docker/certs/*
+!docker/certs/.gitkeep

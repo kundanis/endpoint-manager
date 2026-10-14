@@ -134,12 +134,42 @@ Never run `docker compose down -v`: `-v` deletes the database and uploads.
 **Backups:** schedule the manual backup above (cron), copy `backups/` and `.env` off the server,
 or take regular disk snapshots (on AWS: EBS snapshots via Data Lifecycle Manager).
 
-## 8. HTTPS (recommended for internet-facing servers)
+## 8. HTTPS with your own certificate (recommended)
 
-The server listens on plain HTTP port 4000. For HTTPS, put a TLS-terminating reverse proxy or
-load balancer in front (AWS Application Load Balancer with an ACM certificate, or nginx/Caddy
-with Let's Encrypt) forwarding to port 4000. Then set the agents' address in **Server connection
-details** to the `https://` name.
+You need the certificate and its private key as PEM files (text files starting with
+`-----BEGIN CERTIFICATE-----` and `-----BEGIN PRIVATE KEY-----`), plus the CA's intermediate
+chain file if your provider gave you one.
+
+1. **DNS:** point the certificate's name (e.g. `endpoint.yourcompany.com`) at the server's IP.
+2. **Firewall / security group:** allow inbound TCP **443**.
+3. **Copy the files to the server:**
+   `scp cert.pem key.pem chain.pem user@<server-ip>:~`
+4. **Install:**
+   ```bash
+   cd /opt/endpoint-one
+   sudo bash deploy.sh --install-cert ~/cert.pem ~/key.pem ~/chain.pem   # chain is optional
+   ```
+   The script checks that the certificate is valid, matches the key and hasn't expired, converts
+   it to the format the server uses, restarts the server and confirms that HTTPS answers. It
+   prints the certificate's names and expiry date.
+5. **Open** `https://endpoint.yourcompany.com` and sign in.
+6. **Agents:** in **Endpoint Hub → Enrollment tokens → Server connection details**, add
+   `https://endpoint.yourcompany.com` as the Web URL. New installers will use it, and existing
+   agents pick up the list on their next check-in. Plain HTTP on port 4000 keeps working, so
+   endpoints already installed continue reporting with no change.
+
+**Renewal:** run the same `--install-cert` command with the renewed files. The old certificate
+stays in place until the new one has been validated and converted.
+
+**Notes:**
+- HTTPS also applies `ADMIN_ALLOWED_NETWORKS`: the console still only answers allowed networks.
+- Login cookies are marked `Secure` automatically on HTTPS.
+- To use a port other than 443, set `HTTPS_PORT=8443` in `.env`, then run `sudo docker compose up -d`.
+- If the key has a passphrase, remove it first with `openssl pkey -in key.pem -out key-nopass.pem`.
+- If the certificate is DER/.cer, convert it first with
+  `openssl x509 -inform der -in cert.cer -out cert.pem`.
+- To use a load balancer instead (an AWS ALB with ACM), forward to port 4000 and don't install a
+  certificate on the server.
 
 ## 9. Troubleshooting
 
