@@ -1,10 +1,69 @@
-# Endpoint Pro — Docker deployment
+# Endpoint One — Docker deployment
 
 One-command deployment of the **server + web console + SQL Server** as Linux containers. The
 application is compiled to **V8 bytecode** with a startup integrity check (no readable JS in
 the image). Built entirely from the repo — no Windows staging step.
 
-## Quick start
+## Deploy on AWS EC2 (recommended path)
+
+**1. Launch an instance**
+- **x86_64 only** (SQL Server has no ARM image): `t3.large` (2 vCPU, 8 GB) recommended;
+  `t3.medium` (4 GB) is the minimum. Not Graviton (`t4g`, `m7g`).
+- Amazon Linux 2023 or Ubuntu 22.04/24.04, 30 GB gp3 disk.
+- **Security group inbound:** TCP **4000** (console + agents) from your office/agent networks,
+  TCP 22 (SSH) from your IP only. Do **not** open 1433 (SQL Server stays internal).
+- Give it an **Elastic IP** so the address agents use never changes.
+
+**2. Deploy**
+```bash
+sudo dnf install -y git    # Amazon Linux (Ubuntu: sudo apt-get install -y git)
+git clone https://github.com/kundanis/endpoint-one.git
+cd endpoint-one/docker
+./deploy-ec2.sh
+```
+The script installs Docker, writes `docker/.env` with generated secrets (it prints the first
+admin login once — save it), builds the image, starts the server + SQL Server and waits until
+healthy. It's safe to re-run; it never overwrites an existing `.env` or database.
+
+**3. First sign-in**
+Open `http://<elastic-ip>:4000`, sign in, then **Endpoint Hub → Enrollment tokens → Server
+connection details** and set the address agents use, e.g. `http://<elastic-ip>:4000` (and a
+DNS name if you have one). Do this **before** downloading installers — they embed it.
+
+**4. Agent installers**
+Build on a Windows machine (`npm run package -w @em/agent`) and copy
+`EndpointProAgentSetup.exe`, `EndpointProAgentInstaller.zip` and `agent-manifest.json` into
+`docker/agent-installer/` on the instance (e.g. with `scp`). Picked up immediately, no restart.
+
+**Small instance? Ship a prebuilt image instead of building on EC2**
+```bash
+# on a machine with Docker (x86_64):
+docker build -f docker/Dockerfile -t endpoint-one-server:latest .
+docker save endpoint-one-server:latest | gzip > endpoint-one-server.tar.gz
+scp endpoint-one-server.tar.gz ec2-user@<elastic-ip>:~
+# on the instance:
+docker load -i ~/endpoint-one-server.tar.gz
+cd endpoint-one/docker && ./deploy-ec2.sh --no-build
+```
+
+**Updating**
+```bash
+cd endpoint-one && git pull
+cd docker && docker compose up -d --build     # or load a new image and: docker compose up -d
+```
+Migrations run automatically on start; data in the volumes is kept.
+
+**Backups** — everything stateful is in Docker volumes plus `docker/.env`:
+- `docker/.env` — keep a copy somewhere safe; `FIELD_ENCRYPTION_KEY` is required to read
+  encrypted fields, and losing it makes them unrecoverable.
+- Database: `docker compose exec db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -No -Q "BACKUP DATABASE [EndpointManagerDb] TO DISK='/var/opt/mssql/backup.bak'"`,
+  then copy it out with `docker compose cp db:/var/opt/mssql/backup.bak .` (or snapshot the EBS volume).
+
+**HTTPS** — put an AWS Application Load Balancer (ACM certificate) in front, forwarding to port
+4000, and set the agents' address to the `https://` DNS name. See *TLS* below for the
+in-container alternative.
+
+## Quick start (any Linux host with Docker)
 
 ```bash
 cd docker
@@ -47,7 +106,7 @@ The container serves plain **HTTP on 4000**. For HTTPS, either:
 Not baked into the image (they're platform binaries, gitignored). Build them and drop them in
 `docker/agent-installer/`:
 ```bash
-npm run package -w @em/agent          # produces EndpointProAgentSetup.exe + installer zip + manifest
+npm run package -w @em/agent          # on Windows: produces EndpointProAgentSetup.exe + installer zip + manifest
 ```
 Copy the resulting files into `docker/agent-installer/` (and `linux/` for the Linux agent).
 

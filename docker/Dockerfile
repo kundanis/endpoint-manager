@@ -1,6 +1,6 @@
-# Endpoint Pro server - Linux image, built entirely from the repo (no Windows staging step).
+# Endpoint One server - Linux image, built entirely from the repo (no Windows staging step).
 # Build context is the REPO ROOT:
-#   docker build -f docker/Dockerfile -t endpoint-pro-server:latest .
+#   docker build -f docker/Dockerfile -t endpoint-one-server:latest .
 # or via compose: `docker compose build`.
 #
 # The server + web console + Outlook add-in all ship in this one image. The application code
@@ -22,6 +22,12 @@ ARG NODE_IMAGE=node:20-bookworm-slim
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+# Optional extra trusted CAs for the build only (never copied into the runtime image): drop a
+# PEM *.crt into docker/extra-ca/ when the build machine sits behind TLS interception (e.g.
+# Kaspersky/corporate proxy -> npm fails with SELF_SIGNED_CERT_IN_CHAIN). Empty on EC2.
+COPY docker/extra-ca/ /usr/local/share/ca-certificates/extra/
+RUN update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 RUN npm ci
@@ -38,6 +44,12 @@ RUN node docker/build/esbuild-bundle.mjs /src /out/bundle \
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+# Optional extra trusted CAs for the build only (never copied into the runtime image): drop a
+# PEM *.crt into docker/extra-ca/ when the build machine sits behind TLS interception (e.g.
+# Kaspersky/corporate proxy -> npm fails with SELF_SIGNED_CERT_IN_CHAIN). Empty on EC2.
+COPY docker/extra-ca/ /usr/local/share/ca-certificates/extra/
+RUN update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/app/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund --no-package-lock
 COPY packages/server/prisma ./prisma

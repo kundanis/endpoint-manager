@@ -41,3 +41,6 @@ native-dlp/**/.vs/
 *.ilk
 *.exp
 *.lib
+
+# Machine-specific build CAs (docker/Dockerfile)
+docker/extra-ca/*.crt
