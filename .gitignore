@@ -44,3 +44,7 @@ native-dlp/**/.vs/
 
 # Machine-specific build CAs (docker/Dockerfile)
 docker/extra-ca/*.crt
+
+# Built agent installers for the Docker deployment (copied in per host, not committed)
+docker/agent-installer/*
+!docker/agent-installer/.gitkeep
