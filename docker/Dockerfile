@@ -30,7 +30,13 @@ RUN update-ca-certificates
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
-RUN npm ci
+# npm can crash mid-install on a network hiccup ("Exit handler never called!") yet exit 0,
+# leaving a partial node_modules that only fails later with "tsc: not found". Check the
+# install actually completed and retry it a couple of times before giving up.
+RUN for attempt in 1 2 3; do \
+      npm ci && test -x node_modules/.bin/tsc && test -x node_modules/.bin/esbuild && exit 0; \
+      echo "npm ci did not complete (attempt $attempt of 3)"; rm -rf node_modules; sleep 10; \
+    done; exit 1
 RUN npm run build -w @em/shared \
  && npm run build -w @license/shared \
  && npm run build -w @em/console
@@ -51,7 +57,11 @@ COPY docker/extra-ca/ /usr/local/share/ca-certificates/extra/
 RUN update-ca-certificates
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/app/package.json ./package.json
-RUN npm install --omit=dev --no-audit --no-fund --no-package-lock
+# Same partial-install guard as the builder stage: `npm ls` fails if anything is missing.
+RUN for attempt in 1 2 3; do \
+      npm install --omit=dev --no-audit --no-fund --no-package-lock && npm ls --omit=dev >/dev/null && exit 0; \
+      echo "npm install did not complete (attempt $attempt of 3)"; rm -rf node_modules; sleep 10; \
+    done; exit 1
 COPY packages/server/prisma/schema.prisma ./prisma/schema.prisma
 RUN ./node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
