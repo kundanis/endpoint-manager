@@ -132,10 +132,16 @@ export function agentClient(
     baseURL: currentUrl,
     timeout: 15_000,
     httpsAgent,
-    headers: {
-      "X-Agent-Id": agentId,
-      "X-Agent-Key": apiKey,
-    },
+  });
+
+  // Stamped onto every request rather than set as instance headers, so a re-enrollment
+  // takes effect for all later requests (instance headers given to axios.create would
+  // outrank anything set on defaults.headers.common afterwards).
+  let identity = { agentId, apiKey };
+  client.interceptors.request.use((config) => {
+    config.headers["X-Agent-Id"] = identity.agentId;
+    config.headers["X-Agent-Key"] = identity.apiKey;
+    return config;
   });
 
   let credentialsAccepted = false;
@@ -147,9 +153,7 @@ export function agentClient(
       reenrolling = (async () => {
         try {
           console.log("Server rejected this agent's saved identity - re-enrolling with the enrollment token");
-          const next = await reenroll!();
-          client.defaults.headers.common["X-Agent-Id"] = next.agentId;
-          client.defaults.headers.common["X-Agent-Key"] = next.apiKey;
+          identity = await reenroll!();
           return true;
         } catch (err) {
           console.error("Re-enrollment failed (check the enrollment token)", err instanceof Error ? err.message : err);
@@ -176,8 +180,6 @@ export function agentClient(
       if (!reenroll || !rejected || credentialsAccepted || !config || config.reenrollRetried) throw error;
       if (!(await reenrollOnce())) throw error;
       config.reenrollRetried = true;
-      config.headers["X-Agent-Id"] = client.defaults.headers.common["X-Agent-Id"];
-      config.headers["X-Agent-Key"] = client.defaults.headers.common["X-Agent-Key"];
       return client.request(config);
     },
   );

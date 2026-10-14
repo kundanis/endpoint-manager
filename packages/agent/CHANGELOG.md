@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.7
+- Fix: after re-enrolling (0.2.6), the agent kept sending its old, rejected identity on every
+  request after the first, so the endpoint showed online once and then went offline. It now
+  uses the new identity for everything.
+
 ## 0.2.6
 - Fix: an endpoint that was previously enrolled against a different server (or before the
   server's database was reset) now re-enrolls by itself with its enrollment token, instead
