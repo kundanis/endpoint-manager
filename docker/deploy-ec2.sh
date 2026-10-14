@@ -41,8 +41,9 @@ fi
 # --- 1. Docker -------------------------------------------------------------------------------
 if ! command -v docker >/dev/null 2>&1; then
   log "Installing Docker"
-  if [ -f /etc/os-release ]; then . /etc/os-release; fi
-  case "${ID:-}" in
+  # Subshell: sourcing /etc/os-release would overwrite this script's variables.
+  os_id="$( (. /etc/os-release 2>/dev/null && echo "${ID:-}") || true)"
+  case "$os_id" in
     amzn)
       $SUDO dnf install -y docker
       # Compose v2 plugin (not packaged on Amazon Linux 2023).
@@ -59,7 +60,7 @@ if ! command -v docker >/dev/null 2>&1; then
       curl -fsSL https://get.docker.com | $SUDO sh
       ;;
     *)
-      die "Unsupported OS '${ID:-unknown}'. Install Docker + compose plugin manually, then re-run."
+      die "Unsupported OS '${os_id:-unknown}'. Install Docker + compose plugin manually, then re-run."
       ;;
   esac
   $SUDO systemctl enable --now docker

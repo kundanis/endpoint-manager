@@ -84,9 +84,9 @@ if [ "$MODE" = "rollback" ]; then
 fi
 
 # --- Bundle checks ----------------------------------------------------------------------------
-VERSION="$(tr -d '[:space:]' < "$BUNDLE_DIR/VERSION" 2>/dev/null || true)"
-[ -n "$VERSION" ] || die "VERSION file missing - run deploy.sh from inside the extracted release bundle."
-SERVER_IMAGE_TAR="$BUNDLE_DIR/images/endpoint-one-server-$VERSION.tar"
+RELEASE_VERSION="$(tr -d '[:space:]' < "$BUNDLE_DIR/VERSION" 2>/dev/null || true)"
+[ -n "$RELEASE_VERSION" ] || die "VERSION file missing - run deploy.sh from inside the extracted release bundle."
+SERVER_IMAGE_TAR="$BUNDLE_DIR/images/endpoint-one-server-$RELEASE_VERSION.tar"
 [ -f "$SERVER_IMAGE_TAR" ] || die "Missing $SERVER_IMAGE_TAR"
 
 arch="$(uname -m)"
@@ -102,8 +102,10 @@ fi
 # --- Docker -----------------------------------------------------------------------------------
 if ! command -v docker >/dev/null 2>&1; then
   log "Installing Docker (needs internet access)"
-  . /etc/os-release 2>/dev/null || true
-  case "${ID:-}" in
+  # Read the distro id in a subshell: sourcing /etc/os-release here would overwrite this
+  # script's variables (it defines VERSION, e.g. "2023" on Amazon Linux 2023).
+  os_id="$( (. /etc/os-release 2>/dev/null && echo "${ID:-}") || true)"
+  case "$os_id" in
     amzn)
       dnf install -y docker
       mkdir -p /usr/local/lib/docker/cli-plugins
@@ -115,7 +117,7 @@ if ! command -v docker >/dev/null 2>&1; then
       curl -fsSL https://get.docker.com | sh
       ;;
     *)
-      die "Unsupported OS '${ID:-unknown}'. Install Docker Engine + the compose plugin, then re-run."
+      die "Unsupported OS '${os_id:-unknown}'. Install Docker Engine + the compose plugin, then re-run."
       ;;
   esac
   systemctl enable --now docker
@@ -129,8 +131,8 @@ FIRST_INSTALL=0
 mkdir -p "$INSTALL_DIR/agent-installer" "$INSTALL_DIR/backups"
 
 PREVIOUS="$(env_get APP_VERSION)"
-if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$VERSION" ]; then
-  log "Upgrading $PREVIOUS -> $VERSION"
+if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEASE_VERSION" ]; then
+  log "Upgrading $PREVIOUS -> $RELEASE_VERSION"
   if [ -n "$(compose ps -q db 2>/dev/null)" ]; then
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     bak="pre-upgrade-${PREVIOUS}-${stamp}.bak"
@@ -174,18 +176,18 @@ ADMIN_PASSWORD=${admin_password}
 DB_NAME=EndpointManagerDb
 APP_PORT=${APP_PORT:-4000}
 LICENSE_ENFORCEMENT_ENABLED=false
-APP_VERSION=${VERSION}
+APP_VERSION=${RELEASE_VERSION}
 EOF
   )
 fi
 chmod 600 "$INSTALL_DIR/.env"
-if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$VERSION" ]; then
+if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEASE_VERSION" ]; then
   env_set PREVIOUS_APP_VERSION "$PREVIOUS"
 fi
-env_set APP_VERSION "$VERSION"
+env_set APP_VERSION "$RELEASE_VERSION"
 
 # --- Images -----------------------------------------------------------------------------------
-log "Loading the Endpoint One image ($VERSION)"
+log "Loading the Endpoint One image ($RELEASE_VERSION)"
 docker load -i "$SERVER_IMAGE_TAR"
 if [ -f "$BUNDLE_DIR/images/mssql-server.tar" ]; then
   log "Loading the bundled SQL Server image (offline bundle)"
@@ -197,7 +199,7 @@ log "Starting Endpoint One"
 compose up -d
 wait_healthy
 
-log "Endpoint One $VERSION is running"
+log "Endpoint One $RELEASE_VERSION is running"
 print_url
 if [ "$FIRST_INSTALL" -eq 1 ]; then
   echo
