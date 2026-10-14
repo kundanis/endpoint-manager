@@ -278,7 +278,6 @@ export default function Layout() {
         <div className="ep-pg">
           <Outlet />
         </div>
-        <footer className="app-footer">Designed &amp; Developed by Kundan Zamvar - 2026</footer>
       </main>
     </div>
   );

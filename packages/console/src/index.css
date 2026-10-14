@@ -134,14 +134,6 @@ button.ep-ni {
   flex: 1;
 }
 
-.app-footer {
-  padding: 12px 24px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--ep-ink-subtle);
-  border-top: 1px solid var(--ep-border);
-}
-
 /* ------------------------------------------------------------------------------------------
    2. Login page (rendered outside .ep-app, so it carries its own focus ring)
    ------------------------------------------------------------------------------------------ */
