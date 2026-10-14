@@ -4,6 +4,22 @@ One-command deployment of the **server + web console + SQL Server** as Linux con
 application is compiled to **V8 bytecode** with a startup integrity check (no readable JS in
 the image). Built entirely from the repo — no Windows staging step.
 
+## Customer deployments (no source code on the server)
+
+For customer servers, ship a **release bundle** instead of the repo:
+
+```powershell
+# on your build machine (Windows, Docker Desktop):
+powershell -ExecutionPolicy Bypass -File dockerelease.ps1 -Version 1.0.0          # online customers
+powershell -ExecutionPolicy Bypass -File dockerelease.ps1 -Version 1.0.0 -Offline # + SQL Server image
+```
+
+The output is `release/endpoint-one-<version>.tar.gz`: the prebuilt image (V8 bytecode), the customer
+`docker-compose.yml`, `deploy.sh` (install/upgrade/rollback, never builds) and `INSTALL.md`. It
+contains no source code. On the customer server: extract it and run `sudo bash deploy.sh`; it
+installs to `/opt/endpoint-one`. The full customer guide is `docker/customer/INSTALL.md`, which ships
+inside the bundle.
+
 ## Deploy on AWS EC2 (recommended path)
 
 **1. Launch an instance**

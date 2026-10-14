@@ -52,7 +52,7 @@ RUN update-ca-certificates
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/app/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund --no-package-lock
-COPY packages/server/prisma ./prisma
+COPY packages/server/prisma/schema.prisma ./prisma/schema.prisma
 RUN ./node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
 # ---------------------------------------------------------------------------------------------
@@ -76,7 +76,10 @@ ENV PORT=4000
 
 COPY --from=deps /app/node_modules ./node_modules
 # Static assets the server serves / needs at runtime.
-COPY --from=builder /src/packages/server/prisma ./prisma
+# Only what `prisma migrate deploy` needs - not seed.ts (the seed ships as bytecode in dist/)
+# and never stray local database files.
+COPY --from=builder /src/packages/server/prisma/schema.prisma ./prisma/schema.prisma
+COPY --from=builder /src/packages/server/prisma/migrations ./prisma/migrations
 COPY --from=builder /src/packages/server/public ./public
 COPY --from=builder /src/packages/console/dist ./console-dist
 COPY --from=builder /src/packages/server/.env.example ./.env.example

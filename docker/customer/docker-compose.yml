@@ -1,0 +1,62 @@
+# Endpoint One - customer deployment (prebuilt image only, no source code).
+#
+# Installed to /opt/endpoint-one by deploy.sh, which also writes .env (secrets + APP_VERSION).
+# Manage with:  cd /opt/endpoint-one && docker compose <ps|logs -f server|restart|down>
+#
+# The project name is pinned so the data volumes keep the same names across upgrades, no
+# matter which folder a new release bundle was extracted to.
+name: endpoint-one
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    # SQL Server images are x86_64 only.
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD:?set SA_PASSWORD in .env}
+      # Express is free (10 GB per database). Set MSSQL_PID=Standard in .env if licensed.
+      MSSQL_PID: ${MSSQL_PID:-Express}
+    volumes:
+      - mssql-data:/var/opt/mssql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -No -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  server:
+    # Loaded from the release bundle (docker load); never built on the customer's server.
+    image: endpoint-one-server:${APP_VERSION:?set APP_VERSION in .env}
+    pull_policy: never
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "4000"
+      DB_NAME: ${DB_NAME:-EndpointManagerDb}
+      DATABASE_URL: "sqlserver://db:1433;database=${DB_NAME:-EndpointManagerDb};user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
+      MASTER_DATABASE_URL: "sqlserver://db:1433;database=master;user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?set FIELD_ENCRYPTION_KEY in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@endpointone.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    volumes:
+      - uploads:/app/uploads
+      - ./agent-installer:/app/agent-installer
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  mssql-data:
+  uploads:

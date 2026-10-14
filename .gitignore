@@ -48,3 +48,12 @@ docker/extra-ca/*.crt
 # Built agent installers for the Docker deployment (copied in per host, not committed)
 docker/agent-installer/*
 !docker/agent-installer/.gitkeep
+
+# Customer release bundles (docker/release.ps1)
+/release/
+
+# Local SQLite dev database leftovers
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
