@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import {
   assignBenchmarkRequestSchema,
   createBenchmarkRequestSchema,
@@ -31,6 +32,8 @@ import {
   updateRule,
 } from "../services/securityBenchmark.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
+import { installBuiltInBenchmarks } from "../services/builtInBenchmarks";
+import { GpoImportError, previewGpoBackup } from "../services/gpoImport.service";
 import { prisma } from "../db";
 
 export const securityConfigRouter = Router();
@@ -39,6 +42,15 @@ securityConfigRouter.post("/", async (req, res, next) => {
   try {
     const payload = createBenchmarkRequestSchema.parse(req.body);
     res.status(201).json(await createBenchmark(payload, req.adminId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Adds any built-in benchmark that doesn't exist yet (by name) - never touches existing ones.
+securityConfigRouter.post("/built-in", async (_req, res, next) => {
+  try {
+    res.json(await installBuiltInBenchmarks(prisma));
   } catch (err) {
     next(err);
   }
@@ -127,6 +139,21 @@ securityConfigRouter.post("/:id/rules/import", async (req, res, next) => {
     const payload = importRulesRequestSchema.parse(req.body);
     res.status(201).json(await importRules(req.params.id, payload.rules));
   } catch (err) {
+    next(err);
+  }
+});
+
+// Upload a Group Policy backup .zip and get back the rules it converts to, grouped by GPO.
+// Read in memory only; nothing is stored - the console then imports the chosen GPOs' rules
+// through /:id/rules/import.
+const gpoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 1 } });
+
+securityConfigRouter.post("/:id/rules/gpo-preview", gpoUpload.single("file"), (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Choose a Group Policy backup .zip to upload" });
+    res.json(previewGpoBackup(req.file.buffer));
+  } catch (err) {
+    if (err instanceof GpoImportError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });

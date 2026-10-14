@@ -4,6 +4,7 @@ import type {
   DataDiscoveryRegulation,
   DlpEnforcementMode,
   DlpRuleType,
+  GpoImportPreview,
   IpBlockRuleType,
   PiiBlockRuleType,
   PiiEmailBlockRuleType,
@@ -1091,6 +1092,27 @@ export function useAddSecurityRule() {
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["securityBenchmarks"] });
       qc.invalidateQueries({ queryKey: ["securityBenchmarks", variables.benchmarkId] });
+    },
+  });
+}
+
+// Adds the built-in benchmarks that don't exist yet; existing ones are left untouched.
+export function useInstallBuiltInBenchmarks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ created: { name: string; rules: number }[]; skipped: string[] }>("/admin/security-config/built-in", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["securityBenchmarks"] }),
+  });
+}
+
+// Converts an uploaded Group Policy backup .zip into rules (nothing is saved yet).
+export function usePreviewGpoBackup() {
+  return useMutation({
+    mutationFn: ({ benchmarkId, file }: { benchmarkId: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api.postForm<GpoImportPreview>(`/admin/security-config/${benchmarkId}/rules/gpo-preview`, form);
     },
   });
 }

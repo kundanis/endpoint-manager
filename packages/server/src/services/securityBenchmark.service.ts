@@ -162,9 +162,15 @@ export async function deleteRule(benchmarkId: string, ruleId: string): Promise<b
   return result.count > 0;
 }
 
+// Rules whose ruleKey already exists in the benchmark (or repeats within the file) are
+// skipped, so re-importing the same file or Group Policy baseline adds only what's new.
 export async function importRules(benchmarkId: string, rules: CreateRuleRequest[]) {
+  const existing = await prisma.securityBenchmarkRule.findMany({ where: { benchmarkId }, select: { ruleKey: true } });
+  const taken = new Set(existing.map((r) => r.ruleKey));
+  const fresh = rules.filter((r) => (taken.has(r.ruleKey) ? false : (taken.add(r.ruleKey), true)));
+  if (fresh.length === 0) return getBenchmark(benchmarkId);
   await prisma.securityBenchmarkRule.createMany({
-    data: rules.map((r) => ({
+    data: fresh.map((r) => ({
       benchmarkId,
       ruleKey: r.ruleKey,
       title: r.title,

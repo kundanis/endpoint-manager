@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight, Download, FileUp, ListChecks, Pencil, Plus, ShieldCheck, Trash2, Users, Wrench, X } from "lucide-react";
-import type { SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
+import type { GpoImportPreview, SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
 import type { SecurityBenchmarkDetail } from "../api/types";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
@@ -13,6 +13,8 @@ import {
   useDeleteSecurityBenchmark,
   useDeleteSecurityRule,
   useImportSecurityRules,
+  useInstallBuiltInBenchmarks,
+  usePreviewGpoBackup,
   useAgentSecurityFindings,
   useRemediateAllForAgentInBenchmark,
   useRemediateSelectedForAgentInBenchmark,
@@ -43,7 +45,9 @@ import {
   Tabs,
   Tag,
   useConfirm,
+  useToast,
 } from "../components/ui";
+import { pluralize } from "../format";
 
 // Policy-style workflow: benchmark list → selected benchmark's tabs (Rules, Assignment,
 // Compliance). Creating a benchmark happens in a modal.
@@ -118,6 +122,100 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
+// Preview of an uploaded Group Policy backup: one checkbox per GPO found in the .zip. Only
+// the ticked GPOs' rules are imported; rules the benchmark already has are skipped server-side.
+function GpoImportModal({
+  benchmark,
+  preview,
+  onClose,
+}: {
+  benchmark: SecurityBenchmarkDetail;
+  preview: GpoImportPreview;
+  onClose: (result?: string) => void;
+}) {
+  const importRules = useImportSecurityRules();
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(preview.gpos.filter((g) => g.rules.length > 0).map((g) => g.guid)));
+
+  const chosen = preview.gpos.filter((g) => selected.has(g.guid));
+  const rules = chosen.flatMap((g) => g.rules);
+  const skipped = preview.gpos.flatMap((g) => g.skipped.map((s) => `${g.name}: ${s}`));
+  const warnings = preview.gpos.flatMap((g) => g.warnings.map((w) => `${g.name}: ${w}`));
+
+  function toggle(guid: string, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(guid);
+      else next.delete(guid);
+      return next;
+    });
+  }
+
+  function handleImport() {
+    const before = benchmark.rules.length;
+    importRules.mutate(
+      { benchmarkId: benchmark.id, rules },
+      {
+        onSuccess: (updated) => {
+          const added = updated.rules.length - before;
+          const already = rules.length - added;
+          onClose(
+            `Imported ${pluralize(added, "rule")} from ${pluralize(chosen.length, "GPO")}` +
+              (already > 0 ? ` (${already} already in this benchmark)` : "") +
+              ".",
+          );
+        },
+      },
+    );
+  }
+
+  return (
+    <Modal
+      title="Import from Group Policy backup"
+      description="Each computer setting becomes a rule with a check and a fix. Choose the GPOs to import."
+      onClose={() => onClose()}
+      footer={
+        <>
+          <Button onClick={() => onClose()}>Cancel</Button>
+          <Button variant="primary" icon={FileUp} onClick={handleImport} disabled={rules.length === 0 || importRules.isPending}>
+            {importRules.isPending ? "Importing…" : `Import ${pluralize(rules.length, "rule")}`}
+          </Button>
+        </>
+      }
+    >
+      <div className="app-stack">
+        <div className="app-stack-sm">
+          {preview.gpos.map((g) => (
+            <Check
+              key={g.guid}
+              checked={selected.has(g.guid)}
+              disabled={g.rules.length === 0}
+              onChange={(on) => toggle(g.guid, on)}
+              label={g.name}
+              hint={`${pluralize(g.rules.length, "rule")}${g.skipped.length ? ` · ${g.skipped.length} not checkable` : ""}`}
+            />
+          ))}
+        </div>
+        {warnings.length > 0 && (
+          <Alert tone="info">
+            {warnings.map((w) => (
+              <div key={w}>{w}</div>
+            ))}
+          </Alert>
+        )}
+        {skipped.length > 0 && (
+          <details>
+            <summary className="app-text">
+              {pluralize(skipped.length, "setting")} can't be checked as a single value and will be left out
+            </summary>
+            <pre className="app-pre">{skipped.join("\n")}</pre>
+          </details>
+        )}
+        {importRules.isError && <Alert tone="critical">{(importRules.error as Error).message}</Alert>}
+      </div>
+    </Modal>
+  );
+}
+
 function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
   const addRule = useAddSecurityRule();
   const importRules = useImportSecurityRules();
@@ -125,6 +223,9 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
   const confirm = useConfirm();
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewGpo = usePreviewGpoBackup();
+  const gpoInputRef = useRef<HTMLInputElement>(null);
+  const [gpoResult, setGpoResult] = useState<string | null>(null);
 
   const [ruleKey, setRuleKey] = useState("");
   const [title, setTitle] = useState("");
@@ -177,6 +278,14 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
     } catch (err) {
       setImportError(err instanceof Error ? err.message : "Invalid JSON file");
     }
+  }
+
+  function handleGpoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setGpoResult(null);
+    previewGpo.mutate({ benchmarkId: benchmark.id, file });
   }
 
   async function handleDeleteRule(ruleId: string, ruleTitle: string) {
@@ -267,6 +376,43 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
         {importError && <Alert tone="critical">{importError}</Alert>}
         {importRules.isError && <Alert tone="critical">{(importRules.error as Error).message}</Alert>}
       </div>
+
+      <div className="app-inset-form">
+        <span className="app-subhead">Import from Group Policy</span>
+        <p className="app-text">
+          Upload a Group Policy backup as a .zip — a Microsoft Security Compliance Toolkit baseline, a CIS Build Kit, or
+          your own <span className="ep-mono">Backup-GPO</span> export. Its computer settings (administrative templates,
+          password and lockout policy, user rights, security options, advanced audit policy) become rules with a check
+          and a fix. You'll choose which GPOs to import before anything is saved.
+        </p>
+        <div className="app-actions-row">
+          <Button icon={FileUp} onClick={() => gpoInputRef.current?.click()} disabled={previewGpo.isPending}>
+            {previewGpo.isPending ? "Reading backup…" : "Upload GPO backup (.zip)"}
+          </Button>
+          <input
+            ref={gpoInputRef}
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            className="app-vh"
+            tabIndex={-1}
+            aria-label="Upload GPO backup"
+            onChange={handleGpoFile}
+          />
+        </div>
+        {previewGpo.isError && <Alert tone="critical">{(previewGpo.error as Error).message}</Alert>}
+        {gpoResult && <Alert tone="success">{gpoResult}</Alert>}
+      </div>
+
+      {previewGpo.data && (
+        <GpoImportModal
+          benchmark={benchmark}
+          preview={previewGpo.data}
+          onClose={(result) => {
+            previewGpo.reset();
+            if (result) setGpoResult(result);
+          }}
+        />
+      )}
 
       <form onSubmit={handleAddRule} className="app-inset-form">
         <span className="app-subhead">Add rule manually</span>
@@ -789,7 +935,9 @@ export default function SecurityConfigPage() {
   const { data: benchmarks, isLoading, error, refetch } = useSecurityBenchmarks();
   const createBenchmark = useCreateSecurityBenchmark();
   const deleteBenchmark = useDeleteSecurityBenchmark();
+  const installBuiltIns = useInstallBuiltInBenchmarks();
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
@@ -832,17 +980,34 @@ export default function SecurityConfigPage() {
 
   const formId = "new-benchmark-form";
 
+  function handleInstallBuiltIns() {
+    installBuiltIns.mutate(undefined, {
+      onSuccess: ({ created }) =>
+        toast(
+          created.length === 0
+            ? "All built-in benchmarks are already here."
+            : `Added ${created.map((b) => `${b.name} (${pluralize(b.rules, "rule")})`).join(", ")}.`,
+        ),
+    });
+  }
+
   return (
     <>
       <PageHeader
         title="Security configuration"
-        description="Scan endpoints against a security benchmark — the seeded CIS-aligned baseline or a benchmark you define — and track pass/fail compliance per rule."
+        description="Scan endpoints against a security benchmark — the built-in CIS-aligned baselines, a Group Policy baseline you import, or rules you define — and track pass/fail compliance per rule."
         actions={
-          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-            New benchmark
-          </Button>
+          <>
+            <Button icon={ShieldCheck} onClick={handleInstallBuiltIns} disabled={installBuiltIns.isPending}>
+              {installBuiltIns.isPending ? "Adding…" : "Add built-in benchmarks"}
+            </Button>
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+              New benchmark
+            </Button>
+          </>
         }
       />
+      {installBuiltIns.isError && <Alert tone="critical">{(installBuiltIns.error as Error).message}</Alert>}
 
       <Card flush title="Benchmarks" hint={benchmarks ? `${benchmarks.length} total` : undefined}>
         {isLoading ? (

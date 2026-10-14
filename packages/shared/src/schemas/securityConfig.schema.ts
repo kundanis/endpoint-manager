@@ -42,10 +42,25 @@ export type CreateRuleRequest = z.infer<typeof createRuleRequestSchema>;
 export const updateRuleRequestSchema = createRuleRequestSchema.partial();
 export type UpdateRuleRequest = z.infer<typeof updateRuleRequestSchema>;
 
+// Up to 2000: a whole Group Policy baseline imports in one go (see GpoImportPreview).
 export const importRulesRequestSchema = z.object({
-  rules: z.array(createRuleRequestSchema).min(1).max(200),
+  rules: z.array(createRuleRequestSchema).min(1).max(2000),
 });
 export type ImportRulesRequest = z.infer<typeof importRulesRequestSchema>;
+
+// Result of uploading a Group Policy backup .zip: one entry per GPO found in it, with the
+// rules its computer settings convert to. Nothing is saved until the admin imports the
+// rules of the GPOs they pick (POST .../rules/import).
+export interface GpoImportPreviewGpo {
+  guid: string;
+  name: string;
+  rules: CreateRuleRequest[];
+  skipped: string[]; // settings that have no single value to check (or aren't supported)
+  warnings: string[];
+}
+export interface GpoImportPreview {
+  gpos: GpoImportPreviewGpo[];
+}
 
 export const assignBenchmarkRequestSchema = z
   .object({
