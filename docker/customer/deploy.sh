@@ -173,6 +173,16 @@ if [ "$FIRST_INSTALL" -eq 1 ]; then
   sa_password="Sa1!$(openssl rand -hex 12)"
   admin_password="Adm1!$(openssl rand -hex 8)"
   admin_email="${ADMIN_EMAIL:-admin@endpointone.local}"
+  # The admin console only answers private networks plus ADMIN_ALLOWED_NETWORKS. Default to
+  # the public IP this SSH session comes from, so the installing admin can open it right away.
+  allowed="${ADMIN_ALLOWED_NETWORKS:-}"
+  if [ -z "$allowed" ]; then
+    ssh_ip="$(who -m 2>/dev/null | sed -n 's/.*(\([0-9a-fA-F.:]*\)).*/\1/p' | head -1)"
+    case "$ssh_ip" in
+      ''|10.*|192.168.*|127.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;;
+      *) allowed="$ssh_ip" ;;
+    esac
+  fi
   (
     umask 077
     cat > "$INSTALL_DIR/.env" <<EOF
@@ -186,6 +196,8 @@ ADMIN_PASSWORD=${admin_password}
 DB_NAME=EndpointManagerDb
 APP_PORT=${APP_PORT:-4000}
 LICENSE_ENFORCEMENT_ENABLED=false
+# Public IPs/CIDRs allowed to open the admin console (comma-separated). Private networks always are.
+ADMIN_ALLOWED_NETWORKS=${allowed}
 APP_VERSION=${RELEASE_VERSION}
 EOF
   )
@@ -218,6 +230,14 @@ if [ "$FIRST_INSTALL" -eq 1 ]; then
   echo "    password: $(env_get ADMIN_PASSWORD)"
   echo
   echo "  BACK UP $INSTALL_DIR/.env now (FIELD_ENCRYPTION_KEY cannot be recovered)."
+  allowed_now="$(env_get ADMIN_ALLOWED_NETWORKS)"
+  echo
+  if [ -n "$allowed_now" ]; then
+    echo "  Admin console reachable from: private networks + ${allowed_now}"
+  else
+    echo "  Admin console reachable from private networks only. To allow your office's public IP:"
+    echo "    set ADMIN_ALLOWED_NETWORKS=<ip> in $INSTALL_DIR/.env, then: cd $INSTALL_DIR && sudo docker compose up -d"
+  fi
 fi
 if ! ls "$INSTALL_DIR"/agent-installer/EndpointProAgentSetup.exe >/dev/null 2>&1; then
   warn "No agent installer in $INSTALL_DIR/agent-installer - 'Download agent installer' will report it missing."

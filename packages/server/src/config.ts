@@ -54,6 +54,11 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true"),
+  // Extra (public) networks allowed to reach the admin console/login/admin API, on top of
+  // private addresses - comma-separated IPs or CIDRs, e.g. "203.0.113.7,198.51.100.0/24".
+  // Needed when the server is cloud-hosted (EC2) and admins connect from the internet; see
+  // middleware/publicAccessAllowlist.ts. Empty = internal networks only (the default).
+  ADMIN_ALLOWED_NETWORKS: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -93,4 +98,7 @@ export const config = {
     : undefined,
   licenseOfflineGraceDays: parsed.data.LICENSE_OFFLINE_GRACE_DAYS,
   licenseEnforcementEnabled: parsed.data.LICENSE_ENFORCEMENT_ENABLED,
+  adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
 };

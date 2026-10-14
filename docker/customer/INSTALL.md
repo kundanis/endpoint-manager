@@ -50,6 +50,17 @@ To choose the admin email: `sudo ADMIN_EMAIL=it@customer.com bash deploy.sh` (fi
 
 ## 3. First-time configuration (web console)
 
+**Who can open the console:** for security, the admin console only answers **private networks**
+(10.x, 172.16–31.x, 192.168.x) plus the public IPs listed in `ADMIN_ALLOWED_NETWORKS`. Anyone
+else gets `{"error":"Not found"}`. Agents and the Outlook add-in work from anywhere.
+- A fresh install automatically allows the public IP you ran `deploy.sh` from (your SSH session),
+  and prints it at the end.
+- To allow other offices or admins: edit `/opt/endpoint-one/.env`, e.g.
+  `ADMIN_ALLOWED_NETWORKS=203.0.113.7,198.51.100.0/24`, then run
+  `cd /opt/endpoint-one && sudo docker compose up -d`.
+- Quick access without changing anything: an SSH tunnel,
+  `ssh -L 4000:localhost:4000 user@<server-ip>`, then browse to `http://localhost:4000`.
+
 Open `http://<server-ip>:4000` and sign in.
 
 1. **Licensing → Licence API**: enter the License Server URL, select **Connect**, enter the
@@ -136,6 +147,7 @@ details** to the `https://` name.
 |---|---|
 | `deploy.sh` says unhealthy | `docker compose logs --tail 200 server`. The usual causes are too little RAM for SQL Server, or the disk is full. |
 | Console not reachable | Security group / firewall allows TCP 4000; `docker compose ps` shows `server` as healthy. |
+| Browser shows `{"error":"Not found"}` | Your public IP isn't in `ADMIN_ALLOWED_NETWORKS` (see section 3). The server log shows "Blocked request from a public address" with your IP. |
 | "Installer not available" in the console | The bundle had no agent installer: copy `EndpointProAgentSetup.exe`, `EndpointProAgentInstaller.zip` and `agent-manifest.json` into `/opt/endpoint-one/agent-installer/` (no restart needed). |
 | Endpoint installed but not listed | On the endpoint: `Test-NetConnection <server-ip> -Port 4000`; check that Server connection details holds an address the endpoint can reach. |
 | Database exceeds 10 GB | SQL Server Express limit: set `MSSQL_PID=Standard` in `.env` (requires a licence), then run `docker compose up -d`. |

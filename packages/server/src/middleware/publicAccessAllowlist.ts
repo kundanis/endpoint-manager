@@ -1,5 +1,6 @@
 import net from "node:net";
 import type { NextFunction, Request, Response } from "express";
+import { config } from "../config";
 import { logger } from "../logger";
 
 // This server is reachable from the internet (NAT) for two things: the Outlook add-in, for
@@ -16,6 +17,10 @@ import { logger } from "../logger";
 // If the perimeter firewall ever source-NATs inbound traffic to an internal address, every
 // request will look internal and this check silently stops applying (it fails open, it
 // never locks admins out) — verify with the request log after any firewall change.
+//
+// Cloud-hosted servers (e.g. EC2) are reached by admins over the internet, so their public
+// IPs/ranges can be allowed explicitly with ADMIN_ALLOWED_NETWORKS - everyone else still gets
+// the 404 below.
 
 const PUBLIC_PATH_PREFIXES = ["/outlook-addin/", "/api/email-addin/", "/api/agent/"];
 const PUBLIC_EXACT_PATHS = new Set(["/health"]);
@@ -31,6 +36,34 @@ const privateIpv6 = new net.BlockList();
 privateIpv6.addAddress("::1", "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6"); // unique local
 privateIpv6.addSubnet("fe80::", 10, "ipv6"); // link-local
+
+// ADMIN_ALLOWED_NETWORKS entries ("203.0.113.7", "198.51.100.0/24", "2001:db8::/32"). An
+// invalid entry stops the server at startup: silently skipping it would lock admins out
+// (or, worse, leave them believing an address is allowed when it isn't).
+const allowedNetworks = new net.BlockList();
+for (const entry of config.adminAllowedNetworks) {
+  const [addr, prefixText] = entry.split("/");
+  const family = net.isIPv4(addr) ? "ipv4" : net.isIPv6(addr) ? "ipv6" : null;
+  const prefix = prefixText === undefined ? undefined : Number(prefixText);
+  const maxPrefix = family === "ipv4" ? 32 : 128;
+  if (!family || (prefix !== undefined && (!Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix))) {
+    throw new Error(`ADMIN_ALLOWED_NETWORKS: invalid entry "${entry}" (expected an IP or CIDR, e.g. 203.0.113.7 or 198.51.100.0/24)`);
+  }
+  if (prefix === undefined) allowedNetworks.addAddress(addr, family);
+  else allowedNetworks.addSubnet(addr, prefix, family);
+}
+if (config.adminAllowedNetworks.length > 0) {
+  logger.info({ adminAllowedNetworks: config.adminAllowedNetworks }, "Admin console also allowed from these networks");
+}
+
+export function isAllowedAdminAddress(address: string | undefined): boolean {
+  if (isInternalAddress(address)) return true;
+  if (!address || config.adminAllowedNetworks.length === 0) return false;
+  const v4 = address.startsWith("::ffff:") ? address.slice(7) : address;
+  if (net.isIPv4(v4)) return allowedNetworks.check(v4, "ipv4");
+  if (net.isIPv6(address)) return allowedNetworks.check(address, "ipv6");
+  return false;
+}
 
 export function isInternalAddress(address: string | undefined): boolean {
   if (!address) return false;
@@ -51,7 +84,7 @@ const WARN_INTERVAL_MS = 60 * 60 * 1000;
 
 export function publicAccessAllowlist(req: Request, res: Response, next: NextFunction) {
   const peer = req.socket.remoteAddress;
-  if (isInternalAddress(peer) || isPublicPath(req.path)) return next();
+  if (isAllowedAdminAddress(peer) || isPublicPath(req.path)) return next();
 
   const now = Date.now();
   const key = peer ?? "unknown";

@@ -57,6 +57,8 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@endpointone.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
       LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
+      # Public IPs/CIDRs allowed to open the admin console (private networks always are).
+      ADMIN_ALLOWED_NETWORKS: ${ADMIN_ALLOWED_NETWORKS:-}
     ports:
       - "4000:4000"
     volumes:
