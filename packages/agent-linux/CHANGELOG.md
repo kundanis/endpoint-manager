@@ -6,6 +6,13 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.1
+- Re-enrolls automatically when the server no longer recognises this agent's saved
+  identity (e.g. the server was reinstalled), instead of failing every check-in.
+- Supports several server addresses with automatic failover (LAN, web URL, public IP).
+- Fix: the package now includes zod, which the agent needs at runtime; without it the
+  service failed to start.
+
 ## 0.1.0
 - Initial release — Core Endpoint Manager + Patch Management for Linux (Debian/Ubuntu
   via apt, RHEL/CentOS/Fedora via dnf or yum): enrollment, check-in, hardware/OS/
