@@ -61,3 +61,8 @@ docker/agent-installer/*
 # TLS certificates/keys for the Docker deployment - never committed
 docker/certs/*
 !docker/certs/.gitkeep
+
+# TLS certificates and private keys - never commit
+*.key
+garnet.security
+godaddy-intermediate-chain.crt
