@@ -59,6 +59,8 @@ services:
       LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
       # Public IPs/CIDRs allowed to open the admin console (private networks always are).
       ADMIN_ALLOWED_NETWORKS: ${ADMIN_ALLOWED_NETWORKS:-}
+      # "cloudflare" when published through Cloudflare's proxy (orange cloud) - see INSTALL.md.
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-}
       # HTTPS: put server.pfx in docker/certs/ and set TLS_PFX_PATH=/app/certs/server.pfx +
       # TLS_PFX_PASSPHRASE in .env. HTTPS on 4443 (published as HTTPS_PORT, default 443);
       # plain HTTP stays on 4000 for agents. Ignored when no certificate is configured.

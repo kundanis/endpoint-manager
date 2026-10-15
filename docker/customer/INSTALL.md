@@ -177,6 +177,30 @@ stays in place until the new one has been validated and converted.
 - To use a load balancer instead (an AWS ALB with ACM), forward to port 4000 and don't install a
   certificate on the server.
 
+### Behind Cloudflare (orange-cloud proxy)
+
+Simplest is **DNS only** (grey cloud): browsers and agents reach the server directly and use the
+certificate installed above. If you keep the Cloudflare proxy on:
+
+1. **DNS:** exactly one record for the name, an **A** record with the server's IP. Remove any
+   other A or AAAA record for it: Cloudflare tries every origin listed, and an unreachable one
+   makes every page wait about 20 seconds before it loads (or fail with error 522).
+2. **SSL/TLS mode:** **Full (strict)**. Cloudflare then talks to the server over HTTPS and checks
+   the certificate installed with `--install-cert`.
+3. **Tell the server about the proxy.** Without this, every visitor looks like a Cloudflare
+   address, so `ADMIN_ALLOWED_NETWORKS` can't tell admins from anyone else:
+   ```bash
+   cd /opt/endpoint-one
+   sudo sed -i '/^TRUSTED_PROXY=/d' .env && echo 'TRUSTED_PROXY=cloudflare' | sudo tee -a .env
+   sudo docker compose up -d
+   ```
+   The server then uses the visitor address Cloudflare reports, but only for requests that really
+   come from Cloudflare's address ranges. A request sent straight to the server's IP can't fake it.
+4. **`ADMIN_ALLOWED_NETWORKS`** must list your admins' real public IPs again (never Cloudflare's
+   ranges or `0.0.0.0/0`).
+
+Agents can keep using `http://<server-ip>:4000`; they don't need to go through Cloudflare.
+
 ## 9. Troubleshooting
 
 | Symptom | Check |

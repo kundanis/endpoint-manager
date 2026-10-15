@@ -59,6 +59,11 @@ const envSchema = z.object({
   // Needed when the server is cloud-hosted (EC2) and admins connect from the internet; see
   // middleware/publicAccessAllowlist.ts. Empty = internal networks only (the default).
   ADMIN_ALLOWED_NETWORKS: z.string().default(""),
+  // "cloudflare" when the server is published through Cloudflare's proxy (orange cloud):
+  // the visitor's real IP is then taken from CF-Connecting-IP, but only for requests that
+  // really arrive from Cloudflare's ranges - see middleware/clientAddress.ts. Empty = the
+  // server is reached directly (the default).
+  TRUSTED_PROXY: z.enum(["", "cloudflare"]).default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -102,6 +107,7 @@ export const config = {
     : undefined,
   licenseOfflineGraceDays: parsed.data.LICENSE_OFFLINE_GRACE_DAYS,
   licenseEnforcementEnabled: parsed.data.LICENSE_ENFORCEMENT_ENABLED,
+  trustedProxy: parsed.data.TRUSTED_PROXY,
   adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")
     .map((s) => s.trim())
     .filter(Boolean),

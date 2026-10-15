@@ -2,6 +2,7 @@ import net from "node:net";
 import type { NextFunction, Request, Response } from "express";
 import { config } from "../config";
 import { logger } from "../logger";
+import { behindCloudflare, clientAddress } from "./clientAddress";
 
 // This server is reachable from the internet (NAT) for two things: the Outlook add-in, for
 // users outside the office, and the agent API, so endpoints off the office network (WAN /
@@ -13,7 +14,9 @@ import { logger } from "../logger";
 // whole internet.
 //
 // Decided on the TCP peer address (req.socket.remoteAddress), never on X-Forwarded-For —
-// there's no reverse proxy in front of this server, so that header is attacker-controlled.
+// that header is attacker-controlled. The one exception is TRUSTED_PROXY=cloudflare: a
+// request that really arrives from Cloudflare's ranges is judged on the visitor address
+// Cloudflare reports (see clientAddress.ts), so the allowlist keeps working behind the proxy.
 // If the perimeter firewall ever source-NATs inbound traffic to an internal address, every
 // request will look internal and this check silently stops applying (it fails open, it
 // never locks admins out) — verify with the request log after any firewall change.
@@ -52,6 +55,9 @@ for (const entry of config.adminAllowedNetworks) {
   if (prefix === undefined) allowedNetworks.addAddress(addr, family);
   else allowedNetworks.addSubnet(addr, prefix, family);
 }
+if (behindCloudflare) {
+  logger.info("TRUSTED_PROXY=cloudflare: client addresses are taken from CF-Connecting-IP for requests from Cloudflare's ranges");
+}
 if (config.adminAllowedNetworks.length > 0) {
   logger.info({ adminAllowedNetworks: config.adminAllowedNetworks }, "Admin console also allowed from these networks");
 }
@@ -83,7 +89,7 @@ const lastWarnedAt = new Map<string, number>();
 const WARN_INTERVAL_MS = 60 * 60 * 1000;
 
 export function publicAccessAllowlist(req: Request, res: Response, next: NextFunction) {
-  const peer = req.socket.remoteAddress;
+  const peer = clientAddress(req);
   if (isAllowedAdminAddress(peer) || isPublicPath(req.path)) return next();
 
   const now = Date.now();

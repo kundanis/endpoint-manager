@@ -51,6 +51,7 @@ import { requireModule } from "./middleware/requireModule";
 import { requireModuleAccess, requireModuleVisible, requireSuperAdmin } from "./middleware/requireAdminRole";
 import { errorHandler } from "./middleware/errorHandler";
 import { publicAccessAllowlist } from "./middleware/publicAccessAllowlist";
+import { behindCloudflare, trustCloudflare } from "./middleware/clientAddress";
 
 // Set by the packaged deployment (packages/server/scripts/package-server.ps1 copies the
 // built console's dist/ to this exact path alongside the compiled server). Absent in the
@@ -61,6 +62,9 @@ const consoleDistExists = fs.existsSync(path.join(CONSOLE_DIST_PATH, "index.html
 
 export function createApp() {
   const app = express();
+  // Behind Cloudflare, req.ip (logs, login audit, remote-access records) is the visitor's
+  // address from X-Forwarded-For - trusted only when it comes from Cloudflare's edges.
+  if (behindCloudflare) app.set("trust proxy", trustCloudflare);
 
   app.use(pinoHttp({ logger }));
   // Internet-facing (NAT on 443): public addresses only reach the Outlook add-in paths.
