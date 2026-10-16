@@ -42,6 +42,10 @@ model AdminModuleGrant {
 model EnrollmentToken {
   id            String      @id @default(uuid())
   tokenHash     String      @unique @db.NVarChar(128)
+  // The token value encrypted with FIELD_ENCRYPTION_KEY (utils/fieldEncryption.ts), so its
+  // setup file can be downloaded again from the token list. Null for tokens created before
+  // it existed. Enrollment itself still matches on tokenHash.
+  tokenEncrypted String?    @db.NVarChar(500)
   label         String
   usesRemaining Int         @default(1)
   expiresAt     DateTime

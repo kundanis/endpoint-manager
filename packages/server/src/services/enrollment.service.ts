@@ -1,6 +1,7 @@
 import type { EnrollRequest, EnrollResponse } from "@em/shared";
 import { prisma } from "../db";
 import { generateToken, hashToken } from "../utils/tokens";
+import { decryptField, encryptField } from "../utils/fieldEncryption";
 import { assertCanEnroll } from "./licenseActivation.service";
 import { addGroupMembers } from "./assetGroup.service";
 
@@ -16,6 +17,7 @@ export async function createEnrollmentToken(params: {
   const record = await prisma.enrollmentToken.create({
     data: {
       tokenHash: hashToken(token),
+      tokenEncrypted: encryptField(token),
       label: params.label,
       usesRemaining: params.usesRemaining,
       expiresAt: new Date(Date.now() + params.expiresInDays * 24 * 60 * 60 * 1000),
@@ -23,6 +25,25 @@ export async function createEnrollmentToken(params: {
     },
   });
   return { id: record.id, token };
+}
+
+export class TokenNotRecoverableError extends Error {}
+
+// The plaintext of a still-usable token, for downloading its setup file (or copying it) again
+// from the token list. Null when the token doesn't exist. Throws for tokens that can no longer
+// enroll anything, and for tokens created before their value was kept (hash only).
+export async function getUsableTokenPlaintext(id: string): Promise<{ label: string; token: string } | null> {
+  const record = await prisma.enrollmentToken.findUnique({ where: { id } });
+  if (!record) return null;
+  if (record.revoked || record.expiresAt.getTime() < Date.now() || record.usesRemaining <= 0) {
+    throw new InvalidEnrollmentTokenError("This enrollment token is revoked, expired or used up");
+  }
+  if (!record.tokenEncrypted) {
+    throw new TokenNotRecoverableError(
+      "This token was created before tokens could be downloaded again - create a new token to get a setup file.",
+    );
+  }
+  return { label: record.label, token: decryptField(record.tokenEncrypted) };
 }
 
 async function consumeEnrollmentToken(plaintextToken: string) {

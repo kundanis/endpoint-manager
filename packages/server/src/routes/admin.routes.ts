@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { Router } from "express";
+import { Router, type Response } from "express";
 import {
   createEnrollmentTokenRequestSchema,
   createNoteRequestSchema,
@@ -19,7 +19,12 @@ import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
 import { agentUpdatePackageFor } from "../services/agentBuild.service";
 import { config } from "../config";
-import { createEnrollmentToken } from "../services/enrollment.service";
+import {
+  createEnrollmentToken,
+  getUsableTokenPlaintext,
+  InvalidEnrollmentTokenError,
+  TokenNotRecoverableError,
+} from "../services/enrollment.service";
 import {
   AgentInstallerMissingError,
   buildConfiguredSetupExe,
@@ -482,6 +487,8 @@ adminRouter.get("/enrollment-tokens", async (_req, res, next) => {
         createdAt: t.createdAt.toISOString(),
         groupId: t.groupId,
         groupName: t.group?.name ?? null,
+        // Its setup file / value can be fetched again (see GET .../setup-exe and .../value).
+        downloadable: t.tokenEncrypted !== null,
       })),
     );
   } catch (err) {
@@ -540,9 +547,52 @@ adminRouter.put("/agent-connection", async (req, res, next) => {
 });
 
 // The same EndpointProAgentSetup.exe as GET /agent-installer, with this server's addresses and
-// the given token appended (see buildConfiguredSetupExe) - double-click installs with no
-// prompts. POST because the plaintext token only exists in the browser right after creating
-// it (only its hash is stored); it must match this token id and still be usable.
+// the token appended (see buildConfiguredSetupExe) - double-click installs with no prompts.
+async function sendTokenSetupExe(res: Response, label: string, enrollmentToken: string) {
+  const exe = await buildConfiguredSetupExe(enrollmentToken);
+  const safeLabel = label.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "") || "agent";
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="EndpointProAgentSetup-${safeLabel}.exe"`);
+  res.send(exe);
+}
+
+function sendTokenError(res: Response, err: unknown): boolean {
+  if (err instanceof AgentInstallerMissingError) {
+    res.status(404).json({ error: err.message });
+    return true;
+  }
+  if (err instanceof InvalidEnrollmentTokenError || err instanceof TokenNotRecoverableError) {
+    res.status(400).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+// From the token list, any time: the server decrypts the stored token itself.
+adminRouter.get("/enrollment-tokens/:id/setup-exe", async (req, res, next) => {
+  try {
+    const found = await getUsableTokenPlaintext(req.params.id);
+    if (!found) return res.status(404).json({ error: "Enrollment token not found" });
+    await sendTokenSetupExe(res, found.label, found.token);
+  } catch (err) {
+    if (!sendTokenError(res, err)) next(err);
+  }
+});
+
+// The token value itself (Copy token, and the Mac/Linux install command).
+adminRouter.get("/enrollment-tokens/:id/value", async (req, res, next) => {
+  try {
+    const found = await getUsableTokenPlaintext(req.params.id);
+    if (!found) return res.status(404).json({ error: "Enrollment token not found" });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ token: found.token });
+  } catch (err) {
+    if (!sendTokenError(res, err)) next(err);
+  }
+});
+
+// Right after creating a token the browser still holds its value and posts it; kept for that
+// flow and for tokens created before values were stored.
 adminRouter.post("/enrollment-tokens/:id/setup-exe", async (req, res, next) => {
   try {
     const { enrollmentToken } = downloadAgentSetupRequestSchema.parse(req.body);
@@ -553,15 +603,9 @@ adminRouter.post("/enrollment-tokens/:id/setup-exe", async (req, res, next) => {
     if (token.revoked || token.expiresAt < new Date() || token.usesRemaining <= 0) {
       return res.status(400).json({ error: "This enrollment token is revoked, expired or used up" });
     }
-
-    const exe = await buildConfiguredSetupExe(enrollmentToken);
-    const safeLabel = token.label.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "") || "agent";
-    res.setHeader("Content-Type", "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="EndpointProAgentSetup-${safeLabel}.exe"`);
-    res.send(exe);
+    await sendTokenSetupExe(res, token.label, enrollmentToken);
   } catch (err) {
-    if (err instanceof AgentInstallerMissingError) return res.status(404).json({ error: err.message });
-    next(err);
+    if (!sendTokenError(res, err)) next(err);
   }
 });
 

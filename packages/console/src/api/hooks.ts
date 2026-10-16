@@ -269,6 +269,18 @@ export function useDownloadAgentSetup() {
   });
 }
 
+// A token's setup file at any time from the token list (the server decrypts the stored token).
+export function useDownloadTokenSetup() {
+  return useMutation({
+    mutationFn: (tokenId: string) => api.getDownload(`/admin/enrollment-tokens/${tokenId}/setup-exe`, "EndpointProAgentSetup.exe"),
+  });
+}
+
+// The token value itself, for Copy token and the Mac/Linux install command.
+export function fetchEnrollmentTokenValue(tokenId: string): Promise<string> {
+  return api.get<{ token: string }>(`/admin/enrollment-tokens/${tokenId}/value`).then((r) => r.token);
+}
+
 // The generic installer (server addresses, no token) - GET /admin/agent-installer.
 export function useDownloadAgentInstaller() {
   return useMutation({

@@ -629,6 +629,8 @@ export interface EnrollmentTokenListItem {
   createdAt: string;
   groupId: string | null;
   groupName: string | null;
+  // False for tokens created before token values were stored - those can't be downloaded again.
+  downloadable: boolean;
 }
 
 export interface DuplicateAgentEntry {

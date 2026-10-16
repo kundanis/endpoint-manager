@@ -7,6 +7,8 @@ import {
   useCreateEnrollmentToken,
   useDownloadAgentInstaller,
   useDownloadAgentSetup,
+  useDownloadTokenSetup,
+  fetchEnrollmentTokenValue,
   useDownloadUnixAgent,
   useEnrollmentTokens,
   useIsItemHidden,
@@ -36,10 +38,13 @@ import {
   Skeleton,
   useConfirm,
   usePagedList,
+  useToast,
 } from "../components/ui";
+import type { EnrollmentTokenListItem } from "../api/types";
 import { formatDateTime } from "../format";
 
 const UNMANAGED_PREVIEW_ROWS = 4;
+const NOT_DOWNLOADABLE = "Created before tokens could be downloaded again - create a new token for a setup file.";
 
 // Onboarding shortcut: how many devices the latest network discovery scans found without the
 // agent, so whoever is enrolling machines sees what's still missing. Renders nothing when the
@@ -248,10 +253,8 @@ function ServerConnectionPanel() {
 
 // "Install on endpoint" - pushes the already-built agent installer out to one or more
 // not-yet-enrolled Windows machines over PowerShell Remoting (WinRM), instead of an admin
-// manually copying it and double-clicking on each one. Only usable right after creating a
-// token, in the same browser session - the plaintext token value is never available again
-// after this (see the panel above), same restriction the "Download setup script" option
-// already has.
+// manually copying it and double-clicking on each one. Shown right after creating a token,
+// while the browser still holds the token value.
 function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; token: string; serverUrl: string }) {
   const startInstall = useStartRemoteInstall();
   const [targetsText, setTargetsText] = useState("");
@@ -386,12 +389,50 @@ const UNIX_INSTALLERS: Record<UnixPlatform, { label: string; file: string; folde
   },
 };
 
+function isUsableToken(t: EnrollmentTokenListItem): boolean {
+  return !t.revoked && t.usesRemaining > 0 && new Date(t.expiresAt) > new Date();
+}
+
 // Mac and Linux installs: a tarball plus one terminal command. Nothing is baked into the
 // tarball, so the command carries this server's addresses (from Server connection details,
 // in the agent's failover order) and - right after creating one - the token itself.
-function UnixInstallCard({ token }: { token: string | null }) {
+function UnixInstallCard({
+  tokens,
+  justCreated,
+}: {
+  tokens: EnrollmentTokenListItem[];
+  justCreated: { id: string; token: string } | null;
+}) {
   const [platform, setPlatform] = useState<UnixPlatform>("macos");
   const [copied, setCopied] = useState(false);
+  // Any active token whose value the server kept can fill the command in.
+  const usable = tokens.filter((t) => t.downloadable && isUsableToken(t));
+  const [tokenId, setTokenId] = useState("");
+  const [tokenValue, setTokenValue] = useState<{ id: string; token: string } | null>(null);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (justCreated) {
+      setTokenId(justCreated.id);
+      setTokenValue(justCreated);
+    }
+  }, [justCreated]);
+
+  function chooseToken(id: string) {
+    setTokenId(id);
+    setCopied(false);
+    setTokenError(null);
+    if (!id) return setTokenValue(null);
+    if (justCreated?.id === id) return setTokenValue(justCreated);
+    fetchEnrollmentTokenValue(id).then(
+      (token) => setTokenValue({ id, token }),
+      (err: Error) => {
+        setTokenValue(null);
+        setTokenError(err.message);
+      },
+    );
+  }
+  const token = tokenValue && tokenValue.id === tokenId ? tokenValue.token : null;
   const { data: settings } = useAgentConnectionSettings();
   const download = useDownloadUnixAgent();
   const info = UNIX_INSTALLERS[platform];
@@ -435,6 +476,17 @@ function UnixInstallCard({ token }: { token: string | null }) {
             {(download.error as Error).message}
           </Alert>
         )}
+        <Field label="Enrollment token" htmlFor="unix-token" help={usable.length === 0 ? "Create a token to fill it into the command." : undefined}>
+          <select id="unix-token" className="ep-select" value={tokenId} onChange={(e) => chooseToken(e.target.value)}>
+            <option value="">Choose a token…</option>
+            {usable.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {tokenError && <Alert tone="critical">{tokenError}</Alert>}
         <div className="app-actions-row">
           <Button icon={Download} onClick={() => download.mutate(platform)} disabled={download.isPending}>
             {download.isPending ? "Preparing…" : `Download ${info.label} agent`}
@@ -446,12 +498,7 @@ function UnixInstallCard({ token }: { token: string | null }) {
             {copied ? "Copied" : "Copy command"}
           </Button>
         </div>
-        {!token && (
-          <p className="app-text">
-            Replace <span className="ep-mono">&lt;enrollment-token&gt;</span> with a token - or create one first and the
-            command here fills it in.
-          </p>
-        )}
+
       </div>
     </Card>
   );
@@ -478,6 +525,8 @@ export default function EnrollmentTokensPage() {
   const [copied, setCopied] = useState(false);
   const downloadSetup = useDownloadAgentSetup();
   const downloadInstaller = useDownloadAgentInstaller();
+  const downloadTokenSetup = useDownloadTokenSetup();
+  const toast = useToast();
 
   const paged = usePagedList(tokens ?? []);
 
@@ -530,9 +579,9 @@ export default function EnrollmentTokensPage() {
       {justCreated && (
         <Card title={`Token created for "${justCreated.label}"`}>
           <div className="app-stack">
-            <Alert tone="warn" title="Shown only once">
-              This is the only time the token value is shown — download the setup file now, or copy the token. Revoking or
-              losing it means creating a new one.
+            <Alert tone="info" title="Available again later">
+              You can download this token's setup file or copy the token any time while it's active, from its{" "}
+              <strong>⋯</strong> menu in the token list below.
             </Alert>
             <p className="app-text">
               Copy the downloaded <span className="ep-mono">EndpointProAgentSetup-….exe</span> to the target machine and
@@ -649,6 +698,26 @@ export default function EnrollmentTokensPage() {
                               label={`Actions for ${t.label}`}
                               items={[
                                 {
+                                  label: "Download Windows setup",
+                                  icon: Download,
+                                  disabled: isDead || !t.downloadable || downloadTokenSetup.isPending,
+                                  title: !t.downloadable ? NOT_DOWNLOADABLE : isDead ? "This token can no longer enroll endpoints" : undefined,
+                                  onSelect: () => downloadTokenSetup.mutate(t.id, { onError: (err) => toast((err as Error).message) }),
+                                },
+                                {
+                                  label: "Copy token",
+                                  icon: Copy,
+                                  disabled: isDead || !t.downloadable,
+                                  title: !t.downloadable ? NOT_DOWNLOADABLE : isDead ? "This token can no longer enroll endpoints" : undefined,
+                                  onSelect: () =>
+                                    fetchEnrollmentTokenValue(t.id)
+                                      .then(copyText)
+                                      .then(
+                                        (ok) => toast(ok ? `Token for "${t.label}" copied.` : "Couldn't copy to the clipboard."),
+                                        (err: Error) => toast(err.message),
+                                      ),
+                                },
+                                {
                                   label: "Revoke token",
                                   icon: Ban,
                                   danger: true,
@@ -700,7 +769,7 @@ export default function EnrollmentTokensPage() {
             </div>
           </div>
         </Card>
-        <UnixInstallCard token={justCreated?.token ?? null} />
+        <UnixInstallCard tokens={tokens ?? []} justCreated={justCreated} />
         <DevicesWithoutAgentCard />
         </div>
       </Row>
