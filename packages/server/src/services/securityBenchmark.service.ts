@@ -9,6 +9,7 @@ import type {
 } from "@em/shared";
 import { DEFAULT_COMMAND_TIMEOUT_SEC } from "@em/shared";
 import { prisma } from "../db";
+import { getCommandOutcomes } from "./commandResults";
 import { requestScan } from "./scanRequests";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 import { createCommandJob } from "./command.service";
@@ -262,6 +263,10 @@ export async function getFindingsForAgent(agentId: string) {
     orderBy: [{ status: "asc" }, { lastSeenAt: "desc" }],
   });
 
+  const outcomes = await getCommandOutcomes(
+    findings.filter((f) => f.remediationJobId).map((f) => ({ jobId: f.remediationJobId!, agentId: f.agentId })),
+  );
+
   return findings.map((f) => ({
     id: f.id,
     benchmarkId: f.benchmarkId,
@@ -275,7 +280,43 @@ export async function getFindingsForAgent(agentId: string) {
     status: f.status as "PASS" | "FAIL" | "ERROR",
     hasRemediation: Boolean(f.rule.remediationPowerShell),
     lastSeenAt: f.lastSeenAt.toISOString(),
+    // The latest fix's outcome on this endpoint (null if never fixed here).
+    remediation: f.remediationJobId ? (outcomes.get(`${f.remediationJobId}:${f.agentId}`) ?? null) : null,
   }));
+}
+
+// Runs a rule's fix on one endpoint and remembers the job on the finding, so the console can
+// show the fix's status. The admin's script is wrapped so the result always says something:
+// a success line, or the first error / non-zero exit code as the reason.
+export function wrapRemediationScript(script: string): string {
+  return [
+    "$Error.Clear()",
+    "$global:LASTEXITCODE = 0",
+    "& {",
+    script,
+    "}",
+    "$fixExit = $global:LASTEXITCODE",
+    "if ($Error.Count -gt 0) { [Console]::Error.WriteLine('The fix reported an error: ' + $Error[0].Exception.Message); exit 1 }",
+    "if ($fixExit -ne 0) { [Console]::Error.WriteLine(\"The fix exited with code $fixExit.\"); exit $fixExit }",
+    "Write-Output 'Fix applied. The endpoint re-checks the rule automatically.'",
+  ].join("\n");
+}
+
+async function dispatchRuleFix(
+  agentId: string,
+  rule: { id: string; remediationPowerShell: string | null },
+  createdByAdminId: string,
+): Promise<string> {
+  const { jobId } = await createCommandJob({
+    agentIds: [agentId],
+    groupIds: [],
+    shell: "powershell",
+    script: wrapRemediationScript(rule.remediationPowerShell!),
+    timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
+    createdByAdminId,
+  });
+  await prisma.securityBenchmarkFinding.updateMany({ where: { agentId, ruleId: rule.id }, data: { remediationJobId: jobId } });
+  return jobId;
 }
 
 export async function remediateRule(ruleId: string, agentId: string, createdByAdminId: string) {
@@ -286,14 +327,7 @@ export async function remediateRule(ruleId: string, agentId: string, createdByAd
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });
   if (!agent) return null;
 
-  return createCommandJob({
-    agentIds: [agentId],
-    groupIds: [],
-    shell: "powershell",
-    script: rule.remediationPowerShell,
-    timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
-    createdByAdminId,
-  });
+  return { jobId: await dispatchRuleFix(agentId, rule, createdByAdminId) };
 }
 
 // One CommandJob per distinct rule (each has its own script) rather than one merged
@@ -312,15 +346,7 @@ export async function remediateAllForAgent(agentId: string, createdByAdminId: st
 
   const jobIds: string[] = [];
   for (const f of remediable) {
-    const { jobId } = await createCommandJob({
-      agentIds: [agentId],
-      groupIds: [],
-      shell: "powershell",
-      script: f.rule.remediationPowerShell!,
-      timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
-      createdByAdminId,
-    });
-    jobIds.push(jobId);
+    jobIds.push(await dispatchRuleFix(agentId, f.rule, createdByAdminId));
   }
 
   return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
@@ -347,15 +373,7 @@ export async function remediateSelectedForAgentInBenchmark(
 
   const jobIds: string[] = [];
   for (const f of remediable) {
-    const { jobId } = await createCommandJob({
-      agentIds: [agentId],
-      groupIds: [],
-      shell: "powershell",
-      script: f.rule.remediationPowerShell!,
-      timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
-      createdByAdminId,
-    });
-    jobIds.push(jobId);
+    jobIds.push(await dispatchRuleFix(agentId, f.rule, createdByAdminId));
   }
 
   return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
@@ -377,15 +395,7 @@ export async function remediateAllForAgentInBenchmark(benchmarkId: string, agent
 
   const jobIds: string[] = [];
   for (const f of remediable) {
-    const { jobId } = await createCommandJob({
-      agentIds: [agentId],
-      groupIds: [],
-      shell: "powershell",
-      script: f.rule.remediationPowerShell!,
-      timeoutSec: DEFAULT_COMMAND_TIMEOUT_SEC,
-      createdByAdminId,
-    });
-    jobIds.push(jobId);
+    jobIds.push(await dispatchRuleFix(agentId, f.rule, createdByAdminId));
   }
 
   return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };

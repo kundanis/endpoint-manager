@@ -27,6 +27,7 @@ import {
   type SecurityRuleInput,
 } from "../api/hooks";
 import EndpointLabel from "../components/EndpointLabel";
+import RemediationStatus from "../components/RemediationStatus";
 import {
   Alert,
   Badge,
@@ -677,6 +678,7 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
               <th scope="col">Severity</th>
               <th scope="col">Expected</th>
               <th scope="col">Actual</th>
+              <th scope="col">Fix</th>
             </tr>
           </thead>
           <tbody>
@@ -701,6 +703,12 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
                 </td>
                 <td className="ep-mono">{f.expectedValue}</td>
                 <td className="ep-mono">{f.actualValue ?? <span className="app-muted">—</span>}</td>
+                <td>
+                  <RemediationStatus
+                    remediation={f.remediation ? { ...f.remediation, action: "configure" } : null}
+                    emptyLabel={f.hasRemediation ? "Not run" : "—"}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -713,11 +721,13 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
       </div>
       {result && (
         <Alert tone="success">
-          Dispatched {result.remediatedCount} job(s){result.skippedCount ? ` — ${result.skippedCount} skipped (no script)` : ""}. See{" "}
+          Dispatched {result.remediatedCount} fix(es){result.skippedCount ? ` — ${result.skippedCount} skipped (no script)` : ""}. Each
+          rule's Fix column shows its progress and result; a successful fix re-checks the rule automatically (agent 0.2.10+).
+          Details are also under{" "}
           <Link className="ep-link" to="/commands">
             Commands
-          </Link>{" "}
-          for status; this re-grades on the next scan.
+          </Link>
+          .
         </Alert>
       )}
       {remediateSelected.isError && <Alert tone="critical">{(remediateSelected.error as Error).message}</Alert>}

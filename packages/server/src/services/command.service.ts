@@ -1,5 +1,6 @@
 import type { CommandTaskResultPayload, Shell } from "@em/shared";
 import { prisma } from "../db";
+import { requestScan } from "./scanRequests";
 import { decryptField, decryptFieldOrNull, encryptField, encryptFieldOrNull } from "../utils/fieldEncryption";
 
 export class CommandTaskNotOwnedError extends Error {}
@@ -117,4 +118,11 @@ export async function recordCommandResult(
       completedAt: new Date(payload.completedAt),
     },
   });
+
+  // A successful benchmark fix: have the endpoint re-check its benchmarks right away (agent
+  // 0.2.10+) instead of at the next scheduled scan, so the rule shows Pass promptly.
+  if (payload.status === "SUCCESS") {
+    const isBenchmarkFix = await prisma.securityBenchmarkFinding.count({ where: { agentId, remediationJobId: task.jobId } });
+    if (isBenchmarkFix > 0) requestScan("securityConfig", [agentId]);
+  }
 }

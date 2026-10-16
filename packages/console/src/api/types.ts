@@ -484,7 +484,7 @@ export interface VulnerabilitySyncRunView {
 
 // The latest remediation dispatched for a finding, on that finding's endpoint.
 export interface FindingRemediation {
-  action: "update" | "uninstall";
+  action: "update" | "uninstall" | "configure";
   status: string; // PENDING | DISPATCHED | SUCCESS | FAILED | ...
   exitCode: number | null;
   message: string | null; // the endpoint's own explanation
@@ -749,6 +749,8 @@ export interface AgentSecurityFindingView {
   status: "PASS" | "FAIL" | "ERROR";
   hasRemediation: boolean;
   lastSeenAt: string;
+  // The latest fix dispatched for this rule on this endpoint, and how it went.
+  remediation: Omit<FindingRemediation, "action"> | null;
 }
 
 export interface ZeroTrustPolicySummary {

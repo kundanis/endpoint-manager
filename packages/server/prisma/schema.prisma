@@ -724,6 +724,9 @@ model SecurityBenchmarkFinding {
   status        String                @default("FAIL") @db.NVarChar(20) // PASS | FAIL | ERROR
   detectedAt    DateTime              @default(now())
   lastSeenAt    DateTime              @default(now())
+  // The latest fix dispatched for this rule on this endpoint (a CommandJob; its CommandTask for
+  // this agent holds the result). Null until someone runs the rule's remediation here.
+  remediationJobId String?            @db.NVarChar(36)
 
   @@unique([agentId, ruleId])
   @@index([agentId, status])
