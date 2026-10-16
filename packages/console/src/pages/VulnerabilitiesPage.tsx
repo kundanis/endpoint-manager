@@ -11,6 +11,7 @@ import {
 } from "../api/hooks";
 import type { VulnerabilityRemediationResult, VulnerabilitySyncRunView } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
+import RemediationStatus from "../components/RemediationStatus";
 import {
   Alert,
   Badge,
@@ -465,6 +466,7 @@ export default function VulnerabilitiesPage() {
                       <th scope="col">Version</th>
                       <th scope="col">Confidence</th>
                       <th scope="col">CPE criteria</th>
+                      <th scope="col">Remediation</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -496,6 +498,9 @@ export default function VulnerabilitiesPage() {
                           )}
                         </td>
                         <td className="ep-mono">{f.matchedCpeCriteria}</td>
+                        <td>
+                          <RemediationStatus remediation={f.remediation} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

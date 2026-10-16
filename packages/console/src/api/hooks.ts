@@ -677,6 +677,11 @@ export function useVulnerabilityDetail(vulnerabilityDefinitionId: string | undef
     queryKey: ["vulnerabilityDetail", vulnerabilityDefinitionId],
     queryFn: () => api.get<VulnerabilityDetail>(`/admin/vulnerabilities/${vulnerabilityDefinitionId}/agents`),
     enabled: !!vulnerabilityDefinitionId,
+    // Poll while any endpoint's remediation is still queued or running.
+    refetchInterval: (query) =>
+      query.state.data?.findings.some((f) => f.remediation && ["PENDING", "DISPATCHED", "RUNNING"].includes(f.remediation.status))
+        ? 5000
+        : false,
   });
 }
 
@@ -686,7 +691,11 @@ export function useRemediateVulnerability() {
     // findingIds: the rows the admin ticked; omitted = every high-confidence finding.
     mutationFn: ({ vulnerabilityDefinitionId, findingIds }: { vulnerabilityDefinitionId: string; findingIds?: string[] }) =>
       api.post<VulnerabilityRemediationResult>(`/admin/vulnerabilities/${vulnerabilityDefinitionId}/remediate`, { findingIds }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vulnerabilitySummary"] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["vulnerabilitySummary"] });
+      qc.invalidateQueries({ queryKey: ["vulnerabilityDetail", v.vulnerabilityDefinitionId] });
+      qc.invalidateQueries({ queryKey: ["agentVulnerabilityFindings"] });
+    },
   });
 }
 
@@ -704,6 +713,8 @@ export function useAgentVulnerabilityFindings(agentId: string | undefined) {
     queryKey: ["agentVulnerabilityFindings", agentId],
     queryFn: () => api.get<AgentVulnerabilityFinding[]>(`/admin/vulnerabilities/agents/${agentId}`),
     enabled: !!agentId,
+    refetchInterval: (query) =>
+      query.state.data?.some((f) => f.remediation && ["PENDING", "DISPATCHED", "RUNNING"].includes(f.remediation.status)) ? 5000 : false,
   });
 }
 

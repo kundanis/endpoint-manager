@@ -459,6 +459,10 @@ model VulnerabilityFinding {
   detectedAt                DateTime                @default(now())
   lastSeenAt                DateTime                @default(now())
   resolvedAt                DateTime?
+  // The latest remediation dispatched for this finding (a CommandJob - its CommandTask for this
+  // finding's agent holds the result) and what it did. Null until someone remediates it.
+  remediationJobId          String?                 @db.NVarChar(36)
+  remediationAction         String?                 @db.NVarChar(20) // "update" | "uninstall"
 
   @@unique([agentId, vulnerabilityDefinitionId, matchedSoftwareName])
   @@index([agentId, status])

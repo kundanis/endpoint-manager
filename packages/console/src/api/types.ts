@@ -480,6 +480,16 @@ export interface VulnerabilitySyncRunView {
   completedAt: string | null;
 }
 
+// The latest remediation dispatched for a finding, on that finding's endpoint.
+export interface FindingRemediation {
+  action: "update" | "uninstall";
+  status: string; // PENDING | DISPATCHED | SUCCESS | FAILED | ...
+  exitCode: number | null;
+  message: string | null; // the endpoint's own explanation
+  requestedAt: string;
+  completedAt: string | null;
+}
+
 export interface VulnerabilityFindingView {
   id: string;
   agentId: string;
@@ -489,6 +499,7 @@ export interface VulnerabilityFindingView {
   matchedCpeCriteria: string;
   matchConfidence: "PRODUCT_AND_VERSION" | "PRODUCT_ONLY";
   detectedAt: string;
+  remediation: FindingRemediation | null;
 }
 
 export interface VulnerabilityDetail {
@@ -517,6 +528,7 @@ export interface AgentVulnerabilityFinding {
   matchedSoftwareVersion: string | null;
   matchConfidence: "PRODUCT_AND_VERSION" | "PRODUCT_ONLY";
   detectedAt: string;
+  remediation: FindingRemediation | null;
 }
 
 export interface AgentSecurityStatusView {
