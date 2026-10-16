@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import type { AgentListItem } from "../api/types";
 import { Users, X } from "lucide-react";
 import { useAgents, useAssetGroups } from "../api/hooks";
 import EndpointCheckboxList from "./EndpointCheckboxList";
@@ -214,7 +215,21 @@ export interface AssignmentRow {
   id: string;
   agentId?: string | null;
   hostname?: string | null;
+  groupId?: string | null;
   groupName?: string | null;
+}
+
+// One row per target: older servers could store the same endpoint/group twice, so duplicates
+// are folded together (and removing the row removes every copy).
+function foldAssignments(assignments: AssignmentRow[]): (AssignmentRow & { ids: string[] })[] {
+  const byTarget = new Map<string, AssignmentRow & { ids: string[] }>();
+  for (const a of assignments) {
+    const key = a.agentId ? `agent:${a.agentId}` : a.groupId ? `group:${a.groupId}` : `row:${a.id}`;
+    const seen = byTarget.get(key);
+    if (seen) seen.ids.push(a.id);
+    else byTarget.set(key, { ...a, ids: [a.id] });
+  }
+  return [...byTarget.values()];
 }
 
 // Current assignments (removable) + the group/endpoint picker to add more.
@@ -225,6 +240,7 @@ export function AssignmentEditor({
   onAssign,
   assignPending,
   assignError,
+  renderAgentExtra,
 }: {
   assignments: AssignmentRow[] | undefined;
   onUnassign: (assignmentId: string) => void;
@@ -233,9 +249,20 @@ export function AssignmentEditor({
   onAssign: (agentIds: string[], groupIds: string[], done: () => void) => void;
   assignPending: boolean;
   assignError: unknown;
+  // Extra text after each endpoint in the picker (e.g. its OS edition).
+  renderAgentExtra?: (agent: AgentListItem) => ReactNode;
 }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
+  const { data: allAgents } = useAgents();
+  const { data: allGroups } = useAssetGroups();
+
+  // Already-assigned targets aren't offered again - neither directly assigned endpoints and
+  // groups, nor endpoints already covered through an assigned group.
+  const rows = assignments ? foldAssignments(assignments) : undefined;
+  const assignedGroupIds = new Set((assignments ?? []).map((a) => a.groupId).filter((id): id is string => !!id));
+  const assignedAgentIds = new Set((assignments ?? []).map((a) => a.agentId).filter((id): id is string => !!id));
+  const groups = allGroups?.filter((g) => !assignedGroupIds.has(g.id));
+  const agents = allAgents?.filter((a) => !assignedAgentIds.has(a.id) && !a.groups.some((g) => assignedGroupIds.has(g.id)));
+  const hiddenCount = (allAgents?.length ?? 0) - (agents?.length ?? 0) + (allGroups?.length ?? 0) - (groups?.length ?? 0);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
 
@@ -247,7 +274,7 @@ export function AssignmentEditor({
     <div className="app-stack">
       <div className="app-stack-sm">
         <span className="app-subhead">Currently assigned</span>
-        {assignments && assignments.length === 0 ? (
+        {rows && rows.length === 0 ? (
           <EmptyState icon={Users} title="Not assigned yet">
             Pick groups or endpoints below. A policy does nothing until it's assigned.
           </EmptyState>
@@ -264,7 +291,7 @@ export function AssignmentEditor({
                 </tr>
               </thead>
               <tbody>
-                {assignments?.map((a) => (
+                {rows?.map((a) => (
                   <tr key={a.id}>
                     <td>{a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : a.groupName}</td>
                     <td>{a.hostname ? "Endpoint" : <Badge tone="neu">Group</Badge>}</td>
@@ -273,7 +300,7 @@ export function AssignmentEditor({
                         <IconButton
                           icon={X}
                           label={`Remove ${a.hostname ?? a.groupName ?? "assignment"}`}
-                          onClick={() => onUnassign(a.id)}
+                          onClick={() => a.ids.forEach((id) => onUnassign(id))}
                           disabled={unassignPending}
                         />
                       </div>
@@ -288,6 +315,12 @@ export function AssignmentEditor({
 
       <div className="app-stack-sm">
         <span className="app-subhead">Assign to</span>
+        {hiddenCount > 0 && (
+          <p className="app-text app-muted">
+            {hiddenCount} already-assigned {hiddenCount === 1 ? "target is" : "targets are"} not listed (assigned directly or
+            through a group).
+          </p>
+        )}
         {groups && groups.length > 0 && (
           <div className="app-check-grid">
             {groups.map((g) => (
@@ -309,6 +342,8 @@ export function AssignmentEditor({
           selectedAgentIds={selectedAgentIds}
           onToggle={(id) => setSelectedAgentIds((prev) => toggle(prev, id))}
           selectedGroupIds={selectedGroupIds}
+          renderExtra={renderAgentExtra}
+          emptyMessage={allAgents && allAgents.length > 0 ? "Every endpoint is already assigned." : undefined}
         />
         {!!assignError && <Alert tone="critical">{(assignError as Error).message}</Alert>}
         <div className="app-actions-row app-end">

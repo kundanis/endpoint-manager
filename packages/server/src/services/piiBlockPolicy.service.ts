@@ -6,6 +6,7 @@ import type {
   UpdatePiiBlockPolicyRequest,
 } from "@em/shared";
 import { prisma } from "../db";
+import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 
 async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<string[]> {
@@ -99,12 +100,17 @@ export async function deleteRule(policyId: string, ruleId: string): Promise<bool
 }
 
 export async function assignPolicy(policyId: string, params: AssignPiiBlockPolicyRequest) {
-  await prisma.piiBlockPolicyAssignment.createMany({
-    data: [
-      ...params.agentIds.map((agentId) => ({ policyId, agentId })),
-      ...params.groupIds.map((groupId) => ({ policyId, groupId })),
-    ],
-  });
+  // Only targets not already assigned - repeat assignments used to add duplicate rows.
+  const existing = await prisma.piiBlockPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
+  const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  if (fresh.agentIds.length + fresh.groupIds.length > 0) {
+    await prisma.piiBlockPolicyAssignment.createMany({
+      data: [
+        ...fresh.agentIds.map((agentId) => ({ policyId, agentId })),
+        ...fresh.groupIds.map((groupId) => ({ policyId, groupId })),
+      ],
+    });
+  }
   return getPolicy(policyId);
 }
 

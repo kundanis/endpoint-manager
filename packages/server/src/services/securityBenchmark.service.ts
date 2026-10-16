@@ -9,6 +9,7 @@ import type {
 } from "@em/shared";
 import { DEFAULT_COMMAND_TIMEOUT_SEC } from "@em/shared";
 import { prisma } from "../db";
+import { newAssignmentTargets } from "../utils/assignments";
 import { getCommandOutcomes } from "./commandResults";
 import { requestScan } from "./scanRequests";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
@@ -196,12 +197,17 @@ export async function importRules(benchmarkId: string, rules: CreateRuleRequest[
 }
 
 export async function assignBenchmark(benchmarkId: string, params: AssignBenchmarkRequest) {
-  await prisma.securityBenchmarkAssignment.createMany({
-    data: [
-      ...params.agentIds.map((agentId) => ({ benchmarkId, agentId })),
-      ...params.groupIds.map((groupId) => ({ benchmarkId, groupId })),
-    ],
-  });
+  // Only targets not already assigned - repeat assignments used to add duplicate rows.
+  const existing = await prisma.securityBenchmarkAssignment.findMany({ where: { benchmarkId }, select: { agentId: true, groupId: true } });
+  const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  if (fresh.agentIds.length + fresh.groupIds.length > 0) {
+    await prisma.securityBenchmarkAssignment.createMany({
+      data: [
+        ...fresh.agentIds.map((agentId) => ({ benchmarkId, agentId })),
+        ...fresh.groupIds.map((groupId) => ({ benchmarkId, groupId })),
+      ],
+    });
+  }
   return getBenchmark(benchmarkId);
 }
 

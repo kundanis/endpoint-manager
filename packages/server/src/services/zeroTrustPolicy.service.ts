@@ -7,6 +7,7 @@ import type {
   UpdateZeroTrustPolicyRequest,
 } from "@em/shared";
 import { prisma } from "../db";
+import { newAssignmentTargets } from "../utils/assignments";
 import { requestScan } from "./scanRequests";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "./zeroTrustOverride.service";
@@ -175,12 +176,17 @@ export async function deleteCondition(policyId: string, conditionId: string): Pr
 }
 
 export async function assignPolicy(policyId: string, params: AssignZeroTrustPolicyRequest) {
-  await prisma.zeroTrustPolicyAssignment.createMany({
-    data: [
-      ...params.agentIds.map((agentId) => ({ policyId, agentId })),
-      ...params.groupIds.map((groupId) => ({ policyId, groupId })),
-    ],
-  });
+  // Only targets not already assigned - repeat assignments used to add duplicate rows.
+  const existing = await prisma.zeroTrustPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
+  const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  if (fresh.agentIds.length + fresh.groupIds.length > 0) {
+    await prisma.zeroTrustPolicyAssignment.createMany({
+      data: [
+        ...fresh.agentIds.map((agentId) => ({ policyId, agentId })),
+        ...fresh.groupIds.map((groupId) => ({ policyId, groupId })),
+      ],
+    });
+  }
   return getPolicy(policyId);
 }
 

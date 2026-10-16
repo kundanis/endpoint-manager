@@ -3,11 +3,8 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight, Download, FileUp, RefreshCw, ListChecks, Pencil, Plus, ShieldCheck, Trash2, Users, Wrench, X } from "lucide-react";
 import type { GpoImportPreview, SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
 import type { SecurityBenchmarkDetail } from "../api/types";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import {
   useAddSecurityRule,
-  useAgents,
-  useAssetGroups,
   useAssignSecurityBenchmark,
   useCreateSecurityBenchmark,
   useDeleteSecurityBenchmark,
@@ -27,6 +24,7 @@ import {
   type SecurityRuleInput,
 } from "../api/hooks";
 import EndpointLabel from "../components/EndpointLabel";
+import { AssignmentEditor } from "../components/policy";
 import RemediationStatus from "../components/RemediationStatus";
 import {
   Alert,
@@ -498,114 +496,19 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
 }
 
 function AssignmentPanel({ benchmarkId }: { benchmarkId: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
   const { data: assignments } = useSecurityBenchmarkAssignments(benchmarkId);
   const assign = useAssignSecurityBenchmark();
   const unassign = useUnassignSecurityBenchmark();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { benchmarkId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="app-stack">
-      <div className="app-stack-sm">
-        <span className="app-subhead">Currently assigned</span>
-        {!assignments ? (
-          <Skeleton lines={2} />
-        ) : assignments.length === 0 ? (
-          <EmptyState icon={Users} title="Not assigned to any endpoint or group yet">
-            Pick groups or endpoints below. A benchmark scans nothing until it's assigned.
-          </EmptyState>
-        ) : (
-          <div className="app-table-wrap">
-            <table className="ep-tbl">
-              <thead>
-                <tr>
-                  <th scope="col">Target</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">
-                    <span className="app-vh">Remove</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {assignments.map((a) => (
-                  <tr key={a.id}>
-                    <td>{a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : a.groupName}</td>
-                    <td>{a.hostname ? "Endpoint" : <Badge tone="neu">Group</Badge>}</td>
-                    <td>
-                      <div className="app-cell-actions">
-                        <IconButton
-                          icon={X}
-                          label={`Remove ${a.hostname ?? a.groupName ?? "assignment"}`}
-                          onClick={() => unassign.mutate({ benchmarkId, assignmentId: a.id })}
-                          disabled={unassign.isPending}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="app-stack-sm">
-        <span className="app-subhead">Assign to</span>
-        {groups && groups.length > 0 && (
-          <div className="app-check-grid" role="group" aria-label="Groups">
-            {groups.map((g) => (
-              <Check
-                key={g.id}
-                checked={selectedGroupIds.includes(g.id)}
-                onChange={() => toggleGroup(g.id)}
-                label={
-                  <>
-                    {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
-                  </>
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        <EndpointCheckboxList
-          agents={agents}
-          selectedAgentIds={selectedAgentIds}
-          onToggle={toggleAgent}
-          selectedGroupIds={selectedGroupIds}
-          renderExtra={(agent) => agent.osEditionLabel && <span className="app-muted">({agent.osEditionLabel})</span>}
-        />
-
-        {assign.isError && <Alert tone="critical">{(assign.error as Error).message}</Alert>}
-        <div className="app-actions-row app-end">
-          <Button
-            variant="primary"
-            onClick={handleAssign}
-            disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-          >
-            {assign.isPending ? "Assigning…" : "Assign"}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ benchmarkId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ benchmarkId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+      renderAgentExtra={(agent) => agent.osEditionLabel && <span className="app-muted">({agent.osEditionLabel})</span>}
+    />
   );
 }
 
