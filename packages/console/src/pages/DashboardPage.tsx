@@ -268,6 +268,93 @@ function UnmanagedDevicesCard({ summary, onOpenNetworkScan }: { summary: Dashboa
   );
 }
 
+// Patch and security-configuration posture (Pattern A supporting row): missing patches by
+// severity, configuration compliance across endpoints, and the rules failing most widely.
+const PATCH_SEVERITY_ROWS: { key: keyof DashboardSummary["patchSummary"]["missingBySeverity"]; label: string; color: string }[] = [
+  { key: "CRITICAL", label: "Critical", color: "var(--ep-sev-critical)" },
+  { key: "HIGH", label: "High", color: "var(--ep-sev-high)" },
+  { key: "MEDIUM", label: "Medium", color: "var(--ep-sev-medium)" },
+  { key: "LOW", label: "Low", color: "var(--ep-sev-low)" },
+  { key: "UNKNOWN", label: "Not rated", color: CHART_SEMANTIC.neutral },
+];
+
+function MissingPatchesCard({ summary, onOpen }: { summary: DashboardSummary; onOpen: () => void }) {
+  const p = summary.patchSummary;
+  const data = PATCH_SEVERITY_ROWS.map((r) => ({ label: r.label, value: p.missingBySeverity[r.key], color: r.color, onSelect: onOpen })).filter(
+    (d) => d.value > 0,
+  );
+  return (
+    <Card
+      title="Missing patches"
+      actions={
+        <Link className="ep-link" to="/patches">
+          Open patches
+        </Link>
+      }
+    >
+      {summary.totalAgents === 0 ? (
+        <span className="ep-nodata">No endpoints enrolled yet</span>
+      ) : p.missingPatches === 0 ? (
+        <span className="ep-nodata">Every endpoint is up to date</span>
+      ) : (
+        <div className="app-stack-sm">
+          <span className="app-text">
+            <span className="ep-num">{p.endpointsMissingPatches}</span> of <span className="ep-num">{summary.totalAgents}</span> endpoints need{" "}
+            <span className="ep-num">{p.missingPatches}</span> {p.missingPatches === 1 ? "patch" : "patches"}
+          </span>
+          <RankedBars data={data} total={p.missingPatches} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ConfigurationComplianceCard({ summary }: { summary: DashboardSummary }) {
+  const c = summary.configurationSummary;
+  const notAssessed = Math.max(summary.totalAgents - c.assessedEndpoints, 0);
+  return (
+    <Card
+      title="Configuration compliance"
+      actions={
+        <Link className="ep-link" to="/security-config">
+          Open benchmarks
+        </Link>
+      }
+    >
+      {summary.totalAgents === 0 ? (
+        <span className="ep-nodata">No endpoints enrolled yet</span>
+      ) : c.assessedEndpoints === 0 ? (
+        <span className="ep-nodata">No endpoint assessed yet - assign a benchmark under Security configuration</span>
+      ) : (
+        <Donut
+          centerLabel="endpoints"
+          data={[
+            { label: "Compliant", value: c.compliantEndpoints, color: CHART_SEMANTIC.ok },
+            { label: "Not compliant", value: c.nonCompliantEndpoints, color: CHART_SEMANTIC.critical },
+            { label: "Not assessed", value: notAssessed, color: CHART_SEMANTIC.neutral },
+          ]}
+        />
+      )}
+    </Card>
+  );
+}
+
+function FailingRulesCard({ summary }: { summary: DashboardSummary }) {
+  const c = summary.configurationSummary;
+  return (
+    <Card title="Most failed rules" actions={c.failedChecks > 0 && <Badge tone="crit">{c.failedChecks} failed checks</Badge>}>
+      {c.topFailingRules.length === 0 ? (
+        <span className="ep-nodata">{c.assessedEndpoints === 0 ? "No benchmark results yet" : "No failing rules"}</span>
+      ) : (
+        <RankedBars
+          data={c.topFailingRules.map((r) => ({ label: r.title, value: r.endpoints, color: CHART_SEMANTIC.critical }))}
+          total={c.assessedEndpoints}
+        />
+      )}
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { data: summary, isLoading, isError, error, refetch, dataUpdatedAt } = useDashboardSummary();
@@ -277,6 +364,8 @@ export default function DashboardPage() {
   const endpointsLink = (query = "") => (endpointsHidden ? undefined : `/endpoints${query}`);
   const vulnerabilitiesHidden = useIsItemHidden("/vulnerabilities");
   const zeroTrustHidden = useIsItemHidden("/zero-trust");
+  const patchesHidden = useIsItemHidden("/patches");
+  const securityConfigHidden = useIsItemHidden("/security-config");
   // Coverage, unmanaged devices and the scan action are all built from Network Scan results.
   const networkScanHidden = useIsItemHidden("/network-scan");
 
@@ -423,6 +512,14 @@ export default function DashboardPage() {
         </Row>
       ) : (
         coverageCard || postureCard
+      )}
+
+      {(!patchesHidden || !securityConfigHidden) && (
+        <Row layout={!patchesHidden && !securityConfigHidden ? "3" : "12"}>
+          {!patchesHidden && <MissingPatchesCard summary={summary} onOpen={() => navigate("/patches")} />}
+          {!securityConfigHidden && <ConfigurationComplianceCard summary={summary} />}
+          {!securityConfigHidden && <FailingRulesCard summary={summary} />}
+        </Row>
       )}
 
       <Row layout="3">

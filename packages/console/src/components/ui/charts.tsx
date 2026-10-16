@@ -107,11 +107,13 @@ export function RankedBars({
       {rows.map((d) => {
         const pct = percent(d.value, denominator);
         const label = d.onSelect ? (
-          <button type="button" className="ep-k app-chart-link app-link-btn" onClick={d.onSelect}>
+          <button type="button" className="ep-k app-chart-link app-link-btn app-truncate" title={d.label} onClick={d.onSelect}>
             {d.label}
           </button>
         ) : (
-          <span className="ep-k">{d.label}</span>
+          <span className="ep-k app-truncate" title={d.label}>
+            {d.label}
+          </span>
         );
         return (
           <div key={d.label} className="ep-it">

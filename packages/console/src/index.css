@@ -623,6 +623,15 @@ button.app-kpi-active:hover {
   border-color: color-mix(in srgb, var(--ep-sev-critical) 25%, transparent);
 }
 
+/* One line with an ellipsis (e.g. long labels in ranked bars); pair it with title= for the full text. */
+.app-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
 /* Two-line preview of longer text (e.g. a patch description); the full text is in title=. */
 .app-clamp-2 {
   display: -webkit-box;

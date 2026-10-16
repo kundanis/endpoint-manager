@@ -1464,6 +1464,18 @@ export interface DashboardSummary {
   networkDeviceSummary: NetworkVlanDeviceSummary[];
   unmanagedHosts: UnmanagedNetworkDeviceView[];
   agentCoverage: AgentCoverageSummary;
+  patchSummary: {
+    endpointsMissingPatches: number;
+    missingPatches: number; // distinct patches missing anywhere
+    missingBySeverity: Record<NormalizedSeverity, number>;
+  };
+  configurationSummary: {
+    assessedEndpoints: number;
+    compliantEndpoints: number;
+    nonCompliantEndpoints: number;
+    failedChecks: number;
+    topFailingRules: { title: string; endpoints: number }[];
+  };
 }
 
 export interface UserProductivitySummaryAgentView {
