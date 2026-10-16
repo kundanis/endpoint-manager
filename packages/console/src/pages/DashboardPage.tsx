@@ -268,8 +268,8 @@ function UnmanagedDevicesCard({ summary, onOpenNetworkScan }: { summary: Dashboa
   );
 }
 
-// Patch and security-configuration posture (Pattern A supporting row): missing patches by
-// severity, configuration compliance across endpoints, and the rules failing most widely.
+// Patch and security-configuration posture, clickable the same way as Vulnerability exposure:
+// each segment (and its legend entry) opens the matching endpoints or page.
 const PATCH_SEVERITY_ROWS: { key: keyof DashboardSummary["patchSummary"]["missingBySeverity"]; label: string; color: string }[] = [
   { key: "CRITICAL", label: "Critical", color: "var(--ep-sev-critical)" },
   { key: "HIGH", label: "High", color: "var(--ep-sev-high)" },
@@ -278,38 +278,67 @@ const PATCH_SEVERITY_ROWS: { key: keyof DashboardSummary["patchSummary"]["missin
   { key: "UNKNOWN", label: "Not rated", color: CHART_SEMANTIC.neutral },
 ];
 
-function MissingPatchesCard({ summary, onOpen }: { summary: DashboardSummary; onOpen: () => void }) {
+function PatchStatusCard({
+  summary,
+  goTo,
+  endpointsLink,
+}: {
+  summary: DashboardSummary;
+  goTo: (to: string | undefined) => (() => void) | undefined;
+  endpointsLink: (query?: string) => string | undefined;
+}) {
   const p = summary.patchSummary;
-  const data = PATCH_SEVERITY_ROWS.map((r) => ({ label: r.label, value: p.missingBySeverity[r.key], color: r.color, onSelect: onOpen })).filter(
-    (d) => d.value > 0,
-  );
+  const upToDate = Math.max(summary.totalAgents - p.endpointsMissingPatches, 0);
+  const severityData: ChartDatum[] = PATCH_SEVERITY_ROWS.map((r) => ({
+    label: r.label,
+    value: p.missingBySeverity[r.key],
+    color: r.color,
+    onSelect: goTo("/patches"),
+  })).filter((d) => d.value > 0);
+
   return (
     <Card
-      title="Missing patches"
+      title="Patch status"
       actions={
         <Link className="ep-link" to="/patches">
-          Open patches
+          View all
         </Link>
       }
     >
       {summary.totalAgents === 0 ? (
         <span className="ep-nodata">No endpoints enrolled yet</span>
-      ) : p.missingPatches === 0 ? (
-        <span className="ep-nodata">Every endpoint is up to date</span>
       ) : (
-        <div className="app-stack-sm">
-          <span className="app-text">
-            <span className="ep-num">{p.endpointsMissingPatches}</span> of <span className="ep-num">{summary.totalAgents}</span> endpoints need{" "}
-            <span className="ep-num">{p.missingPatches}</span> {p.missingPatches === 1 ? "patch" : "patches"}
-          </span>
-          <RankedBars data={data} total={p.missingPatches} />
-        </div>
+        <>
+          <Donut
+            centerLabel="endpoints"
+            data={[
+              { label: "Up to date", value: upToDate, color: CHART_SEMANTIC.ok, onSelect: goTo(endpointsLink("?patch=none")) },
+              { label: "Missing patches", value: p.endpointsMissingPatches, color: CHART_SEMANTIC.critical, onSelect: goTo("/patches") },
+            ]}
+          />
+          {severityData.length > 0 && (
+            <div className="app-posture-section">
+              <div className="app-posture-title">
+                <span className="ep-num">{p.missingPatches}</span> missing {p.missingPatches === 1 ? "patch" : "patches"} by severity
+              </div>
+              <RankedBars data={severityData} total={p.missingPatches} />
+            </div>
+          )}
+        </>
       )}
     </Card>
   );
 }
 
-function ConfigurationComplianceCard({ summary }: { summary: DashboardSummary }) {
+function ConfigurationComplianceCard({
+  summary,
+  goTo,
+  endpointsLink,
+}: {
+  summary: DashboardSummary;
+  goTo: (to: string | undefined) => (() => void) | undefined;
+  endpointsLink: (query?: string) => string | undefined;
+}) {
   const c = summary.configurationSummary;
   const notAssessed = Math.max(summary.totalAgents - c.assessedEndpoints, 0);
   return (
@@ -317,39 +346,37 @@ function ConfigurationComplianceCard({ summary }: { summary: DashboardSummary })
       title="Configuration compliance"
       actions={
         <Link className="ep-link" to="/security-config">
-          Open benchmarks
+          View all
         </Link>
       }
     >
       {summary.totalAgents === 0 ? (
         <span className="ep-nodata">No endpoints enrolled yet</span>
-      ) : c.assessedEndpoints === 0 ? (
-        <span className="ep-nodata">No endpoint assessed yet - assign a benchmark under Security configuration</span>
       ) : (
-        <Donut
-          centerLabel="endpoints"
-          data={[
-            { label: "Compliant", value: c.compliantEndpoints, color: CHART_SEMANTIC.ok },
-            { label: "Not compliant", value: c.nonCompliantEndpoints, color: CHART_SEMANTIC.critical },
-            { label: "Not assessed", value: notAssessed, color: CHART_SEMANTIC.neutral },
-          ]}
-        />
-      )}
-    </Card>
-  );
-}
-
-function FailingRulesCard({ summary }: { summary: DashboardSummary }) {
-  const c = summary.configurationSummary;
-  return (
-    <Card title="Most failed rules" actions={c.failedChecks > 0 && <Badge tone="crit">{c.failedChecks} failed checks</Badge>}>
-      {c.topFailingRules.length === 0 ? (
-        <span className="ep-nodata">{c.assessedEndpoints === 0 ? "No benchmark results yet" : "No failing rules"}</span>
-      ) : (
-        <RankedBars
-          data={c.topFailingRules.map((r) => ({ label: r.title, value: r.endpoints, color: CHART_SEMANTIC.critical }))}
-          total={c.assessedEndpoints}
-        />
+        <>
+          <Donut
+            centerLabel="endpoints"
+            data={[
+              { label: "Compliant", value: c.compliantEndpoints, color: CHART_SEMANTIC.ok, onSelect: goTo(endpointsLink("?config=compliant")) },
+              {
+                label: "Not compliant",
+                value: c.nonCompliantEndpoints,
+                color: CHART_SEMANTIC.critical,
+                onSelect: goTo(endpointsLink("?config=noncompliant")),
+              },
+              // No benchmark covers these yet, so it opens the page where benchmarks get assigned.
+              { label: "Not assessed", value: notAssessed, color: CHART_SEMANTIC.neutral, onSelect: goTo("/security-config") },
+            ]}
+          />
+          {c.failedChecks > 0 && (
+            <div className="app-posture-section">
+              <div className="app-posture-title">
+                <span className="ep-num">{c.failedChecks}</span> failed {c.failedChecks === 1 ? "check" : "checks"} across{" "}
+                <span className="ep-num">{c.nonCompliantEndpoints}</span> {c.nonCompliantEndpoints === 1 ? "endpoint" : "endpoints"}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </Card>
   );
@@ -515,10 +542,9 @@ export default function DashboardPage() {
       )}
 
       {(!patchesHidden || !securityConfigHidden) && (
-        <Row layout={!patchesHidden && !securityConfigHidden ? "3" : "12"}>
-          {!patchesHidden && <MissingPatchesCard summary={summary} onOpen={() => navigate("/patches")} />}
-          {!securityConfigHidden && <ConfigurationComplianceCard summary={summary} />}
-          {!securityConfigHidden && <FailingRulesCard summary={summary} />}
+        <Row layout="3" className={!patchesHidden && !securityConfigHidden ? "app-r2" : "app-r1"}>
+          {!patchesHidden && <PatchStatusCard summary={summary} goTo={goTo} endpointsLink={endpointsLink} />}
+          {!securityConfigHidden && <ConfigurationComplianceCard summary={summary} goTo={goTo} endpointsLink={endpointsLink} />}
         </Row>
       )}
 

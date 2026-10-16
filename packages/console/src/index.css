@@ -770,6 +770,22 @@ button.app-picker-head {
   }
 }
 
+/* Dashboard rows with two (or one) cards: equal columns, stacking at the same width as
+   Meridian's .ep-r* rows. */
+.ep-row.app-r2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ep-row.app-r1 {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 960px) {
+  .ep-row.app-r2 {
+    grid-template-columns: 1fr;
+  }
+}
+
 a.app-legend-link {
   display: inline-flex;
   align-items: center;

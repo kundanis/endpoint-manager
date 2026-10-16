@@ -28,6 +28,10 @@ export interface AgentRollups {
   ztCountByAgent: Map<string, number>;
   lastPatchByAgent: LastPatchMap;
   latestUpdateTaskByAgent: LatestUpdateMap;
+  missingPatchCountByAgent: Map<string, number>;
+  // Agents with any security-benchmark result, and how many rules each currently fails.
+  configFailCountByAgent: Map<string, number>;
+  configAssessedAgents: Set<string>;
 }
 
 const REFRESH_MS = 10_000;
@@ -44,7 +48,7 @@ async function computeRollups(): Promise<AgentRollups> {
   const agents = await prisma.agent.findMany({ select: { id: true } });
   const ids = agents.map((a) => a.id);
 
-  const [openVulnGroups, nonCompliantZtRaw, lastPatchByAgent, latestUpdateTaskByAgent] = await Promise.all([
+  const [openVulnGroups, nonCompliantZtRaw, lastPatchByAgent, latestUpdateTaskByAgent, missingPatchGroups, configGroups] = await Promise.all([
     prisma.vulnerabilityFinding.groupBy({ by: ["agentId"], where: { status: "OPEN" }, _count: { _all: true } }),
     prisma.zeroTrustFinding.findMany({
       where: { status: "FAIL", condition: { enabled: true } },
@@ -52,6 +56,8 @@ async function computeRollups(): Promise<AgentRollups> {
     }),
     getLastPatchInstalledAtByAgent(),
     getLatestAgentUpdateTaskByAgent(ids),
+    prisma.patchFinding.groupBy({ by: ["agentId"], where: { status: "MISSING" }, _count: { _all: true } }),
+    prisma.securityBenchmarkFinding.groupBy({ by: ["agentId", "status"], _count: { _all: true } }),
   ]);
 
   const overriddenByAgent = await getOverriddenKeysByAgent([...new Set(nonCompliantZtRaw.map((f) => f.agentId))]);
@@ -65,7 +71,23 @@ async function computeRollups(): Promise<AgentRollups> {
   const ztCountByAgent = new Map<string, number>();
   for (const f of nonCompliantZt) ztCountByAgent.set(f.agentId, (ztCountByAgent.get(f.agentId) ?? 0) + 1);
 
-  return { vulnCountByAgent, ztCountByAgent, lastPatchByAgent, latestUpdateTaskByAgent };
+  const missingPatchCountByAgent = new Map(missingPatchGroups.map((g) => [g.agentId, g._count._all]));
+  const configFailCountByAgent = new Map<string, number>();
+  const configAssessedAgents = new Set<string>();
+  for (const g of configGroups) {
+    configAssessedAgents.add(g.agentId);
+    if (g.status === "FAIL") configFailCountByAgent.set(g.agentId, g._count._all);
+  }
+
+  return {
+    vulnCountByAgent,
+    ztCountByAgent,
+    lastPatchByAgent,
+    latestUpdateTaskByAgent,
+    missingPatchCountByAgent,
+    configFailCountByAgent,
+    configAssessedAgents,
+  };
 }
 
 // Recomputes both cached values. On any DB error it logs and KEEPS the previous good values
@@ -87,7 +109,10 @@ async function refresh(): Promise<void> {
       JSON.stringify([...rollups.vulnCountByAgent]) +
       JSON.stringify([...rollups.ztCountByAgent]) +
       JSON.stringify([...rollups.lastPatchByAgent]) +
-      JSON.stringify([...rollups.latestUpdateTaskByAgent]);
+      JSON.stringify([...rollups.latestUpdateTaskByAgent]) +
+      JSON.stringify([...rollups.missingPatchCountByAgent]) +
+      JSON.stringify([...rollups.configFailCountByAgent]) +
+      JSON.stringify([...rollups.configAssessedAgents]);
     if (signature !== lastSignature) {
       lastSignature = signature;
       emitInvalidate(["agents", "dashboardSummary"]);

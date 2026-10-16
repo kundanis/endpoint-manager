@@ -26,18 +26,9 @@ async function getPatchSummary() {
 }
 
 // Security configuration (benchmark) posture: endpoints assessed / compliant (no failing
-// rule) / not compliant, and the rules failing on the most endpoints.
+// rule) / not compliant.
 async function getConfigurationSummary() {
-  const [byAgentStatus, topRules] = await Promise.all([
-    prisma.securityBenchmarkFinding.groupBy({ by: ["agentId", "status"], _count: { _all: true } }),
-    prisma.securityBenchmarkFinding.groupBy({
-      by: ["ruleId"],
-      where: { status: "FAIL" },
-      _count: { _all: true },
-      orderBy: { _count: { ruleId: "desc" } },
-      take: 5,
-    }),
-  ]);
+  const byAgentStatus = await prisma.securityBenchmarkFinding.groupBy({ by: ["agentId", "status"], _count: { _all: true } });
   const assessed = new Set<string>();
   const failing = new Set<string>();
   let failedChecks = 0;
@@ -48,16 +39,11 @@ async function getConfigurationSummary() {
       failedChecks += g._count._all;
     }
   }
-  const rules = topRules.length
-    ? await prisma.securityBenchmarkRule.findMany({ where: { id: { in: topRules.map((r) => r.ruleId) } }, select: { id: true, title: true } })
-    : [];
-  const titleById = new Map(rules.map((r) => [r.id, r.title]));
   return {
     assessedEndpoints: assessed.size,
     compliantEndpoints: assessed.size - failing.size,
     nonCompliantEndpoints: failing.size,
     failedChecks,
-    topFailingRules: topRules.map((r) => ({ title: titleById.get(r.ruleId) ?? "Unknown rule", endpoints: r._count._all })),
   };
 }
 

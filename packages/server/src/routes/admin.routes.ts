@@ -109,8 +109,15 @@ adminRouter.get("/agents", async (_req, res, next) => {
     // from every open console tab - the vulnerability table alone can hold hundreds of
     // thousands of rows. The agent list itself (above) stays live, so per-agent actions
     // (quarantine, pause, status) still reflect immediately.
-    const { vulnCountByAgent, ztCountByAgent, lastPatchByAgent: lastPatchInstalledByAgent, latestUpdateTaskByAgent } =
-      await getAgentRollupsCached();
+    const {
+      vulnCountByAgent,
+      ztCountByAgent,
+      lastPatchByAgent: lastPatchInstalledByAgent,
+      latestUpdateTaskByAgent,
+      missingPatchCountByAgent,
+      configFailCountByAgent,
+      configAssessedAgents,
+    } = await getAgentRollupsCached();
 
     res.json(
       agents.map((a) => ({
@@ -140,6 +147,9 @@ adminRouter.get("/agents", async (_req, res, next) => {
         pausedAt: a.pausedAt?.toISOString() ?? null,
         zeroTrustNonCompliantCount: ztCountByAgent.get(a.id) ?? 0,
         openVulnerabilityCount: vulnCountByAgent.get(a.id) ?? 0,
+        missingPatchCount: missingPatchCountByAgent.get(a.id) ?? 0,
+        // null = no benchmark has assessed this endpoint yet.
+        failingConfigRuleCount: configAssessedAgents.has(a.id) ? (configFailCountByAgent.get(a.id) ?? 0) : null,
         lastPatchInstalledAt: lastPatchInstalledByAgent.get(a.id)?.toISOString() ?? null,
         latestUpdateTask: latestUpdateTaskByAgent.get(a.id) ?? null,
         inventory: a.inventory

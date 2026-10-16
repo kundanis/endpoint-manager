@@ -182,6 +182,9 @@ export interface AgentListItem {
   pausedAt: string | null;
   zeroTrustNonCompliantCount: number;
   openVulnerabilityCount: number;
+  missingPatchCount: number;
+  // null = not assessed by any security benchmark yet.
+  failingConfigRuleCount: number | null;
   lastPatchInstalledAt: string | null;
   latestUpdateTask: LatestAgentUpdateTaskView | null;
   inventory: AgentListInventoryView | null;
@@ -1474,7 +1477,6 @@ export interface DashboardSummary {
     compliantEndpoints: number;
     nonCompliantEndpoints: number;
     failedChecks: number;
-    topFailingRules: { title: string; endpoints: number }[];
   };
 }
 

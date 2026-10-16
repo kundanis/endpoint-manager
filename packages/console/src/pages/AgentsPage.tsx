@@ -488,6 +488,15 @@ export default function AgentsPage() {
     const v = searchParams.get("vuln");
     return v === "open" || v === "none" ? v : "";
   });
+  // Dashboard drill-downs: missing patches / up to date, and benchmark compliance.
+  const [patchFilter, setPatchFilter] = useState<"" | "missing" | "none">(() => {
+    const v = searchParams.get("patch");
+    return v === "missing" || v === "none" ? v : "";
+  });
+  const [configFilter, setConfigFilter] = useState<"" | "compliant" | "noncompliant" | "unassessed">(() => {
+    const v = searchParams.get("config");
+    return v === "compliant" || v === "noncompliant" || v === "unassessed" ? v : "";
+  });
   // One search box across hostname, IP and logged-on user.
   const [search, setSearch] = useState("");
   const [columns, setColumns] = useState<ColumnKey[]>(loadColumns);
@@ -511,6 +520,16 @@ export default function AgentsPage() {
     .filter(
       (agent) =>
         !vulnFilter || (vulnFilter === "open" ? agent.openVulnerabilityCount > 0 : agent.openVulnerabilityCount === 0),
+    )
+    .filter((agent) => !patchFilter || (patchFilter === "missing" ? agent.missingPatchCount > 0 : agent.missingPatchCount === 0))
+    .filter(
+      (agent) =>
+        !configFilter ||
+        (configFilter === "unassessed"
+          ? agent.failingConfigRuleCount === null
+          : configFilter === "compliant"
+            ? agent.failingConfigRuleCount === 0
+            : (agent.failingConfigRuleCount ?? 0) > 0),
     )
     .filter(
       (agent) =>
@@ -571,9 +590,11 @@ export default function AgentsPage() {
     }
   }
 
-  function clearUrlFilter(key: "os" | "vuln") {
+  function clearUrlFilter(key: "os" | "vuln" | "patch" | "config") {
     if (key === "os") setOsFilter("");
-    else setVulnFilter("");
+    else if (key === "vuln") setVulnFilter("");
+    else if (key === "patch") setPatchFilter("");
+    else setConfigFilter("");
     searchParams.delete(key);
     setSearchParams(searchParams, { replace: true });
   }
@@ -585,8 +606,12 @@ export default function AgentsPage() {
     setStatusFilter("all");
     setOsFilter("");
     setVulnFilter("");
+    setPatchFilter("");
+    setConfigFilter("");
     searchParams.delete("os");
     searchParams.delete("vuln");
+    searchParams.delete("patch");
+    searchParams.delete("config");
     searchParams.delete("status");
     searchParams.delete("deviceType");
     setSearchParams(searchParams, { replace: true });
@@ -596,6 +621,23 @@ export default function AgentsPage() {
     ...(osFilter ? [{ key: "os", label: `Operating system: ${osFilter}`, onRemove: () => clearUrlFilter("os") }] : []),
     ...(vulnFilter
       ? [{ key: "vuln", label: vulnFilter === "open" ? "Has open vulnerabilities" : "No open vulnerabilities", onRemove: () => clearUrlFilter("vuln") }]
+      : []),
+    ...(patchFilter
+      ? [{ key: "patch", label: patchFilter === "missing" ? "Missing patches" : "Patches up to date", onRemove: () => clearUrlFilter("patch") }]
+      : []),
+    ...(configFilter
+      ? [
+          {
+            key: "config",
+            label:
+              configFilter === "compliant"
+                ? "Configuration compliant"
+                : configFilter === "noncompliant"
+                  ? "Configuration not compliant"
+                  : "Configuration not assessed",
+            onRemove: () => clearUrlFilter("config"),
+          },
+        ]
       : []),
   ];
 
