@@ -527,15 +527,19 @@ export default function DashboardPage() {
         )}
       </KpiStrip>
 
-      {coverageCard && postureCard ? (
-        // Stacks earlier than the default breakpoint: the coverage bars need the full width.
-        <Row layout="21" className="app-dash-top">
-          {coverageCard}
-          {postureCard}
-        </Row>
-      ) : (
-        coverageCard || postureCard
-      )}
+      {/* Device type and operating system side by side, next to the security posture card.
+          Stacks earlier than the default breakpoint so the pair keeps two readable columns. */}
+      <Row layout="21" className={postureCard ? "app-dash-top" : "app-r1"}>
+        <div className="ep-row app-r2">
+          <Card title="Device type">
+            {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={deviceTypeData} total={total} />}
+          </Card>
+          <Card title="Operating system" actions={unknownOsCount > 0 && <Badge tone="med">{unknownOsCount} unclassified</Badge>}>
+            {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={osData} tail={osTail} total={total} />}
+          </Card>
+        </div>
+        {postureCard}
+      </Row>
 
       {(!patchesHidden || !securityConfigHidden) && (
         <Row layout="3" className={!patchesHidden && !securityConfigHidden ? "app-r2" : "app-r1"}>
@@ -544,16 +548,12 @@ export default function DashboardPage() {
         </Row>
       )}
 
-      <Row layout="3">
+      {/* Connectivity beside agent coverage by VLAN (the coverage bars get the wider column). */}
+      <Row layout="12" className={coverageCard ? undefined : "app-r1"}>
         <Card title="Connectivity">
           {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <Donut centerLabel="endpoints" data={connectivityData} />}
         </Card>
-        <Card title="Device type">
-          {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={deviceTypeData} total={total} />}
-        </Card>
-        <Card title="Operating system" actions={unknownOsCount > 0 && <Badge tone="med">{unknownOsCount} unclassified</Badge>}>
-          {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={osData} tail={osTail} total={total} />}
-        </Card>
+        {coverageCard}
       </Row>
 
       {!networkScanHidden && <UnmanagedDevicesCard summary={summary} onOpenNetworkScan={openNetworkScan} />}
