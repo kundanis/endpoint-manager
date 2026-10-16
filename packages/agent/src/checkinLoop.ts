@@ -67,21 +67,34 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
     }
   }
 
+  // A "Scan now" request can arrive while the scheduled scan is still running - never run the
+  // same scan twice at once.
+  let securityConfigScanRunning = false;
+  let zeroTrustScanRunning = false;
+
   async function sendSecurityConfigScan() {
+    if (securityConfigScanRunning) return;
+    securityConfigScanRunning = true;
     try {
       await runSecurityConfigScan(client);
       console.log("Security configuration scan reported");
     } catch (err) {
       console.error("Failed to report security configuration scan", err);
+    } finally {
+      securityConfigScanRunning = false;
     }
   }
 
   async function sendZeroTrustScan() {
+    if (zeroTrustScanRunning) return;
+    zeroTrustScanRunning = true;
     try {
       await runZeroTrustScan(client);
       console.log("Zero Trust scan reported");
     } catch (err) {
       console.error("Failed to report Zero Trust scan", err);
+    } finally {
+      zeroTrustScanRunning = false;
     }
   }
 
@@ -308,6 +321,16 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
       if (data.runDataDiscoveryScanNow) {
         console.log("Check-in requested an immediate data discovery scan");
         void sendDataDiscoveryScan();
+      }
+
+      if (data.runZeroTrustScanNow) {
+        console.log("Check-in requested an immediate Zero Trust scan");
+        void sendZeroTrustScan();
+      }
+
+      if (data.runSecurityConfigScanNow) {
+        console.log("Check-in requested an immediate security benchmark scan");
+        void sendSecurityConfigScan();
       }
 
       if (data.agentUpdateTasks.length > 0) {

@@ -16,6 +16,7 @@ import {
 } from "@em/shared";
 import {
   addCondition,
+  requestPolicyScanNow,
   assignPolicy,
   createPolicy,
   deleteCondition,
@@ -109,6 +110,16 @@ zeroTrustRouter.get("/agents/:agentId", async (req, res, next) => {
 
 // Sets which antivirus must be registered and which management agent must be installed for
 // this policy - creates, updates or removes just those two conditions.
+// "Scan now" - the policy's endpoints re-scan at their next check-in (within ~30s).
+zeroTrustRouter.post("/:id/scan-now", async (req, res, next) => {
+  try {
+    if (!(await getPolicy(req.params.id))) return res.status(404).json({ error: "Policy not found" });
+    res.json({ agentCount: await requestPolicyScanNow(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 zeroTrustRouter.put("/:id/required-software", async (req, res, next) => {
   try {
     const payload = requiredSoftwareRequestSchema.parse(req.body);

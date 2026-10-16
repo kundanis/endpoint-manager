@@ -9,6 +9,7 @@ import type {
 } from "@em/shared";
 import { DEFAULT_COMMAND_TIMEOUT_SEC } from "@em/shared";
 import { prisma } from "../db";
+import { requestScan } from "./scanRequests";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 import { createCommandJob } from "./command.service";
 
@@ -19,6 +20,14 @@ async function resolveAssignedAgentIdsForBenchmark(benchmarkId: string): Promise
   const agentIds = assignments.filter((a) => a.agentId).map((a) => a.agentId!);
   const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
   return resolveTargetAgentIds(agentIds, groupIds);
+}
+
+// "Scan now": every endpoint the benchmark applies to re-runs its benchmark scan at its next
+// check-in. Returns how many endpoints were asked.
+export async function requestBenchmarkScanNow(benchmarkId: string): Promise<number> {
+  const agentIds = await resolveAssignedAgentIdsForBenchmark(benchmarkId);
+  requestScan("securityConfig", agentIds);
+  return agentIds.length;
 }
 
 export async function createBenchmark(params: CreateBenchmarkRequest, createdByAdminId: string) {

@@ -1,6 +1,7 @@
 import type { AgentUpdateTaskWire, CheckinResponse, InstallerType, InventoryReport, Shell } from "@em/shared";
 import { DEFAULT_POLL_INTERVAL_SEC } from "@em/shared";
 import { prisma } from "../db";
+import { takeScanRequest } from "./scanRequests";
 import { logger } from "../logger";
 import { matchAgentInventory } from "./vulnerabilityMatch.service";
 import { refreshIpGeoIfStale } from "./ipGeo.service";
@@ -170,6 +171,8 @@ export async function handleCheckin(
     })),
     agentUpdateTasks: await fetchAndDispatchAgentUpdateTasks(agentId),
     runDataDiscoveryScanNow: pendingDataDiscoveryScan != null,
+    runZeroTrustScanNow: takeScanRequest("zeroTrust", agentId),
+    runSecurityConfigScanNow: takeScanRequest("securityConfig", agentId),
     serverUrls: await getServerUrlsForCheckin(),
   };
 }

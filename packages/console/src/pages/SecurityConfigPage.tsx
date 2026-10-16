@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, ChevronRight, Download, FileUp, ListChecks, Pencil, Plus, ShieldCheck, Trash2, Users, Wrench, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FileUp, RefreshCw, ListChecks, Pencil, Plus, ShieldCheck, Trash2, Users, Wrench, X } from "lucide-react";
 import type { GpoImportPreview, SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
 import type { SecurityBenchmarkDetail } from "../api/types";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
@@ -14,6 +14,7 @@ import {
   useDeleteSecurityRule,
   useImportSecurityRules,
   useInstallBuiltInBenchmarks,
+  useBenchmarkScanNow,
   usePreviewGpoBackup,
   useAgentSecurityFindings,
   useRemediateAllForAgentInBenchmark,
@@ -885,6 +886,21 @@ function CompliancePanel({ benchmarkId, onOpenAssignment }: { benchmarkId: strin
 // The selected benchmark: name, target/source, and its sub-views as tabs. Scrolls itself
 // into view when a different benchmark is opened, since it renders below the list.
 function BenchmarkDetail({ benchmark, onClose }: { benchmark: SecurityBenchmarkDetail; onClose: () => void }) {
+  const scanNow = useBenchmarkScanNow();
+  const toast = useToast();
+
+  function handleScanNow() {
+    scanNow.mutate(benchmark.id, {
+      onSuccess: (r) =>
+          toast(
+            r.agentCount === 0
+              ? "No endpoints are assigned yet - assign it first."
+              : `Scan requested on ${r.agentCount} endpoint${r.agentCount === 1 ? "" : "s"}. Results appear within a minute of their next check-in.`,
+          ),
+      onError: (err) => toast((err as Error).message),
+    });
+  }
+
   const [tab, setTab] = useState("rules");
   const ref = useRef<HTMLDivElement>(null);
 
@@ -903,7 +919,14 @@ function BenchmarkDetail({ benchmark, onClose }: { benchmark: SecurityBenchmarkD
         </>
       }
       hint={`${benchmark.rules.length} ${benchmark.rules.length === 1 ? "rule" : "rules"} · ${benchmark.assignedAgentCount} assigned endpoints`}
-      actions={<IconButton icon={X} label="Close benchmark" onClick={onClose} />}
+      actions={
+        <>
+          <Button size="sm" icon={RefreshCw} onClick={handleScanNow} disabled={scanNow.isPending}>
+            {scanNow.isPending ? "Requesting…" : "Scan now"}
+          </Button>
+          <IconButton icon={X} label="Close benchmark" onClick={onClose} />
+        </>
+      }
     >
       {benchmark.description && (
         <div className="ep-cb" style={{ paddingBottom: 0 }}>

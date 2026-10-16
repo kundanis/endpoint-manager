@@ -26,6 +26,7 @@ import {
   remediateAllForAgentInBenchmark,
   remediateSelectedForAgentInBenchmark,
   remediateRule,
+  requestBenchmarkScanNow,
   RuleHasNoRemediationError,
   unassign,
   updateBenchmark,
@@ -172,6 +173,16 @@ securityConfigRouter.delete("/:id/rules/:ruleId", async (req, res, next) => {
     const deleted = await deleteRule(req.params.id, req.params.ruleId);
     if (!deleted) return res.status(404).json({ error: "Rule not found" });
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// "Scan now" - the benchmark's endpoints re-scan at their next check-in (within ~30s).
+securityConfigRouter.post("/:id/scan-now", async (req, res, next) => {
+  try {
+    if (!(await getBenchmark(req.params.id))) return res.status(404).json({ error: "Benchmark not found" });
+    res.json({ agentCount: await requestBenchmarkScanNow(req.params.id) });
   } catch (err) {
     next(err);
   }

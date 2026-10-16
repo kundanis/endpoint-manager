@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ListChecks, Pencil, Plus, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2, Users } from "lucide-react";
+import { RefreshCw, ListChecks, Pencil, Plus, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2, Users } from "lucide-react";
 import type { SecurityRuleOperator } from "@em/shared";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
@@ -25,6 +25,7 @@ import {
   useInstallBuiltInZeroTrustPolicy,
   useSecurityProducts,
   useSetRequiredSoftware,
+  useZeroTrustScanNow,
 } from "../api/hooks";
 import { RequiredSoftwareFields, useRequiredSoftwareState } from "../components/RequiredSoftwarePicker";
 import type { ZeroTrustPolicyDetail, ZeroTrustPolicySummary } from "../api/types";
@@ -956,6 +957,19 @@ export default function ZeroTrustPage() {
   const confirm = useConfirm();
   const toast = useToast();
   const [installingBuiltIn, setInstallingBuiltIn] = useState(false);
+  const scanNow = useZeroTrustScanNow();
+
+  function handleScanNow(policyId: string) {
+    scanNow.mutate(policyId, {
+      onSuccess: (r) =>
+          toast(
+            r.agentCount === 0
+              ? "No endpoints are assigned yet - assign it first."
+              : `Scan requested on ${r.agentCount} endpoint${r.agentCount === 1 ? "" : "s"}. Results appear within a minute of their next check-in.`,
+          ),
+      onError: (err) => toast((err as Error).message),
+    });
+  }
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
@@ -1144,6 +1158,11 @@ export default function ZeroTrustPage() {
           enabled={policy.enabled}
           meta={`${policy.conditions.length} ${policy.conditions.length === 1 ? "condition" : "conditions"} · ${policy.assignedAgentCount} assigned`}
           onClose={() => setSelectedId(undefined)}
+          actions={
+            <Button size="sm" icon={RefreshCw} onClick={() => handleScanNow(policy.id)} disabled={scanNow.isPending}>
+              {scanNow.isPending ? "Requesting…" : "Scan now"}
+            </Button>
+          }
           tabs={[
             { value: "conditions", label: `Conditions (${policy.conditions.length})`, content: <ConditionsPanel policy={policy} /> },
             { value: "software", label: "Required software", content: <RequiredSoftwarePanel policy={policy} /> },

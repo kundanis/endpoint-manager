@@ -7,6 +7,7 @@ import type {
   UpdateZeroTrustPolicyRequest,
 } from "@em/shared";
 import { prisma } from "../db";
+import { requestScan } from "./scanRequests";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "./zeroTrustOverride.service";
 
@@ -15,6 +16,14 @@ async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<strin
   const agentIds = assignments.filter((a) => a.agentId).map((a) => a.agentId!);
   const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
   return resolveTargetAgentIds(agentIds, groupIds);
+}
+
+// "Scan now": every endpoint the policy applies to re-runs its Zero Trust scan at its next
+// check-in. Returns how many endpoints were asked.
+export async function requestPolicyScanNow(policyId: string): Promise<number> {
+  const agentIds = await resolveAssignedAgentIdsForPolicy(policyId);
+  requestScan("zeroTrust", agentIds);
+  return agentIds.length;
 }
 
 export async function createPolicy(params: CreateZeroTrustPolicyRequest, createdByAdminId: string) {

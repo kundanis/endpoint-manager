@@ -112,6 +112,7 @@ export function PolicyDetail({
   meta,
   tabs,
   onClose,
+  actions,
 }: {
   policyId: string;
   name: string;
@@ -120,6 +121,8 @@ export function PolicyDetail({
   meta?: ReactNode;
   tabs: PolicyDetailTab[];
   onClose: () => void;
+  // Extra header buttons, left of the close button (e.g. Zero Trust "Scan now").
+  actions?: ReactNode;
 }) {
   const [tab, setTab] = useState(tabs[0]?.value ?? "");
   const ref = useRef<HTMLElement>(null);
@@ -140,6 +143,7 @@ export function PolicyDetail({
         <Pill tone={enabled ? "ok" : "neutral"}>{enabled ? "Enabled" : "Paused"}</Pill>
         {meta && <span className="ep-hint">· {meta}</span>}
         <div className="ep-r">
+          {actions}
           <IconButton icon={X} label="Close policy" onClick={onClose} />
         </div>
       </div>

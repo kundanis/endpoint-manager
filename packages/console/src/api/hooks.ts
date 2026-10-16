@@ -1252,6 +1252,19 @@ export function useInstallBuiltInZeroTrustPolicy() {
   });
 }
 
+// "Scan now": the policy's / benchmark's endpoints re-scan at their next check-in.
+export function useZeroTrustScanNow() {
+  return useMutation({
+    mutationFn: (policyId: string) => api.post<{ agentCount: number }>(`/admin/zero-trust/${policyId}/scan-now`, {}),
+  });
+}
+
+export function useBenchmarkScanNow() {
+  return useMutation({
+    mutationFn: (benchmarkId: string) => api.post<{ agentCount: number }>(`/admin/security-config/${benchmarkId}/scan-now`, {}),
+  });
+}
+
 // The antivirus / management-agent choices for Zero Trust "Required software".
 export function useSecurityProducts() {
   return useQuery({

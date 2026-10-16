@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.10
+- New: "Scan now" on a Zero Trust policy or security benchmark makes the endpoint re-run that
+  scan at its next check-in (within about 30 seconds), instead of waiting for its regular
+  schedule (every 2 hours for Zero Trust).
+
 ## 0.2.9
 - Fix: the installed-software list could come back empty. One malformed registry entry
   made the whole query fail; each app is now read on its own, with a reg.exe fallback if
