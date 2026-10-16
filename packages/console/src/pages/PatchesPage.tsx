@@ -1,4 +1,5 @@
 import { Fragment, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronRight, ListChecks, PackageCheck, Power, Send, SearchX, Timer, Trash2, X } from "lucide-react";
 import type { NormalizedSeverity } from "../api/types";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
@@ -336,6 +337,15 @@ function TaskStatus({ status, label }: { status: string; label?: string }) {
 
 export default function PatchesPage() {
   const [environmentFilter, setEnvironmentFilter] = useState("");
+  // Severity filter - the dashboard's Patch status bars open this page pre-filtered.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const severityParam = searchParams.get("severity")?.toUpperCase() ?? "";
+  const severityFilter = (NORMALIZED_SEVERITIES as string[]).includes(severityParam) ? (severityParam as NormalizedSeverity) : "";
+  function setSeverityFilter(value: string) {
+    if (value) searchParams.set("severity", value);
+    else searchParams.delete("severity");
+    setSearchParams(searchParams, { replace: true });
+  }
   const { data: summary, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = usePatchSummary(environmentFilter || undefined);
   const { data: agents } = useAgents();
   const { data: groups } = useAssetGroups();
@@ -354,7 +364,8 @@ export default function PatchesPage() {
 
   const { data: jobDetail } = usePatchJob(selectedJobId);
 
-  const pagedSummary = usePagedList(summary ?? [], 25);
+  const visibleSummary = severityFilter ? (summary ?? []).filter((item) => item.normalizedSeverity === severityFilter) : (summary ?? []);
+  const pagedSummary = usePagedList(visibleSummary, 25);
   const pagedJobs = usePagedList(jobs ?? [], 10);
 
   const severityCount = (s: NormalizedSeverity) => summary?.filter((item) => item.normalizedSeverity === s).length ?? 0;
@@ -442,6 +453,14 @@ export default function PatchesPage() {
             {groups?.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
+              </option>
+            ))}
+          </select>
+          <select className="ep-select" aria-label="Severity" value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
+            <option value="">Severity: All</option>
+            {NORMALIZED_SEVERITIES.map((s) => (
+              <option key={s} value={s}>
+                {s === "UNKNOWN" ? "Not rated" : SEVERITY_LABELS[s]}
               </option>
             ))}
           </select>

@@ -268,8 +268,9 @@ function UnmanagedDevicesCard({ summary, onOpenNetworkScan }: { summary: Dashboa
   );
 }
 
-// Patch and security-configuration posture, clickable the same way as Vulnerability exposure:
-// each segment (and its legend entry) opens the matching endpoints or page.
+// Patch and security-configuration posture, clickable like Vulnerability exposure and Zero
+// Trust: each segment (and its legend entry) opens its module - Patches (filtered by severity
+// for the bars) or Security configuration.
 const PATCH_SEVERITY_ROWS: { key: keyof DashboardSummary["patchSummary"]["missingBySeverity"]; label: string; color: string }[] = [
   { key: "CRITICAL", label: "Critical", color: "var(--ep-sev-critical)" },
   { key: "HIGH", label: "High", color: "var(--ep-sev-high)" },
@@ -281,11 +282,9 @@ const PATCH_SEVERITY_ROWS: { key: keyof DashboardSummary["patchSummary"]["missin
 function PatchStatusCard({
   summary,
   goTo,
-  endpointsLink,
 }: {
   summary: DashboardSummary;
   goTo: (to: string | undefined) => (() => void) | undefined;
-  endpointsLink: (query?: string) => string | undefined;
 }) {
   const p = summary.patchSummary;
   const upToDate = Math.max(summary.totalAgents - p.endpointsMissingPatches, 0);
@@ -293,7 +292,7 @@ function PatchStatusCard({
     label: r.label,
     value: p.missingBySeverity[r.key],
     color: r.color,
-    onSelect: goTo("/patches"),
+    onSelect: goTo(`/patches?severity=${r.key}`),
   })).filter((d) => d.value > 0);
 
   return (
@@ -312,7 +311,7 @@ function PatchStatusCard({
           <Donut
             centerLabel="endpoints"
             data={[
-              { label: "Up to date", value: upToDate, color: CHART_SEMANTIC.ok, onSelect: goTo(endpointsLink("?patch=none")) },
+              { label: "Up to date", value: upToDate, color: CHART_SEMANTIC.ok, onSelect: goTo("/patches") },
               { label: "Missing patches", value: p.endpointsMissingPatches, color: CHART_SEMANTIC.critical, onSelect: goTo("/patches") },
             ]}
           />
@@ -333,11 +332,9 @@ function PatchStatusCard({
 function ConfigurationComplianceCard({
   summary,
   goTo,
-  endpointsLink,
 }: {
   summary: DashboardSummary;
   goTo: (to: string | undefined) => (() => void) | undefined;
-  endpointsLink: (query?: string) => string | undefined;
 }) {
   const c = summary.configurationSummary;
   const notAssessed = Math.max(summary.totalAgents - c.assessedEndpoints, 0);
@@ -357,14 +354,13 @@ function ConfigurationComplianceCard({
           <Donut
             centerLabel="endpoints"
             data={[
-              { label: "Compliant", value: c.compliantEndpoints, color: CHART_SEMANTIC.ok, onSelect: goTo(endpointsLink("?config=compliant")) },
+              { label: "Compliant", value: c.compliantEndpoints, color: CHART_SEMANTIC.ok, onSelect: goTo("/security-config") },
               {
                 label: "Not compliant",
                 value: c.nonCompliantEndpoints,
                 color: CHART_SEMANTIC.critical,
-                onSelect: goTo(endpointsLink("?config=noncompliant")),
+                onSelect: goTo("/security-config"),
               },
-              // No benchmark covers these yet, so it opens the page where benchmarks get assigned.
               { label: "Not assessed", value: notAssessed, color: CHART_SEMANTIC.neutral, onSelect: goTo("/security-config") },
             ]}
           />
@@ -543,8 +539,8 @@ export default function DashboardPage() {
 
       {(!patchesHidden || !securityConfigHidden) && (
         <Row layout="3" className={!patchesHidden && !securityConfigHidden ? "app-r2" : "app-r1"}>
-          {!patchesHidden && <PatchStatusCard summary={summary} goTo={goTo} endpointsLink={endpointsLink} />}
-          {!securityConfigHidden && <ConfigurationComplianceCard summary={summary} goTo={goTo} endpointsLink={endpointsLink} />}
+          {!patchesHidden && <PatchStatusCard summary={summary} goTo={goTo} />}
+          {!securityConfigHidden && <ConfigurationComplianceCard summary={summary} goTo={goTo} />}
         </Row>
       )}
 
