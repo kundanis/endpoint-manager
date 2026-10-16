@@ -26,3 +26,13 @@ export const CUSTOM_KIND_OPTIONS: { value: Exclude<DataTypeKind, "PII_PATTERN">;
   { value: "PROCESS_NAME", label: "Applications (process names)", placeholder: "AnyDesk.exe\nsomeapp.exe" },
   { value: "KEYWORD", label: "Keywords", placeholder: "Project Falcon\nBoard minutes" },
 ];
+
+// Where each policy area lives in the console.
+export const DATA_TYPE_TARGET_PATHS: Record<DataTypeTarget, string> = {
+  dlp: "/dlp/content-policies",
+  piiEmailBlock: "/dlp/email-attachment-block",
+  appControl: "/epm/app-control",
+  webBlock: "/epm/web-block",
+  piiBlock: "/epm/pii-block",
+  commandBlock: "/epm/command-block",
+};

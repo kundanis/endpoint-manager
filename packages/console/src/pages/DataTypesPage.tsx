@@ -1,7 +1,8 @@
 import { Fragment, useState, type FormEvent } from "react";
-import { ChevronDown, ChevronRight, Database, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Database, Pencil, Plus, Send, Trash2 } from "lucide-react";
 import type { DataTypeKind, DataTypeView } from "@em/shared";
 import { useCreateDataType, useDataTypes, useDeleteDataType, useUpdateDataType } from "../api/hooks";
+import UseInPolicyDialog from "../components/UseInPolicyDialog";
 import { CUSTOM_KIND_OPTIONS, DATA_TYPE_KIND_LABELS, DATA_TYPE_TARGET_LABELS } from "../dataTypeLabels";
 import {
   Alert,
@@ -121,6 +122,7 @@ export default function DataTypesPage() {
   const [category, setCategory] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editing, setEditing] = useState<DataTypeView | "new" | null>(null);
+  const [using, setUsing] = useState<DataTypeView | null>(null);
 
   const categories = [...new Set((dataTypes ?? []).map((d) => d.category))];
   const term = search.trim().toLowerCase();
@@ -148,7 +150,7 @@ export default function DataTypesPage() {
     <>
       <PageHeader
         title="Data types"
-        description="Ready-made and custom lists of file types, personal data, websites and applications. Add them to DLP and EPM policies with “Add from data type”."
+        description="Ready-made and custom lists of file types, personal data, websites and applications. Select “Use in policy” to build a DLP or EPM policy from one, or use “Add from data type” inside a policy’s rules."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setEditing("new")}>
             New data type
@@ -255,6 +257,9 @@ export default function DataTypesPage() {
                         <td>{d.builtIn ? <Badge tone="ok">Built-in</Badge> : <Badge tone="neu">Custom</Badge>}</td>
                         <td>
                           <div className="app-cell-actions">
+                            <Button size="sm" icon={Send} onClick={() => setUsing(d)}>
+                              Use in policy
+                            </Button>
                             {!d.builtIn && (
                               <RowMenu
                                 label={`Actions for ${d.name}`}
@@ -289,6 +294,7 @@ export default function DataTypesPage() {
         )}
       </Card>
 
+      {using && <UseInPolicyDialog dataType={using} onClose={() => setUsing(null)} />}
       {editing && <DataTypeForm existing={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
     </>
   );

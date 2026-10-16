@@ -1,6 +1,14 @@
 import { Router } from "express";
-import { applyDataTypesRequestSchema, createDataTypeRequestSchema, updateDataTypeRequestSchema } from "@em/shared";
-import { applyDataTypes, createDataType, DataTypeError, deleteDataType, listDataTypes, updateDataType } from "../services/dataTypes.service";
+import { DATA_TYPE_TARGETS, applyDataTypesRequestSchema, createDataTypeRequestSchema, updateDataTypeRequestSchema, type DataTypeTarget } from "@em/shared";
+import {
+  applyDataTypes,
+  createDataType,
+  DataTypeError,
+  deleteDataType,
+  listDataTypes,
+  listTargetPolicies,
+  updateDataType,
+} from "../services/dataTypes.service";
 
 export const dataTypesRouter = Router();
 
@@ -26,9 +34,20 @@ dataTypesRouter.post("/", async (req, res, next) => {
 dataTypesRouter.post("/apply", async (req, res, next) => {
   try {
     const payload = applyDataTypesRequestSchema.parse(req.body);
-    res.json(await applyDataTypes(payload));
+    res.json(await applyDataTypes(payload, { adminId: req.adminId! }));
   } catch (err) {
     if (err instanceof DataTypeError) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+});
+
+// Policies in one area (?target=dlp|appControl|...), for the "Use in policy" picker.
+dataTypesRouter.get("/policies", async (req, res, next) => {
+  try {
+    const target = String(req.query.target ?? "");
+    if (!(DATA_TYPE_TARGETS as readonly string[]).includes(target)) return res.status(400).json({ error: "Unknown policy area" });
+    res.json(await listTargetPolicies(target as DataTypeTarget));
+  } catch (err) {
     next(err);
   }
 });

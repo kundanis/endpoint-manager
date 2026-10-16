@@ -3239,11 +3239,22 @@ const DATA_TYPE_TARGET_QUERY_KEYS: Record<DataTypeTarget, string> = {
 export function useApplyDataTypes() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { target: DataTypeTarget; policyId: string; dataTypeIds: string[] }) =>
-      api.post<{ added: number; skipped: number; incompatible: string[] }>("/admin/data-types/apply", body),
-    onSuccess: (_d, v) => {
+    // policyId = an existing policy; newPolicyName = create one in that area first.
+    mutationFn: (body: { target: DataTypeTarget; policyId?: string; newPolicyName?: string; dataTypeIds: string[] }) =>
+      api.post<{ added: number; skipped: number; incompatible: string[]; policyId: string }>("/admin/data-types/apply", body),
+    onSuccess: (r, v) => {
       qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target]] });
-      qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target], v.policyId] });
+      qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target], r.policyId] });
+      qc.invalidateQueries({ queryKey: ["dataTypePolicies", v.target] });
     },
+  });
+}
+
+// Policies in one DLP / EPM area, for "Use in policy" on the Data types page.
+export function useDataTypeTargetPolicies(target: DataTypeTarget | undefined) {
+  return useQuery({
+    queryKey: ["dataTypePolicies", target],
+    queryFn: () => api.get<{ id: string; name: string }[]>(`/admin/data-types/policies?target=${target}`),
+    enabled: !!target,
   });
 }

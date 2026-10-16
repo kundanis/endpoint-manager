@@ -258,11 +258,15 @@ export type CreateDataTypeRequest = z.infer<typeof createDataTypeRequestSchema>;
 export const updateDataTypeRequestSchema = createDataTypeRequestSchema.partial();
 export type UpdateDataTypeRequest = z.infer<typeof updateDataTypeRequestSchema>;
 
-export const applyDataTypesRequestSchema = z.object({
-  target: z.enum(DATA_TYPE_TARGETS),
-  policyId: z.string().min(1),
-  dataTypeIds: z.array(z.string().min(1)).min(1).max(50),
-});
+// Either into an existing policy (policyId) or a new one created with that name (newPolicyName).
+export const applyDataTypesRequestSchema = z
+  .object({
+    target: z.enum(DATA_TYPE_TARGETS),
+    policyId: z.string().min(1).optional(),
+    newPolicyName: z.string().trim().min(1).max(200).optional(),
+    dataTypeIds: z.array(z.string().min(1)).min(1).max(50),
+  })
+  .refine((d) => !!d.policyId !== !!d.newPolicyName, { message: "Choose a policy or name a new one", path: ["policyId"] });
 export type ApplyDataTypesRequest = z.infer<typeof applyDataTypesRequestSchema>;
 
 // Normalises a custom value for its kind: ".PY" / "py" -> ".py", "https://Mail.Example.com/x" ->
