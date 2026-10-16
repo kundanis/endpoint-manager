@@ -16,6 +16,7 @@ import {
   useUpdateCommandBlockRule,
   type CommandBlockRuleInput,
 } from "../api/hooks";
+import AddFromDataTypes from "../components/AddFromDataTypes";
 import type { CommandBlockPolicyDetail, CommandBlockRuleView } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
 import {
@@ -118,6 +119,7 @@ function RulesPanel({ policy }: { policy: CommandBlockPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      <AddFromDataTypes target="commandBlock" policyId={policy.id} />
       <Alert tone="info">
         A short, hardcoded safety net (browsers, explorer.exe, and other core OS/desktop processes) can never be
         matched or killed by any rule here, regardless of type or content.

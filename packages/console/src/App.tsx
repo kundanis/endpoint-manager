@@ -19,6 +19,7 @@ import DlpPage from "./pages/DlpPage";
 import DlpContentPoliciesPage from "./pages/DlpContentPoliciesPage";
 import DataMovementPage from "./pages/DataMovementPage";
 import EpmPage from "./pages/EpmPage";
+import DataTypesPage from "./pages/DataTypesPage";
 import AppControlPage from "./pages/AppControlPage";
 import WebBlockPage from "./pages/WebBlockPage";
 import PiiBlockPage from "./pages/PiiBlockPage";
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/edr" element={<RequireModule module="SECURITY_MANAGER"><EdrPage /></RequireModule>} />
         <Route path="/software-licenses" element={<RequireModule module="SOFTWARE_MANAGER"><SoftwareLicensesPage /></RequireModule>} />
         <Route path="/network-scan" element={<RequireModule module="NETWORK_MANAGER"><NetworkScanPage /></RequireModule>} />
+        <Route path="/data-types" element={<RequireModule module="DATA_MANAGER"><DataTypesPage /></RequireModule>} />
         <Route path="/data-discovery" element={<RequireModule module="DATA_MANAGER"><DataDiscoveryPage /></RequireModule>} />
         <Route path="/dlp" element={<RequireModule module="DATA_MANAGER"><DlpPage /></RequireModule>}>
           <Route index element={<Navigate to="content-policies" replace />} />

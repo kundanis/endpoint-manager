@@ -16,6 +16,7 @@ import {
   useWebBlockPolicy,
   type WebBlockRuleInput,
 } from "../api/hooks";
+import AddFromDataTypes from "../components/AddFromDataTypes";
 import type { WebBlockPolicyDetail, WebBlockRuleView } from "../api/types";
 import {
   AssignmentEditor,
@@ -109,6 +110,7 @@ function RulesPanel({ policy }: { policy: WebBlockPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      <AddFromDataTypes target="webBlock" policyId={policy.id} />
       {policy.rules.length === 0 ? (
         <EmptyState icon={Globe} title="No blocked domains yet">
           Add a domain below. A policy with no domains never blocks anything.

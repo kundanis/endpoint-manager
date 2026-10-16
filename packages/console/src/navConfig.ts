@@ -71,6 +71,7 @@ export const NAV_MODULES: NavModule[] = [
     label: "Data Governance",
     licenseModule: "DATA_MANAGER",
     items: [
+      { path: "/data-types", label: "Data types" },
       { path: "/data-discovery", label: "Data discovery" },
       { path: "/dlp", label: "DLP" },
       { path: "/data-movement", label: "Data movement" },

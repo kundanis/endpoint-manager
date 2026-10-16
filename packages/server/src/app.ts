@@ -38,6 +38,7 @@ import { piiEmailBlockRouter } from "./routes/piiEmailBlock.routes";
 import { commandBlockRouter } from "./routes/commandBlock.routes";
 import { ipBlockRouter } from "./routes/ipBlock.routes";
 import { usbControlRouter } from "./routes/usbControl.routes";
+import { dataTypesRouter } from "./routes/dataTypes.routes";
 import { policyAccessExceptionRouter } from "./routes/policyAccessException.routes";
 import { agentSecurityRouter } from "./routes/agentSecurity.routes";
 import { userProductivityRouter } from "./routes/userProductivity.routes";
@@ -151,6 +152,7 @@ export function createApp() {
   app.use("/api/admin/command-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), commandBlockRouter);
   app.use("/api/admin/ip-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), ipBlockRouter);
   app.use("/api/admin/usb-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), usbControlRouter);
+  app.use("/api/admin/data-types", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataTypesRouter);
   app.use("/api/admin/policy-exceptions", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), policyAccessExceptionRouter);
   app.use("/api/admin/agent-security", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), agentSecurityRouter);
   app.use("/api/admin/user-productivity", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), userProductivityRouter);

@@ -5,3 +5,4 @@ export * from "./data/windowsEol";
 export * from "./data/piiPatterns";
 export * from "./data/edrRules";
 export * from "./network";
+export * from "./data/dataTypes";

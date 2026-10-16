@@ -17,6 +17,7 @@ import {
   useUpdateAppControlRule,
   type AppControlRuleInput,
 } from "../api/hooks";
+import AddFromDataTypes from "../components/AddFromDataTypes";
 import type { AppControlPolicyDetail, AppControlRuleView } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
 import {
@@ -124,6 +125,7 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      <AddFromDataTypes target="appControl" policyId={policy.id} />
       {policy.rules.length === 0 ? (
         <EmptyState icon={ListChecks} title="No rules yet">
           Add one below. A policy with no rules never blocks anything.

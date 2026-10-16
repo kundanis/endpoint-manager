@@ -16,6 +16,7 @@ import {
   useUpdateDlpRule,
   type DlpRuleInput,
 } from "../api/hooks";
+import AddFromDataTypes from "../components/AddFromDataTypes";
 import type { DlpPolicyDetail, DlpRuleView } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
 import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm, SectionHeader } from "../components/policy";
@@ -145,6 +146,7 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      <AddFromDataTypes target="dlp" policyId={policy.id} />
       {policy.rules.length === 0 ? (
         <EmptyState icon={ListChecks} title="No rules yet">
           Add one below. A policy with no rules never triggers.

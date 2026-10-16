@@ -1633,3 +1633,19 @@ model LicenseActivation {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 }
+
+// An admin-defined data type (Data Governance -> Data types): a named list of file
+// extensions, website domains, application process names or keywords that DLP/EPM policies
+// can be built from ("Add from data type"). Built-in data types live in code
+// (@em/shared data/dataTypes.ts), not here.
+model DataType {
+  id               String   @id @default(uuid())
+  name             String   @unique @db.NVarChar(200)
+  category         String?  @db.NVarChar(100)
+  description      String?  @db.NVarChar(1000)
+  kind             String   @db.NVarChar(20) // FILE_EXTENSION | DOMAIN | PROCESS_NAME | KEYWORD
+  values           String   @db.NVarChar(Max) // JSON array of strings
+  createdByAdminId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

@@ -11,6 +11,10 @@ import type {
   PiiPatternKey,
   PolicyAccessExceptionType,
   RequiredSoftwareRequest,
+  DataTypeView,
+  DataTypeTarget,
+  CreateDataTypeRequest,
+  UpdateDataTypeRequest,
   SecurityBenchmarkTargetType,
   SecurityRuleOperator,
   SecurityRuleSeverity,
@@ -3190,4 +3194,56 @@ export function useIsItemHidden(path: string): boolean {
   if (data.hiddenItemPaths.includes(path)) return true;
   const parentModule = NAV_MODULES.find((m) => m.items?.some((item) => item.path === path));
   return !!parentModule?.licenseModule && data.hiddenModuleKeys.includes(parentModule.licenseModule);
+}
+
+// ---- Data Governance -> Data types (built-in catalogue + custom lists) and "Add from data type".
+
+export function useDataTypes() {
+  return useQuery({ queryKey: ["dataTypes"], queryFn: () => api.get<DataTypeView[]>("/admin/data-types") });
+}
+
+export function useCreateDataType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateDataTypeRequest) => api.post<DataTypeView>("/admin/data-types", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dataTypes"] }),
+  });
+}
+
+export function useUpdateDataType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateDataTypeRequest & { id: string }) => api.patch<DataTypeView>(`/admin/data-types/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dataTypes"] }),
+  });
+}
+
+export function useDeleteDataType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/data-types/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dataTypes"] }),
+  });
+}
+
+// The policy query key each target page uses, so its rule list refreshes after applying.
+const DATA_TYPE_TARGET_QUERY_KEYS: Record<DataTypeTarget, string> = {
+  dlp: "dlpPolicies",
+  piiEmailBlock: "piiEmailBlockPolicies",
+  appControl: "appControlPolicies",
+  webBlock: "webBlockPolicies",
+  piiBlock: "piiBlockPolicies",
+  commandBlock: "commandBlockPolicies",
+};
+
+export function useApplyDataTypes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { target: DataTypeTarget; policyId: string; dataTypeIds: string[] }) =>
+      api.post<{ added: number; skipped: number; incompatible: string[] }>("/admin/data-types/apply", body),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target]] });
+      qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target], v.policyId] });
+    },
+  });
 }

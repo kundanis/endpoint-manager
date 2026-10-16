@@ -15,6 +15,7 @@ import {
   useUnassignPiiBlockPolicy,
   useUpdatePiiBlockPolicy,
 } from "../api/hooks";
+import AddFromDataTypes from "../components/AddFromDataTypes";
 import type { PiiBlockPolicyDetail } from "../api/types";
 import {
   AssignmentEditor,
@@ -95,6 +96,7 @@ function RulesPanel({ policy }: { policy: PiiBlockPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      <AddFromDataTypes target="piiBlock" policyId={policy.id} />
       {policy.rules.length === 0 ? (
         <EmptyState icon={IdCard} title="No PII categories yet">
           Add a category below. A policy with no categories never blocks anything.

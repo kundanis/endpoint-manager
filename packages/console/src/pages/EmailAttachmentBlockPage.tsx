@@ -14,6 +14,7 @@ import {
   useUnassignPiiEmailBlock,
   useUpdatePiiEmailBlockPolicy,
 } from "../api/hooks";
+import AddFromDataTypes from "../components/AddFromDataTypes";
 import type { PiiEmailBlockPolicyDetail } from "../api/types";
 import { NewPolicyDialog, PolicyDetail, PolicySettingsForm, SectionHeader } from "../components/policy";
 import {
@@ -93,6 +94,7 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      <AddFromDataTypes target="piiEmailBlock" policyId={policy.id} />
       {policy.rules.length === 0 ? (
         <EmptyState icon={ListChecks} title="No PII categories yet">
           Add one below. A policy with no categories never blocks anything.
