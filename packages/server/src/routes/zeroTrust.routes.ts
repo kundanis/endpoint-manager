@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { installBuiltInZeroTrustPolicy } from "../services/builtInZeroTrust";
 import {
   assignZeroTrustPolicyRequestSchema,
   createZeroTrustConditionRequestSchema,
@@ -53,6 +54,16 @@ zeroTrustRouter.post("/overrides/revoke", async (req, res, next) => {
   try {
     const payload = zeroTrustOverrideBulkRequestSchema.parse(req.body);
     res.json(await revokeOverride(payload.agentIds, payload.conditionKeys));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Adds the built-in "Baseline Device Trust" policy if it's missing, and any of its conditions
+// it lacks - never changes or removes what's already there.
+zeroTrustRouter.post("/built-in", async (_req, res, next) => {
+  try {
+    res.json(await installBuiltInZeroTrustPolicy(prisma));
   } catch (err) {
     next(err);
   }

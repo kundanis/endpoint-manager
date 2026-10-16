@@ -22,6 +22,7 @@ import {
   useZeroTrustOverridableConditionKeys,
   useZeroTrustPolicies,
   useZeroTrustPolicy,
+  useInstallBuiltInZeroTrustPolicy,
 } from "../api/hooks";
 import type { ZeroTrustPolicyDetail, ZeroTrustPolicySummary } from "../api/types";
 import { CHART_SEMANTIC } from "../chartTheme";
@@ -54,6 +55,7 @@ import {
   Toolbar,
   useConfirm,
   usePagedList,
+  useToast,
 } from "../components/ui";
 
 // Pattern A-lite (design-system/docs/PAGE_PATTERNS.md): KPI strip + per-endpoint trust table,
@@ -862,6 +864,8 @@ export default function ZeroTrustPage() {
   const updatePolicy = useUpdateZeroTrustPolicy();
   const deletePolicy = useDeleteZeroTrustPolicy();
   const confirm = useConfirm();
+  const toast = useToast();
+  const installBuiltIn = useInstallBuiltInZeroTrustPolicy();
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
@@ -911,12 +915,31 @@ export default function ZeroTrustPage() {
       title="Zero Trust"
       description={PAGE_DESCRIPTION}
       actions={
-        <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-          New policy
-        </Button>
+        <>
+          <Button icon={ShieldCheck} onClick={handleInstallBuiltIn} disabled={installBuiltIn.isPending}>
+            {installBuiltIn.isPending ? "Adding…" : "Add built-in policy"}
+          </Button>
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New policy
+          </Button>
+        </>
       }
     />
   );
+
+  function handleInstallBuiltIn() {
+    installBuiltIn.mutate(undefined, {
+      onSuccess: (r) =>
+        toast(
+          r.policyCreated
+            ? `Added "${r.name}" with ${r.conditionsAdded} conditions. Assign it to endpoints or groups to start checking them.`
+            : r.conditionsAdded > 0
+              ? `Added ${r.conditionsAdded} missing condition(s) to "${r.name}".`
+              : `"${r.name}" is already here with all its conditions.`,
+        ),
+      onError: (err) => toast((err as Error).message),
+    });
+  }
 
   if (isLoading) {
     return (

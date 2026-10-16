@@ -1240,6 +1240,16 @@ export function useRemediateAllForAgentInBenchmark() {
   });
 }
 
+// Adds the built-in Zero Trust policy (and any of its missing conditions); never changes existing ones.
+export function useInstallBuiltInZeroTrustPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ name: string; policyCreated: boolean; conditionsAdded: number }>("/admin/zero-trust/built-in", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] }),
+  });
+}
+
 export function useZeroTrustPolicies() {
   return useQuery({
     queryKey: ["zeroTrustPolicies"],
