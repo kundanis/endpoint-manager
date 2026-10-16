@@ -1,5 +1,7 @@
 const BASE = "/api";
 
+export const SESSION_ENDED_EVENT = "em:session-ended";
+
 interface RequestOptions extends RequestInit {
   json?: unknown;
 }
@@ -15,6 +17,12 @@ async function send(path: string, options: RequestOptions = {}): Promise<Respons
   });
 
   if (!res.ok) {
+    // The session ended (12-hour cookie expired, or the admin was removed): tell the app so
+    // it re-checks /auth/me and sends the user to the login page, instead of every page
+    // showing a raw "Not authenticated" error. A failed login attempt is not a session end.
+    if (res.status === 401 && path !== "/auth/login" && path !== "/auth/me") {
+      window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+    }
     let message = `Request failed (${res.status})`;
     try {
       const body = await res.json();
