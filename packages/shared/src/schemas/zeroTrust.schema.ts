@@ -83,3 +83,19 @@ export const zeroTrustOverrideBulkRequestSchema = z.object({
   conditionKeys: z.array(z.string().min(1)).min(1),
 });
 export type ZeroTrustOverrideBulkRequest = z.infer<typeof zeroTrustOverrideBulkRequestSchema>;
+
+// Required security software for a Zero Trust policy: which antivirus must be registered with
+// Windows Security Center, and which endpoint-management agent must be installed. A product
+// matches when its name contains any of `match` (case-insensitive, plain text - not a
+// pattern). null = don't check it.
+export const securityProductChoiceSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  match: z.array(z.string().trim().min(2).max(100)).min(1).max(5),
+});
+export type SecurityProductChoice = z.infer<typeof securityProductChoiceSchema>;
+
+export const requiredSoftwareRequestSchema = z.object({
+  antivirus: securityProductChoiceSchema.nullable(),
+  managementAgent: securityProductChoiceSchema.nullable(),
+});
+export type RequiredSoftwareRequest = z.infer<typeof requiredSoftwareRequestSchema>;

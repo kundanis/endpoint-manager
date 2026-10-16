@@ -10,6 +10,7 @@ import type {
   PiiEmailBlockRuleType,
   PiiPatternKey,
   PolicyAccessExceptionType,
+  RequiredSoftwareRequest,
   SecurityBenchmarkTargetType,
   SecurityRuleOperator,
   SecurityRuleSeverity,
@@ -132,6 +133,7 @@ import type {
   ZeroTrustAssignmentView,
   ZeroTrustOverridableConditionKey,
   ZeroTrustPolicyDetail,
+  SecurityProductOption,
   ZeroTrustPolicySummary,
 } from "./types";
 
@@ -1244,9 +1246,31 @@ export function useRemediateAllForAgentInBenchmark() {
 export function useInstallBuiltInZeroTrustPolicy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      api.post<{ name: string; policyCreated: boolean; conditionsAdded: number }>("/admin/zero-trust/built-in", {}),
+    mutationFn: (required: RequiredSoftwareRequest) =>
+      api.post<{ name: string; policyCreated: boolean; conditionsAdded: number }>("/admin/zero-trust/built-in", required),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] }),
+  });
+}
+
+// The antivirus / management-agent choices for Zero Trust "Required software".
+export function useSecurityProducts() {
+  return useQuery({
+    queryKey: ["zeroTrustSecurityProducts"],
+    queryFn: () =>
+      api.get<{ antivirus: SecurityProductOption[]; managementAgents: SecurityProductOption[] }>("/admin/zero-trust/security-products"),
+    staleTime: Infinity,
+  });
+}
+
+export function useSetRequiredSoftware() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, required }: { policyId: string; required: RequiredSoftwareRequest }) =>
+      api.put<ZeroTrustPolicyDetail>(`/admin/zero-trust/${policyId}/required-software`, required),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies", v.policyId] });
+    },
   });
 }
 

@@ -1,9 +1,15 @@
 import { Router } from "express";
-import { installBuiltInZeroTrustPolicy } from "../services/builtInZeroTrust";
+import {
+  ANTIVIRUS_PRODUCTS,
+  installBuiltInZeroTrustPolicy,
+  MANAGEMENT_AGENTS,
+  setRequiredSoftware,
+} from "../services/builtInZeroTrust";
 import {
   assignZeroTrustPolicyRequestSchema,
   createZeroTrustConditionRequestSchema,
   createZeroTrustPolicyRequestSchema,
+  requiredSoftwareRequestSchema,
   updateZeroTrustConditionRequestSchema,
   updateZeroTrustPolicyRequestSchema,
   zeroTrustOverrideBulkRequestSchema,
@@ -61,12 +67,19 @@ zeroTrustRouter.post("/overrides/revoke", async (req, res, next) => {
 
 // Adds the built-in "Baseline Device Trust" policy if it's missing, and any of its conditions
 // it lacks - never changes or removes what's already there.
-zeroTrustRouter.post("/built-in", async (_req, res, next) => {
+zeroTrustRouter.post("/built-in", async (req, res, next) => {
   try {
-    res.json(await installBuiltInZeroTrustPolicy(prisma));
+    // Optional: the antivirus / management agent to require (defaults: Defender, no agent check).
+    const required = req.body && Object.keys(req.body).length ? requiredSoftwareRequestSchema.parse(req.body) : undefined;
+    res.json(await installBuiltInZeroTrustPolicy(prisma, required));
   } catch (err) {
     next(err);
   }
+});
+
+// The antivirus and management-agent choices the console offers (plus "Other" - any name).
+zeroTrustRouter.get("/security-products", (_req, res) => {
+  res.json({ antivirus: ANTIVIRUS_PRODUCTS, managementAgents: MANAGEMENT_AGENTS });
 });
 
 zeroTrustRouter.post("/", async (req, res, next) => {
@@ -89,6 +102,20 @@ zeroTrustRouter.get("/", async (_req, res, next) => {
 zeroTrustRouter.get("/agents/:agentId", async (req, res, next) => {
   try {
     res.json(await getFindingsForAgent(req.params.agentId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Sets which antivirus must be registered and which management agent must be installed for
+// this policy - creates, updates or removes just those two conditions.
+zeroTrustRouter.put("/:id/required-software", async (req, res, next) => {
+  try {
+    const payload = requiredSoftwareRequestSchema.parse(req.body);
+    const existing = await getPolicy(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Policy not found" });
+    await setRequiredSoftware(prisma, req.params.id, payload);
+    res.json(await getPolicy(req.params.id));
   } catch (err) {
     next(err);
   }

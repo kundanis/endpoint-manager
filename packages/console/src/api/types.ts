@@ -748,6 +748,13 @@ export interface ZeroTrustPolicySummary {
   createdAt: string;
 }
 
+// One product in the Zero Trust required-software catalogue (GET /admin/zero-trust/security-products).
+export interface SecurityProductOption {
+  id: string;
+  label: string;
+  match: string[];
+}
+
 export interface ZeroTrustConditionView {
   id: string;
   conditionKey: string;

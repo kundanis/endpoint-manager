@@ -23,12 +23,16 @@ import {
   useZeroTrustPolicies,
   useZeroTrustPolicy,
   useInstallBuiltInZeroTrustPolicy,
+  useSecurityProducts,
+  useSetRequiredSoftware,
 } from "../api/hooks";
+import { RequiredSoftwareFields, useRequiredSoftwareState } from "../components/RequiredSoftwarePicker";
 import type { ZeroTrustPolicyDetail, ZeroTrustPolicySummary } from "../api/types";
 import { CHART_SEMANTIC } from "../chartTheme";
 import { NewPolicyDialog, PolicyDetail, PolicySettingsForm } from "../components/policy";
 import {
   Alert,
+  Modal,
   Badge,
   Button,
   Card,
@@ -858,6 +862,92 @@ function OverridePanel() {
 const PAGE_DESCRIPTION =
   'Define device-trust policies — a set of conditions checked directly on each assigned endpoint (OS/patch posture, firewall, disk encryption, required security agents, blacklisted processes). A device is "Trusted" only once every condition in the policy has been scanned and passes.';
 
+// "Add built-in policy": pick the antivirus / management agent the policy should require.
+function InstallBuiltInDialog({ onClose }: { onClose: (message?: string) => void }) {
+  const { data: catalogue, error } = useSecurityProducts();
+  const state = useRequiredSoftwareState(catalogue);
+  const install = useInstallBuiltInZeroTrustPolicy();
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!state.request || state.incomplete) return;
+    install.mutate(state.request, {
+      onSuccess: (r) =>
+        onClose(
+          r.policyCreated
+            ? `Added "${r.name}" with ${r.conditionsAdded} conditions. Assign it to endpoints or groups to start checking them.`
+            : r.conditionsAdded > 0
+              ? `Added ${r.conditionsAdded} missing condition(s) to "${r.name}". Change its required software on the policy's Required software tab.`
+              : `"${r.name}" already has all its conditions. Change its required software on the policy's Required software tab.`,
+        ),
+    });
+  }
+
+  return (
+    <Modal
+      title="Add built-in policy"
+      description="Baseline Device Trust checks OS currency, firewall, disk encryption, patching and Windows Security, plus the antivirus and management agent you choose here. You can change these later."
+      onClose={() => onClose()}
+      footer={
+        <>
+          <Button onClick={() => onClose()}>Cancel</Button>
+          <Button
+            type="submit"
+            form="zt-builtin-form"
+            variant="primary"
+            disabled={!state.request || state.incomplete || install.isPending}
+          >
+            {install.isPending ? "Adding…" : "Add policy"}
+          </Button>
+        </>
+      }
+    >
+      <form id="zt-builtin-form" className="app-stack" onSubmit={handleSubmit}>
+        {error && <Alert tone="critical">{(error as Error).message}</Alert>}
+        {catalogue ? <RequiredSoftwareFields catalogue={catalogue} state={state} /> : !error && <Skeleton lines={3} />}
+        {install.isError && <Alert tone="critical">{(install.error as Error).message}</Alert>}
+      </form>
+    </Modal>
+  );
+}
+
+// Which antivirus must be registered and which management agent must be installed, for any
+// policy. Saving creates, updates or removes just those two conditions.
+function RequiredSoftwarePanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
+  const { data: catalogue, error } = useSecurityProducts();
+  const state = useRequiredSoftwareState(catalogue, policy.conditions);
+  const save = useSetRequiredSoftware();
+  const toast = useToast();
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!state.request || state.incomplete) return;
+    save.mutate(
+      { policyId: policy.id, required: state.request },
+      { onSuccess: () => toast("Required software saved. Endpoints are re-checked on their next Zero Trust scan.") },
+    );
+  }
+
+  if (error) return <Alert tone="critical">{(error as Error).message}</Alert>;
+  if (!catalogue) return <Skeleton lines={3} />;
+
+  return (
+    <form className="app-stack" onSubmit={handleSubmit}>
+      <p className="app-text">
+        Choose the antivirus your endpoints must run and the management agent they must have installed — from the list, or
+        any other product by name. Each becomes a condition of this policy; choose “Don't check” to drop it.
+      </p>
+      <RequiredSoftwareFields catalogue={catalogue} state={state} />
+      {save.isError && <Alert tone="critical">{(save.error as Error).message}</Alert>}
+      <div className="app-actions-row">
+        <Button type="submit" variant="primary" disabled={!state.request || state.incomplete || save.isPending}>
+          {save.isPending ? "Saving…" : "Save required software"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export default function ZeroTrustPage() {
   const { data: policies, isLoading, error, refetch } = useZeroTrustPolicies();
   const createPolicy = useCreateZeroTrustPolicy();
@@ -865,7 +955,7 @@ export default function ZeroTrustPage() {
   const deletePolicy = useDeleteZeroTrustPolicy();
   const confirm = useConfirm();
   const toast = useToast();
-  const installBuiltIn = useInstallBuiltInZeroTrustPolicy();
+  const [installingBuiltIn, setInstallingBuiltIn] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
@@ -916,8 +1006,8 @@ export default function ZeroTrustPage() {
       description={PAGE_DESCRIPTION}
       actions={
         <>
-          <Button icon={ShieldCheck} onClick={handleInstallBuiltIn} disabled={installBuiltIn.isPending}>
-            {installBuiltIn.isPending ? "Adding…" : "Add built-in policy"}
+          <Button icon={ShieldCheck} onClick={() => setInstallingBuiltIn(true)}>
+            Add built-in policy
           </Button>
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
             New policy
@@ -927,19 +1017,6 @@ export default function ZeroTrustPage() {
     />
   );
 
-  function handleInstallBuiltIn() {
-    installBuiltIn.mutate(undefined, {
-      onSuccess: (r) =>
-        toast(
-          r.policyCreated
-            ? `Added "${r.name}" with ${r.conditionsAdded} conditions. Assign it to endpoints or groups to start checking them.`
-            : r.conditionsAdded > 0
-              ? `Added ${r.conditionsAdded} missing condition(s) to "${r.name}".`
-              : `"${r.name}" is already here with all its conditions.`,
-        ),
-      onError: (err) => toast((err as Error).message),
-    });
-  }
 
   if (isLoading) {
     return (
@@ -1069,6 +1146,7 @@ export default function ZeroTrustPage() {
           onClose={() => setSelectedId(undefined)}
           tabs={[
             { value: "conditions", label: `Conditions (${policy.conditions.length})`, content: <ConditionsPanel policy={policy} /> },
+            { value: "software", label: "Required software", content: <RequiredSoftwarePanel policy={policy} /> },
             { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
             { value: "settings", label: "Settings", content: <PolicySettingsPanel policy={policy} /> },
           ]}
@@ -1076,6 +1154,15 @@ export default function ZeroTrustPage() {
       )}
 
       <OverridePanel />
+
+      {installingBuiltIn && (
+        <InstallBuiltInDialog
+          onClose={(message) => {
+            setInstallingBuiltIn(false);
+            if (message) toast(message);
+          }}
+        />
+      )}
 
       {creating && (
         <NewPolicyDialog
