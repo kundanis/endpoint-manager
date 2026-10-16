@@ -337,6 +337,8 @@ model PatchDefinition {
   revisionNumber Int
   title          String         @db.NVarChar(500)
   severity       String?        @db.NVarChar(50)
+  // Microsoft's description of the update, as reported by the agent (null from older agents).
+  description    String?        @db.NVarChar(2000)
   kbArticleIds   String         @default("[]") @db.NVarChar(1000)
   categories     String         @default("[]") @db.NVarChar(1000)
   sizeBytes      BigInt?

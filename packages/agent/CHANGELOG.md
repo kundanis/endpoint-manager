@@ -6,6 +6,10 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.11
+- Patch scans now report Microsoft's description of each missing update, shown under its
+  title on the Patches page so you know why a patch is needed before dispatching it.
+
 ## 0.2.10
 - New: "Scan now" on a Zero Trust policy or security benchmark makes the endpoint re-run that
   scan at its next check-in (within about 30 seconds), instead of waiting for its regular

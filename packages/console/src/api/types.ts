@@ -400,6 +400,8 @@ export interface PatchSummaryItem {
   patchDefinitionId: string;
   updateId: string;
   title: string;
+  // Microsoft's description (null until an endpoint on agent 0.2.11+ reports the update).
+  description: string | null;
   severity: string | null;
   normalizedSeverity: NormalizedSeverity;
   kbArticleIds: string[];

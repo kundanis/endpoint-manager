@@ -6,6 +6,9 @@ export const patchDetectedUpdateSchema = z.object({
   revisionNumber: z.number().int(),
   title: z.string().max(500),
   severity: z.string().max(50).nullable(),
+  // The vendor's own description (Windows Update's IUpdate.Description). Optional: older agents
+  // and the Linux/macOS agents don't send it.
+  description: z.string().max(2000).nullable().optional(),
   kbArticleIds: z.array(z.string()),
   categories: z.array(z.string()),
   sizeBytes: z.string().nullable(), // stringified bigint over the wire, matches totalMemBytes convention

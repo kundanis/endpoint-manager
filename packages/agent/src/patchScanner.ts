@@ -25,6 +25,7 @@ foreach ($u in $result.Updates) {
     RevisionNumber = $u.Identity.RevisionNumber
     Title          = $u.Title
     Severity       = $u.MsrcSeverity
+    Description    = $u.Description
     KBArticleIDs   = $kbIds
     Categories     = $cats
     SizeBytes      = [int64]$u.MaxDownloadSize
@@ -38,6 +39,7 @@ interface RawDetectedUpdate {
   UpdateId: string;
   RevisionNumber: number;
   Title: string;
+  Description?: string | null;
   Severity: string | null;
   KBArticleIDs: string[] | string | null;
   Categories: string[] | string | null;
@@ -79,6 +81,8 @@ export async function scanForMissingPatches(): Promise<PatchScanResultPayload> {
         revisionNumber: r.RevisionNumber,
         title: r.Title,
         severity: r.Severity ?? null,
+        // Collapsed whitespace, capped to the server's column size.
+        description: r.Description ? r.Description.replace(/\s+/g, " ").trim().slice(0, 2000) || null : null,
         kbArticleIds: toArray(r.KBArticleIDs),
         categories: toArray(r.Categories),
         sizeBytes: r.SizeBytes ? String(r.SizeBytes) : null,

@@ -136,10 +136,46 @@ const SEVERITY_LABELS: Record<NormalizedSeverity, string> = {
   UNKNOWN: "Unknown",
 };
 
+// What kind of update this is, from Windows Update's categories - shown when Microsoft gives no
+// severity rating (common for cumulative, .NET Framework, definition and tool updates), and as
+// the short explanation until an endpoint reports Microsoft's own description.
+function patchKind(categories: string[], title: string): { label: string; explanation: string } {
+  const has = (c: string) => categories.some((x) => x.toLowerCase() === c);
+  if (/malicious software removal tool/i.test(title))
+    return { label: "Malware removal tool", explanation: "Microsoft's monthly tool that finds and removes widespread malware." };
+  if (has("definition updates"))
+    return { label: "Definition update", explanation: "New detection signatures so Microsoft Defender recognises the latest threats." };
+  if (has("security updates"))
+    return { label: "Security update", explanation: "Fixes security vulnerabilities that attackers could exploit." };
+  if (has("critical updates")) return { label: "Critical update", explanation: "Fixes a serious, non-security problem." };
+  if (has("update rollups")) return { label: "Update rollup", explanation: "Several fixes released together." };
+  if (has("feature packs") || has("upgrades")) return { label: "Feature update", explanation: "Adds or changes features." };
+  if (has("drivers")) return { label: "Driver update", explanation: "Updates a hardware driver." };
+  return { label: "Update", explanation: "Fixes and improvements from the vendor." };
+}
+
+// Microsoft's support article for a KB number.
+function kbUrl(kb: string): string {
+  return `https://support.microsoft.com/help/${kb.replace(/^KB/i, "")}`;
+}
+
 // The fixed severity word as the badge; the vendor's own wording ("Important") follows when
-// it says something different.
-function PatchSeverity({ severity, normalized }: { severity: string | null; normalized: NormalizedSeverity }) {
-  if (!severity) return <span className="app-muted">—</span>;
+// it says something different. Unrated updates say what kind of update they are instead.
+function PatchSeverity({
+  severity,
+  normalized,
+  kind,
+}: {
+  severity: string | null;
+  normalized: NormalizedSeverity;
+  kind?: string;
+}) {
+  if (!severity)
+    return (
+      <span className="app-muted" title="Microsoft publishes no severity rating for this update">
+        Not rated{kind ? ` · ${kind}` : ""}
+      </span>
+    );
   const label = SEVERITY_LABELS[normalized];
   return (
     <>
@@ -488,11 +524,35 @@ export default function PatchesPage() {
                               aria-label={`Add ${item.title} to the deployment`}
                             />
                           </td>
-                          <td>{item.title}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>
-                            <PatchSeverity severity={item.severity} normalized={item.normalizedSeverity} />
+                          <td>
+                            <div className="app-stack-sm">
+                              <span>{item.title}</span>
+                              <span className="ep-hint app-clamp-2" title={item.description ?? undefined}>
+                                {item.description ?? patchKind(item.categories, item.title).explanation}
+                              </span>
+                            </div>
                           </td>
-                          <td className="ep-mono">{item.kbArticleIds.join(", ") || <span className="app-muted">—</span>}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            <PatchSeverity
+                              severity={item.severity}
+                              normalized={item.normalizedSeverity}
+                              kind={patchKind(item.categories, item.title).label}
+                            />
+                          </td>
+                          <td className="ep-mono">
+                            {item.kbArticleIds.length === 0 ? (
+                              <span className="app-muted">—</span>
+                            ) : (
+                              item.kbArticleIds.map((kb, i) => (
+                                <Fragment key={kb}>
+                                  {i > 0 && ", "}
+                                  <a className="ep-link" href={kbUrl(kb)} target="_blank" rel="noreferrer" title="Microsoft's article about this update">
+                                    {kb.toUpperCase().startsWith("KB") ? kb : `KB${kb}`}
+                                  </a>
+                                </Fragment>
+                              ))
+                            )}
+                          </td>
                           <td className="ep-num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                             {formatBytes(item.sizeBytes)}
                           </td>
