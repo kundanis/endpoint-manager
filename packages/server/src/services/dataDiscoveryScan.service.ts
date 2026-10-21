@@ -1,6 +1,8 @@
 import type { AssignedDataDiscoveryPolicyWire, DataDiscoveryRegulation, DataDiscoveryScanResultPayload } from "@em/shared";
 import { prisma } from "../db";
 import { isAgentPaused } from "./pause.service";
+import { resolveDiscoveryDataTypes } from "./dataDiscoveryPolicy.service";
+import { listDataTypes } from "./dataTypes.service";
 
 export async function resolveAssignedPoliciesForAgent(agentId: string): Promise<AssignedDataDiscoveryPolicyWire[]> {
   if (await isAgentPaused(agentId)) return [];
@@ -18,11 +20,20 @@ export async function resolveAssignedPoliciesForAgent(agentId: string): Promise<
   // A paused policy (enabled: false) is skipped entirely, same semantics as Zero Trust.
   const policies = await prisma.dataDiscoveryPolicy.findMany({ where: { id: { in: policyIds }, enabled: true } });
 
-  return policies.map((p) => ({
-    policyId: p.id,
-    targetPaths: JSON.parse(p.targetPaths) as string[],
-    regulation: p.regulation as DataDiscoveryRegulation,
-  }));
+  const dataTypes = policies.some((p) => p.dataTypeIds) ? await listDataTypes() : [];
+  return policies.map((p) => {
+    const wire: AssignedDataDiscoveryPolicyWire = {
+      policyId: p.id,
+      targetPaths: JSON.parse(p.targetPaths) as string[],
+      regulation: p.regulation as DataDiscoveryRegulation,
+    };
+    if (p.dataTypeIds) {
+      const { patternKeys, keywordGroups } = resolveDiscoveryDataTypes(JSON.parse(p.dataTypeIds) as string[], dataTypes);
+      wire.patternKeys = patternKeys;
+      wire.keywordGroups = keywordGroups;
+    }
+    return wire;
+  });
 }
 
 // Unlike Security Config/Zero Trust's grade-on-ingestion (a fixed rule set, upserted by

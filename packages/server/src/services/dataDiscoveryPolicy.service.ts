@@ -1,13 +1,77 @@
 import type {
   AssignDataDiscoveryPolicyRequest,
   CreateDataDiscoveryPolicyRequest,
+  DataDiscoveryKeywordGroup,
   DataDiscoveryRegulation,
+  DataTypeView,
   UpdateDataDiscoveryPolicyRequest,
 } from "@em/shared";
-import { getPiiPatternLabel } from "@em/shared";
+import { getPiiPatternLabel, PII_PATTERN_CATALOG } from "@em/shared";
 import { prisma } from "../db";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
+import { listDataTypes } from "./dataTypes.service";
+
+export class DataDiscoveryPolicyError extends Error {}
+
+// Data types a discovery scan can look for inside files: personal data patterns and keywords.
+export function isDiscoverableDataType(d: Pick<DataTypeView, "kind">): boolean {
+  return d.kind === "PII_PATTERN" || d.kind === "KEYWORD";
+}
+
+// What the agent looks for, from the policy's chosen data types. Ids of data types deleted since
+// are skipped.
+export function resolveDiscoveryDataTypes(ids: string[], all: DataTypeView[]) {
+  const chosen = ids.map((id) => all.find((d) => d.id === id)).filter((d): d is DataTypeView => !!d && isDiscoverableDataType(d));
+  const patternKeys = [...new Set(chosen.filter((d) => d.kind === "PII_PATTERN").flatMap((d) => d.values))];
+  const keywordGroups: DataDiscoveryKeywordGroup[] = chosen
+    .filter((d) => d.kind === "KEYWORD")
+    .map((d) => ({ key: d.id, keywords: d.values }));
+  return { chosen, patternKeys, keywordGroups };
+}
+
+// The closest regulation to a set of patterns - stored for agents older than 0.2.12, which
+// only understand regulation.
+function legacyRegulationFor(patternKeys: string[]): DataDiscoveryRegulation {
+  const inAll = (reg: "DPDP" | "GDPR") =>
+    patternKeys.length > 0 && patternKeys.every((k) => PII_PATTERN_CATALOG.find((p) => p.key === k)?.regulations.includes(reg));
+  if (inAll("DPDP")) return "DPDP";
+  if (inAll("GDPR")) return "GDPR";
+  return "BOTH";
+}
+
+async function validatedDataTypeIds(ids: string[]): Promise<{ ids: string[]; regulation: DataDiscoveryRegulation }> {
+  const unique = [...new Set(ids)];
+  const all = await listDataTypes();
+  for (const id of unique) {
+    const d = all.find((x) => x.id === id);
+    if (!d) throw new DataDiscoveryPolicyError("One of the selected data categories no longer exists.");
+    if (!isDiscoverableDataType(d)) throw new DataDiscoveryPolicyError(`"${d.name}" can't be searched for inside files.`);
+  }
+  return { ids: unique, regulation: legacyRegulationFor(resolveDiscoveryDataTypes(unique, all).patternKeys) };
+}
+
+function toPolicyView(
+  p: { id: string; name: string; description: string | null; regulation: string; dataTypeIds: string | null; targetPaths: string; enabled: boolean; createdAt: Date },
+  all: DataTypeView[],
+  assignedAgentCount: number,
+  filesWithFindingsCount: number,
+) {
+  const dataTypeIds = p.dataTypeIds ? (JSON.parse(p.dataTypeIds) as string[]) : null;
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    regulation: p.regulation as DataDiscoveryRegulation,
+    dataTypeIds,
+    dataTypeNames: dataTypeIds ? resolveDiscoveryDataTypes(dataTypeIds, all).chosen.map((d) => d.name) : null,
+    targetPaths: JSON.parse(p.targetPaths) as string[],
+    enabled: p.enabled,
+    assignedAgentCount,
+    filesWithFindingsCount,
+    createdAt: p.createdAt.toISOString(),
+  };
+}
 
 async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<string[]> {
   const assignments = await prisma.dataDiscoveryPolicyAssignment.findMany({ where: { policyId } });
@@ -17,11 +81,14 @@ async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<strin
 }
 
 export async function createPolicy(params: CreateDataDiscoveryPolicyRequest, createdByAdminId: string) {
+  if (!params.dataTypeIds && !params.regulation) throw new DataDiscoveryPolicyError("Choose at least one data category.");
+  const fromTypes = params.dataTypeIds ? await validatedDataTypeIds(params.dataTypeIds) : null;
   const policy = await prisma.dataDiscoveryPolicy.create({
     data: {
       name: params.name,
       description: params.description ?? null,
-      regulation: params.regulation,
+      regulation: fromTypes?.regulation ?? params.regulation!,
+      dataTypeIds: fromTypes ? JSON.stringify(fromTypes.ids) : null,
       targetPaths: JSON.stringify(params.targetPaths),
       enabled: params.enabled,
       createdByAdminId,
@@ -36,20 +103,11 @@ export async function listPolicies() {
     include: { findings: { select: { id: true } } },
   });
 
+  const all = await listDataTypes();
   return Promise.all(
     policies.map(async (p) => {
       const assignedAgentIds = await resolveAssignedAgentIdsForPolicy(p.id);
-      return {
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        regulation: p.regulation as DataDiscoveryRegulation,
-        targetPaths: JSON.parse(p.targetPaths) as string[],
-        enabled: p.enabled,
-        assignedAgentCount: assignedAgentIds.length,
-        filesWithFindingsCount: p.findings.length,
-        createdAt: p.createdAt.toISOString(),
-      };
+      return toPolicyView(p, all, assignedAgentIds.length, p.findings.length);
     }),
   );
 }
@@ -59,26 +117,18 @@ export async function getPolicy(id: string) {
   if (!policy) return null;
 
   const assignedAgentIds = await resolveAssignedAgentIdsForPolicy(id);
-  return {
-    id: policy.id,
-    name: policy.name,
-    description: policy.description,
-    regulation: policy.regulation as DataDiscoveryRegulation,
-    targetPaths: JSON.parse(policy.targetPaths) as string[],
-    enabled: policy.enabled,
-    assignedAgentCount: assignedAgentIds.length,
-    filesWithFindingsCount: policy.findings.length,
-    createdAt: policy.createdAt.toISOString(),
-  };
+  return toPolicyView(policy, await listDataTypes(), assignedAgentIds.length, policy.findings.length);
 }
 
 export async function updatePolicy(id: string, params: UpdateDataDiscoveryPolicyRequest) {
+  const fromTypes = params.dataTypeIds ? await validatedDataTypeIds(params.dataTypeIds) : null;
   await prisma.dataDiscoveryPolicy.update({
     where: { id },
     data: {
       name: params.name,
       description: params.description,
-      regulation: params.regulation,
+      regulation: fromTypes?.regulation ?? params.regulation,
+      dataTypeIds: fromTypes ? JSON.stringify(fromTypes.ids) : undefined,
       targetPaths: params.targetPaths ? JSON.stringify(params.targetPaths) : undefined,
       enabled: params.enabled,
     },
@@ -197,6 +247,8 @@ export async function getFindingsForAgent(agentId: string) {
     orderBy: [{ lastSeenAt: "desc" }],
   });
 
+  // Keyword matches are reported under their data type's id.
+  const dataTypeNames = new Map((await listDataTypes()).map((d) => [d.id, d.name]));
   return findings.map((f) => {
     const matchedPatternKeys = JSON.parse(f.matchedPatternKeys) as string[];
     const matchCounts = JSON.parse(f.matchCounts) as Record<string, number>;
@@ -209,7 +261,7 @@ export async function getFindingsForAgent(agentId: string) {
       fileSizeBytes: f.fileSizeBytes.toString(),
       fileModifiedAt: f.fileModifiedAt.toISOString(),
       matches: matchedPatternKeys.map((k) => ({
-        label: getPiiPatternLabel(k),
+        label: dataTypeNames.get(k) ?? getPiiPatternLabel(k),
         count: matchCounts[k] ?? 0,
         samples: maskedSamples[k] ?? [],
       })),

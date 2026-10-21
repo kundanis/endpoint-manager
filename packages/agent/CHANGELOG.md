@@ -6,6 +6,14 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.12
+- Data discovery scans look for the data categories chosen on the policy (from Data types), including
+  keyword lists such as "Confidentiality markers", instead of a fixed DPDP / GDPR pattern set.
+- New: DLP screen capture monitoring. Screenshots saved by Windows, Snipping Tool, Game Bar, ShareX or
+  admin-chosen folders are recorded the moment they appear (deleting them afterwards doesn't hide
+  them), along with deletions and - through Windows file-access auditing - the programs that opened
+  them. Only metadata is reported, never the image.
+
 ## 0.2.11
 - Patch scans now report Microsoft's description of each missing update, shown under its
   title on the Patches page so you know why a patch is needed before dispatching it.

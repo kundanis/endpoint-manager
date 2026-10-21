@@ -153,6 +153,8 @@ model Agent {
   dlpAssignments DlpPolicyAssignment[]
   dataMovementEvents      DataMovementEvent[]
   dataMovementAssignments DataMovementPolicyAssignment[]
+  screenCaptureEvents      ScreenCaptureEvent[]
+  screenCaptureAssignments ScreenCapturePolicyAssignment[]
   appControlEvents      AppControlEvent[]
   appControlAssignments AppControlPolicyAssignment[]
   webBlockAssignments   WebBlockPolicyAssignment[]
@@ -505,6 +507,7 @@ model AssetGroup {
   piiBlockAssignments   PiiBlockPolicyAssignment[]
   commandBlockAssignments CommandBlockPolicyAssignment[]
   dataMovementAssignments DataMovementPolicyAssignment[]
+  screenCaptureAssignments ScreenCapturePolicyAssignment[]
   ipBlockAssignments IpBlockPolicyAssignment[]
   usbControlAssignments UsbControlPolicyAssignment[]
   enrollmentTokens   EnrollmentToken[]
@@ -830,6 +833,7 @@ model DataDiscoveryPolicy {
   name             String                          @db.NVarChar(200)
   description      String?                         @db.NVarChar(1000)
   regulation       String                          @db.NVarChar(10) // DPDP | GDPR | BOTH
+  dataTypeIds      String?                         @db.NVarChar(Max) // JSON data type ids; null = scan by regulation (older policies)
   targetPaths      String                          @db.NVarChar(Max) // JSON string array; env vars expanded agent-side
   enabled          Boolean                         @default(true)
   createdByAdminId String?
@@ -1050,6 +1054,63 @@ model DataMovementEvent {
   @@unique([agentId, policyId, filePath, channel, fileModifiedAt])
   @@index([agentId])
   @@index([policyId])
+}
+
+// DLP -> Screen capture monitoring. The agent watches the folders screenshots land in
+// (Windows / Snipping Tool / Game Bar / ShareX / admin-added folders) for every user, records
+// each new capture as it appears, and later its deletion and the programs that opened it
+// (Windows file-access auditing). Only metadata is stored - never the image.
+model ScreenCapturePolicy {
+  id                  String                          @id @default(uuid())
+  name                String                          @db.NVarChar(200)
+  description         String?                         @db.NVarChar(1000)
+  dailyThreshold      Int                             @default(10) // flag a user taking more than this many in a day
+  quickDeleteMinutes  Int                             @default(10) // flag captures deleted within this many minutes
+  monitorWindows      Boolean                         @default(true)
+  monitorSnippingTool Boolean                         @default(true)
+  monitorGameBar      Boolean                         @default(true)
+  monitorThirdParty   Boolean                         @default(true)
+  extraPaths          String                          @default("[]") @db.NVarChar(Max) // JSON; %USERPROFILE% etc. expanded per user
+  trackOpenedBy       Boolean                         @default(true)
+  enabled             Boolean                         @default(true)
+  createdByAdminId    String?
+  createdAt           DateTime                        @default(now())
+  assignments         ScreenCapturePolicyAssignment[]
+}
+
+// agentId or groupId is set, never both - same standing-assignment shape as every other module.
+model ScreenCapturePolicyAssignment {
+  id        String              @id @default(uuid())
+  policyId  String
+  policy    ScreenCapturePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime            @default(now())
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// One row per screenshot, per endpoint - not per policy: each policy's report counts the
+// captures of its assigned endpoints from the sources it monitors, against its own threshold.
+model ScreenCaptureEvent {
+  id            String    @id @default(uuid())
+  agentId       String
+  agent         Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  username      String    @db.NVarChar(200)
+  source        String    @db.NVarChar(20) // WINDOWS | SNIPPING_TOOL | GAME_BAR | THIRD_PARTY | CUSTOM
+  filePath      String    @db.NVarChar(1000)
+  fileSizeBytes BigInt
+  capturedAt    DateTime
+  captureDay    String    @db.NVarChar(10) // YYYY-MM-DD in the endpoint's own time zone
+  deletedAt     DateTime?
+  openedBy      String    @default("[]") @db.NVarChar(2000) // JSON [{ process, at }]
+  detectedAt    DateTime  @default(now())
+
+  @@unique([agentId, filePath, capturedAt])
+  @@index([agentId, captureDay])
 }
 
 // User Productivity — passive session/idle tracking, not policy-gated (every enrolled

@@ -1,5 +1,6 @@
 import {
   BUILT_IN_DATA_TYPES,
+  getPiiPatternLabel,
   DATA_TYPE_RULE_TYPES,
   normalizeDataTypeValue,
   targetsForDataType,
@@ -57,6 +58,7 @@ export async function listDataTypes(): Promise<DataTypeView[]> {
     values: d.values,
     builtIn: true,
     targets: targetsForDataType(d),
+    ...(d.kind === "PII_PATTERN" ? { valueLabels: Object.fromEntries(d.values.map((v) => [v, getPiiPatternLabel(v)])) } : {}),
   }));
   return [...builtIn, ...custom.map(toView)];
 }
@@ -170,8 +172,9 @@ interface PolicyDelegate {
   findUnique(args: { where: { id: string }; select: { id: true } }): Promise<{ id: string } | null>;
 }
 
-// Adds every value of the chosen data types to the policy as rules of the matching type,
-// skipping values the policy already has (so applying twice adds nothing). Each rule's label
+// Adds the values of the chosen data types (every value, or only params.values when the admin
+// picked some) to the policy as rules of the matching type, skipping values the policy already
+// has (so applying twice adds nothing). Each rule's label
 // is the data type's name, so the policy shows where a rule came from.
 export async function applyDataTypes(
   params: ApplyDataTypesRequest,
@@ -180,13 +183,18 @@ export async function applyDataTypes(
 ): Promise<{ added: number; skipped: number; incompatible: string[]; policyId: string }> {
   const tables = TARGET_TABLES[params.target];
   const db = deps.db ?? (prisma as unknown as Record<string, RuleDelegate & PolicyDelegate>);
-  const policyId = params.policyId ?? (await createTargetPolicy(params.target, params.newPolicyName!, deps.adminId ?? ""));
-  const policy = await db[tables.policy].findUnique({ where: { id: policyId }, select: { id: true } });
-  if (!policy) throw new DataTypeError("Policy not found.");
 
   const all = deps.dataTypes ?? (await listDataTypes());
   const chosen = params.dataTypeIds.map((id) => all.find((d) => d.id === id));
   if (chosen.some((d) => !d)) throw new DataTypeError("One of the chosen data types no longer exists.");
+  const picked = params.values ? new Set(params.values.map((v) => v.toLowerCase())) : null;
+  if (picked && !(chosen as DataTypeView[]).some((dt) => dt.values.some((v) => picked.has(v.toLowerCase())))) {
+    throw new DataTypeError("None of the selected values belong to the chosen data types.");
+  }
+
+  const policyId = params.policyId ?? (await createTargetPolicy(params.target, params.newPolicyName!, deps.adminId ?? ""));
+  const policy = await db[tables.policy].findUnique({ where: { id: policyId }, select: { id: true } });
+  if (!policy) throw new DataTypeError("Policy not found.");
 
   const existing = await db[tables.rule].findMany({ where: { policyId }, select: { ruleType: true, value: true } });
   const have = new Set(existing.map((r) => `${r.ruleType}|${r.value.toLowerCase()}`));
@@ -201,6 +209,7 @@ export async function applyDataTypes(
       continue;
     }
     for (const value of dt.values) {
+      if (picked && !picked.has(value.toLowerCase())) continue;
       const key = `${ruleType}|${value.toLowerCase()}`;
       if (have.has(key)) {
         skipped++;

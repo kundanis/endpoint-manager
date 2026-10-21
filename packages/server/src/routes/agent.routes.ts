@@ -8,6 +8,7 @@ import {
   commandTaskResultPayloadSchema,
   dataDiscoveryScanResultPayloadSchema,
   dataMovementScanResultPayloadSchema,
+  screenCaptureReportPayloadSchema,
   deploymentStatusPayloadSchema,
   dlpEventBatchPayloadSchema,
   edrScanResultPayloadSchema,
@@ -51,6 +52,7 @@ import {
   recordScanResult as recordDataMovementScanResult,
   resolveAssignedPoliciesForAgent as resolveAssignedDataMovementPoliciesForAgent,
 } from "../services/dataMovementEvent.service";
+import { recordReport as recordScreenCaptureReport, resolveAssignedForAgent as resolveScreenCaptureForAgent } from "../services/screenCaptureEvent.service";
 import {
   recordScanResult as recordAppControlScanResult,
   resolveAssignedRulesForAgent as resolveAssignedAppControlRulesForAgent,
@@ -322,6 +324,24 @@ agentRouter.post("/data-movement/scan-result", async (req, res, next) => {
   try {
     const payload = dataMovementScanResultPayloadSchema.parse(req.body);
     await recordDataMovementScanResult(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.get("/screen-capture/assigned", async (req, res, next) => {
+  try {
+    res.json(await resolveScreenCaptureForAgent(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/screen-capture/report", async (req, res, next) => {
+  try {
+    const payload = screenCaptureReportPayloadSchema.parse(req.body);
+    await recordScreenCaptureReport(req.agentId!, payload);
     res.status(204).send();
   } catch (err) {
     next(err);

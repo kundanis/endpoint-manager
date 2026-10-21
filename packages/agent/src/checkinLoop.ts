@@ -24,6 +24,7 @@ import { runSecurityConfigScan } from "./securityConfigScanner";
 import { runZeroTrustScan } from "./zeroTrustScanner";
 import { runDataDiscoveryScan } from "./dataDiscoveryScanner";
 import { runDataMovementScan } from "./dataMovementScanner";
+import { startScreenCaptureMonitor } from "./screenCaptureMonitor";
 import { flushDlpEvents, syncDlpPolicy } from "./dlpBridge";
 import { runAppControlScan } from "./appControlEnforcer";
 import { runWebBlockScan } from "./webBlockEnforcer";
@@ -356,6 +357,7 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   setInterval(sendDataDiscoveryScan, agentConfig.dataDiscoveryScanIntervalMs);
   void sendDataMovementScan();
   setInterval(sendDataMovementScan, agentConfig.dataMovementScanIntervalMs);
+  startScreenCaptureMonitor(client);
   void syncDlp();
   setInterval(syncDlp, agentConfig.dlpPolicySyncIntervalMs);
   void flushDlp();

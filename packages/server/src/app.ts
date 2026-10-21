@@ -31,6 +31,7 @@ import { zeroTrustRouter } from "./routes/zeroTrust.routes";
 import { dataDiscoveryRouter } from "./routes/dataDiscovery.routes";
 import { dlpRouter } from "./routes/dlp.routes";
 import { dataMovementRouter } from "./routes/dataMovement.routes";
+import { screenCaptureRouter } from "./routes/screenCapture.routes";
 import { appControlRouter } from "./routes/appControl.routes";
 import { webBlockRouter } from "./routes/webBlock.routes";
 import { piiBlockRouter } from "./routes/piiBlock.routes";
@@ -145,6 +146,7 @@ export function createApp() {
   app.use("/api/admin/data-discovery", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataDiscoveryRouter);
   app.use("/api/admin/dlp", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dlpRouter);
   app.use("/api/admin/data-movement", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataMovementRouter);
+  app.use("/api/admin/screen-capture", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), screenCaptureRouter);
   app.use("/api/admin/app-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), appControlRouter);
   app.use("/api/admin/web-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), webBlockRouter);
   app.use("/api/admin/pii-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), piiBlockRouter);

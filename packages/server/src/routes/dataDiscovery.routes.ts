@@ -3,6 +3,7 @@ import { assignDataDiscoveryPolicyRequestSchema, createDataDiscoveryPolicyReques
 import {
   assignPolicy,
   createPolicy,
+  DataDiscoveryPolicyError,
   deletePolicy,
   getFindingsForAgent,
   getPolicy,
@@ -23,6 +24,7 @@ dataDiscoveryRouter.post("/", async (req, res, next) => {
     const payload = createDataDiscoveryPolicyRequestSchema.parse(req.body);
     res.status(201).json(await createPolicy(payload, req.adminId!));
   } catch (err) {
+    if (err instanceof DataDiscoveryPolicyError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -58,6 +60,7 @@ dataDiscoveryRouter.patch("/:id", async (req, res, next) => {
     const payload = updateDataDiscoveryPolicyRequestSchema.parse(req.body);
     res.json(await updatePolicy(req.params.id, payload));
   } catch (err) {
+    if (err instanceof DataDiscoveryPolicyError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });

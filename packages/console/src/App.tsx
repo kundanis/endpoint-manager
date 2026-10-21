@@ -17,6 +17,7 @@ import ZeroTrustPage from "./pages/ZeroTrustPage";
 import DataDiscoveryPage from "./pages/DataDiscoveryPage";
 import DlpPage from "./pages/DlpPage";
 import DlpContentPoliciesPage from "./pages/DlpContentPoliciesPage";
+import ScreenCapturePage from "./pages/ScreenCapturePage";
 import DataMovementPage from "./pages/DataMovementPage";
 import EpmPage from "./pages/EpmPage";
 import DataTypesPage from "./pages/DataTypesPage";
@@ -70,6 +71,7 @@ export default function App() {
           <Route index element={<Navigate to="content-policies" replace />} />
           <Route path="content-policies" element={<DlpContentPoliciesPage />} />
           <Route path="email-attachment-block" element={<EmailAttachmentBlockPage />} />
+          <Route path="screen-capture" element={<ScreenCapturePage />} />
         </Route>
         <Route path="/data-movement" element={<RequireModule module="DATA_MANAGER"><DataMovementPage /></RequireModule>} />
         <Route path="/epm" element={<RequireModule module="DATA_MANAGER"><EpmPage /></RequireModule>}>

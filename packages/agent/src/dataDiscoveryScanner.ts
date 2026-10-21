@@ -4,6 +4,7 @@ import type { AxiosInstance } from "axios";
 import type {
   AssignedDataDiscoveryPolicyWire,
   DataDiscoveryFileFinding,
+  DataDiscoveryKeywordGroup,
   DataDiscoveryScanResultPayload,
   PiiPatternDefinition,
 } from "@em/shared";
@@ -14,6 +15,7 @@ import {
   DATA_DISCOVERY_MAX_SAMPLES_PER_PATTERN,
   DATA_DISCOVERY_MAX_SCAN_DEPTH,
   getPatternsForRegulation,
+  PII_PATTERN_CATALOG,
 } from "@em/shared";
 import { extractOoxmlText, OOXML_EXTENSIONS } from "./ooxmlText";
 import { listUserProfiles, resolveTargetPath } from "./userPaths";
@@ -22,6 +24,36 @@ import { listUserProfiles, resolveTargetPath } from "./userPaths";
 // stale-finding cleanup sends every reported path as a query parameter, under SQL
 // Server's 2100 cap) — over that, the whole report would be rejected, so trim instead.
 const MAX_FINDINGS_PER_REPORT = 1000;
+
+// Keyword matches aren't personal data themselves, so the matched words are shown as-is; a few
+// per file are enough.
+const MAX_KEYWORD_SAMPLES = 3;
+
+// The server stores a finding's matched keys, counts and samples as JSON in columns of 500, 1000
+// and 2000 characters - a file matching many categories keeps as many as fit.
+const MAX_KEYS_JSON = 480;
+const MAX_COUNTS_JSON = 980;
+const MAX_SAMPLES_JSON = 1950;
+
+interface KeywordMatcher {
+  key: string;
+  regex: RegExp;
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// One case-insensitive regex per keyword data type. Whole words only where the keyword starts or
+// ends with a letter/digit, so "Restricted" doesn't fire inside "Unrestricted".
+function keywordMatcher(group: DataDiscoveryKeywordGroup): KeywordMatcher | null {
+  const parts = group.keywords
+    .map((k) => k.trim())
+    .filter(Boolean)
+    .map((k) => `${/^\w/.test(k) ? "\\b" : ""}${escapeRegex(k)}${/\w$/.test(k) ? "\\b" : ""}`);
+  if (parts.length === 0) return null;
+  return { key: group.key, regex: new RegExp(parts.join("|"), "gi") };
+}
 
 // Masks a matched value down to a preview — enough to confirm a real match (and spot
 // an obvious false positive) without the full sensitive value ever leaving the
@@ -123,7 +155,7 @@ async function collectFiles(root: string, maxFiles: number): Promise<string[]> {
 // Returns match *counts* plus a capped handful of masked previews per pattern type —
 // never the raw matched substrings themselves, so the unmasked personal data this
 // scan finds is never what leaves the endpoint.
-async function scanFile(filePath: string, patterns: PiiPatternDefinition[]): Promise<DataDiscoveryFileFinding | null> {
+async function scanFile(filePath: string, patterns: PiiPatternDefinition[], keywords: KeywordMatcher[]): Promise<DataDiscoveryFileFinding | null> {
   let stat;
   try {
     stat = await fs.stat(filePath);
@@ -158,7 +190,27 @@ async function scanFile(filePath: string, patterns: PiiPatternDefinition[]): Pro
     }
   }
 
-  const matchedPatternKeys = Object.keys(matchCounts);
+  for (const k of keywords) {
+    const found = content.match(k.regex) ?? [];
+    if (found.length > 0) {
+      matchCounts[k.key] = found.length;
+      maskedSamples[k.key] = [...new Set(found.map((m) => m.slice(0, 200)))].slice(0, MAX_KEYWORD_SAMPLES);
+    }
+  }
+
+  const matchedPatternKeys: string[] = [];
+  const keptCounts: Record<string, number> = {};
+  const keptSamples: Record<string, string[]> = {};
+  for (const key of Object.keys(matchCounts)) {
+    const keys = [...matchedPatternKeys, key];
+    const counts = { ...keptCounts, [key]: matchCounts[key] };
+    const samples = { ...keptSamples, [key]: maskedSamples[key] ?? [] };
+    if (JSON.stringify(keys).length > MAX_KEYS_JSON || JSON.stringify(counts).length > MAX_COUNTS_JSON) break;
+    if (JSON.stringify(samples).length > MAX_SAMPLES_JSON) samples[key] = [];
+    matchedPatternKeys.push(key);
+    keptCounts[key] = matchCounts[key];
+    keptSamples[key] = samples[key];
+  }
   if (matchedPatternKeys.length === 0) return null;
 
   return {
@@ -166,8 +218,8 @@ async function scanFile(filePath: string, patterns: PiiPatternDefinition[]): Pro
     fileSizeBytes: stat.size,
     fileModifiedAt: stat.mtime.toISOString(),
     matchedPatternKeys,
-    matchCounts,
-    maskedSamples,
+    matchCounts: keptCounts,
+    maskedSamples: keptSamples,
   };
 }
 
@@ -188,7 +240,11 @@ export async function runDataDiscoveryScan(client: AxiosInstance): Promise<void>
 
   for (const policy of assigned) {
     try {
-      const patterns = getPatternsForRegulation(policy.regulation);
+      // Policies built from data categories list exactly what to look for; older ones go by regulation.
+      const patterns = policy.patternKeys
+        ? PII_PATTERN_CATALOG.filter((p) => policy.patternKeys!.includes(p.key))
+        : getPatternsForRegulation(policy.regulation);
+      const keywords = (policy.keywordGroups ?? []).map(keywordMatcher).filter((k): k is KeywordMatcher => k !== null);
       const findings: DataDiscoveryFileFinding[] = [];
       let filesScanned = 0;
       const unresolvedPaths: string[] = [];
@@ -202,7 +258,7 @@ export async function runDataDiscoveryScan(client: AxiosInstance): Promise<void>
           const files = await collectFiles(root, DATA_DISCOVERY_MAX_FILES_PER_SCAN - filesScanned);
           for (const file of files) {
             filesScanned++;
-            const finding = await scanFile(file, patterns);
+            const finding = await scanFile(file, patterns, keywords);
             if (finding) findings.push(finding);
           }
         }

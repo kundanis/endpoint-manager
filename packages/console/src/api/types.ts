@@ -854,6 +854,9 @@ export interface DataDiscoveryPolicySummary {
   name: string;
   description: string | null;
   regulation: DataDiscoveryRegulation;
+  // Data categories (data type ids) the policy looks for; null on older, regulation-based policies.
+  dataTypeIds: string[] | null;
+  dataTypeNames: string[] | null;
   targetPaths: string[];
   enabled: boolean;
   assignedAgentCount: number;
@@ -1534,4 +1537,65 @@ export interface EdrAgentSummaryView {
   quarantined: boolean;
   eventCount: number;
   lastDetectedAt: string | null;
+}
+
+// ---- DLP -> Screen capture monitoring
+
+export type ScreenCaptureSourceKey = "WINDOWS" | "SNIPPING_TOOL" | "GAME_BAR" | "THIRD_PARTY" | "CUSTOM";
+
+export interface ScreenCapturePolicyDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  dailyThreshold: number;
+  quickDeleteMinutes: number;
+  monitorWindows: boolean;
+  monitorSnippingTool: boolean;
+  monitorGameBar: boolean;
+  monitorThirdParty: boolean;
+  extraPaths: string[];
+  trackOpenedBy: boolean;
+  enabled: boolean;
+  assignedAgentCount: number;
+  flaggedUsers7d: number;
+  createdAt: string;
+}
+
+export interface ScreenCaptureAssignmentView {
+  id: string;
+  agentId: string | null;
+  hostname: string | null;
+  groupId: string | null;
+  groupName: string | null;
+}
+
+export interface ScreenCaptureReportRow {
+  agentId: string;
+  hostname: string | null;
+  username: string;
+  day: string;
+  count: number;
+  overThreshold: boolean;
+  sources: ScreenCaptureSourceKey[];
+  quickDeleted: number;
+  openedBy: string[];
+  lastCaptureAt: string;
+}
+
+export interface ScreenCaptureReport {
+  dailyThreshold: number;
+  quickDeleteMinutes: number;
+  totals: { captures: number; flaggedUserDays: number; quickDeleted: number; openedByOtherApps: number };
+  rows: ScreenCaptureReportRow[];
+}
+
+export interface ScreenCaptureItem {
+  id: string;
+  source: ScreenCaptureSourceKey;
+  filePath: string;
+  fileSizeBytes: string;
+  capturedAt: string;
+  deletedAt: string | null;
+  quickDeleted: boolean;
+  openedBy: { process: string; at: string }[];
 }

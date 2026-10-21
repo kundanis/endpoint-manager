@@ -265,6 +265,8 @@ export const applyDataTypesRequestSchema = z
     policyId: z.string().min(1).optional(),
     newPolicyName: z.string().trim().min(1).max(200).optional(),
     dataTypeIds: z.array(z.string().min(1)).min(1).max(50),
+    // Only these values (from the chosen data types) become rules; all of them when omitted.
+    values: z.array(z.string().min(1).max(500)).min(1).max(1000).optional(),
   })
   .refine((d) => !!d.policyId !== !!d.newPolicyName, { message: "Choose a policy or name a new one", path: ["policyId"] });
 export type ApplyDataTypesRequest = z.infer<typeof applyDataTypesRequestSchema>;
@@ -287,4 +289,6 @@ export interface DataTypeView {
   values: string[];
   builtIn: boolean;
   targets: DataTypeTarget[];
+  // Readable names for personal data pattern keys (e.g. AADHAAR -> "Aadhaar number").
+  valueLabels?: Record<string, string>;
 }

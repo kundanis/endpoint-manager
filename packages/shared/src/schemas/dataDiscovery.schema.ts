@@ -4,7 +4,10 @@ import { DATA_DISCOVERY_REGULATIONS } from "../data/piiPatterns";
 export const createDataDiscoveryPolicyRequestSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).nullable().optional(),
-  regulation: z.enum(DATA_DISCOVERY_REGULATIONS),
+  // Older policies only; new ones choose data categories (dataTypeIds) instead.
+  regulation: z.enum(DATA_DISCOVERY_REGULATIONS).optional(),
+  // Data types (Data Governance -> Data types) of kind PII_PATTERN or KEYWORD to look for.
+  dataTypeIds: z.array(z.string().min(1)).min(1).max(50).optional(),
   // Env-var placeholders (e.g. "%USERPROFILE%\\Documents") expanded agent-side, not here.
   targetPaths: z.array(z.string().min(1).max(500)).min(1).max(20),
   // Paused (false) policies are skipped entirely — same semantics as
@@ -27,13 +30,21 @@ export const assignDataDiscoveryPolicyRequestSchema = z
   });
 export type AssignDataDiscoveryPolicyRequest = z.infer<typeof assignDataDiscoveryPolicyRequestSchema>;
 
-// Deliberately sends `regulation`, not a resolved pattern list — the agent resolves
-// regulation -> concrete patterns itself via getPatternsForRegulation (same catalog
-// import as the server), so the wire payload doesn't need to duplicate that mapping.
+// Policies built from data types send the resolved pattern keys and keyword groups; the
+// agent compiles the patterns itself from the shared catalog. `regulation` is still sent so
+// agents older than 0.2.12 (which only understand it) keep scanning.
+export const dataDiscoveryKeywordGroupSchema = z.object({
+  key: z.string().max(60), // the data type id; findings report matches under it
+  keywords: z.array(z.string().min(1).max(500)).max(500),
+});
+export type DataDiscoveryKeywordGroup = z.infer<typeof dataDiscoveryKeywordGroupSchema>;
+
 export const assignedDataDiscoveryPolicyWireSchema = z.object({
   policyId: z.string(),
   targetPaths: z.array(z.string()),
   regulation: z.enum(DATA_DISCOVERY_REGULATIONS),
+  patternKeys: z.array(z.string()).optional(),
+  keywordGroups: z.array(dataDiscoveryKeywordGroupSchema).optional(),
 });
 export type AssignedDataDiscoveryPolicyWire = z.infer<typeof assignedDataDiscoveryPolicyWireSchema>;
 
@@ -45,7 +56,7 @@ export const dataDiscoveryFileFindingSchema = z.object({
   filePath: z.string().max(1000),
   fileSizeBytes: z.number().int().nonnegative(),
   fileModifiedAt: z.string(),
-  matchedPatternKeys: z.array(z.string()).max(20),
+  matchedPatternKeys: z.array(z.string()).max(40),
   matchCounts: z.record(z.string(), z.number().int().nonnegative()),
   maskedSamples: z.record(z.string(), z.array(z.string().max(200)).max(20)),
 });

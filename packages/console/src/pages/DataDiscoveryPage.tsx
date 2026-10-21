@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, FileSearch, FolderSearch, Monitor, Pencil, P
 import type { DataDiscoveryRegulation } from "@em/shared";
 import {
   useAgentDataDiscoveryFindings,
+  useDataTypes,
   useAssignDataDiscoveryPolicy,
   useCreateDataDiscoveryPolicy,
   useDataDiscoveryAgentBreakdown,
@@ -22,6 +23,7 @@ import {
   Badge,
   Button,
   Card,
+  Check,
   EmptyState,
   Field,
   FormFooter,
@@ -38,13 +40,30 @@ import {
 } from "../components/ui";
 import { formatDateTime } from "../format";
 
-const REGULATIONS: DataDiscoveryRegulation[] = ["DPDP", "GDPR", "BOTH"];
-
 const REGULATION_LABEL: Record<DataDiscoveryRegulation, string> = {
   DPDP: "DPDP (India)",
   GDPR: "GDPR (EU)",
   BOTH: "DPDP + GDPR",
 };
+
+const DEFAULT_DATA_TYPE_IDS = ["builtin:india-pii"];
+
+// Older policies chose a regulation. Opening one pre-ticks the categories that cover the same
+// patterns (DPDP also looks for email addresses and card numbers).
+const REGULATION_DATA_TYPES: Record<DataDiscoveryRegulation, string[]> = {
+  DPDP: ["builtin:india-pii", "builtin:contact-pii", "builtin:financial"],
+  GDPR: ["builtin:contact-pii", "builtin:financial"],
+  BOTH: ["builtin:india-pii", "builtin:contact-pii", "builtin:financial"],
+};
+
+function policyDataTypeIds(policy: DataDiscoveryPolicyDetail): string[] {
+  return policy.dataTypeIds ?? REGULATION_DATA_TYPES[policy.regulation];
+}
+
+function categoriesLabel(policy: DataDiscoveryPolicyDetail): string {
+  if (!policy.dataTypeNames) return REGULATION_LABEL[policy.regulation];
+  return policy.dataTypeNames.length > 0 ? policy.dataTypeNames.join(", ") : "None";
+}
 
 const DEFAULT_TARGET_PATHS = ["%USERPROFILE%\\Documents", "%USERPROFILE%\\Desktop", "%USERPROFILE%\\Downloads"];
 
@@ -61,37 +80,60 @@ function textToPaths(text: string): string[] {
     .filter(Boolean);
 }
 
-// Regulation + target paths: the scan-specific fields shared by the create dialog and the
-// settings tab.
+// Data categories + target paths: the scan-specific fields shared by the create dialog and the
+// settings tab. Categories are the Data types a scan can find inside files - personal data
+// patterns and keyword lists, built-in or custom.
 function ScanFields({
   idPrefix,
-  regulation,
-  onRegulationChange,
+  dataTypeIds,
+  onDataTypeIdsChange,
+  legacyRegulation,
   pathsText,
   onPathsTextChange,
 }: {
   idPrefix: string;
-  regulation: DataDiscoveryRegulation;
-  onRegulationChange: (value: DataDiscoveryRegulation) => void;
+  dataTypeIds: string[];
+  onDataTypeIdsChange: (value: string[]) => void;
+  legacyRegulation?: DataDiscoveryRegulation;
   pathsText: string;
   onPathsTextChange: (value: string) => void;
 }) {
+  const { data: dataTypes, isLoading } = useDataTypes();
+  const options = (dataTypes ?? []).filter((d) => d.kind === "PII_PATTERN" || d.kind === "KEYWORD");
+
+  function toggle(id: string, checked: boolean) {
+    onDataTypeIdsChange(checked ? [...dataTypeIds, id] : dataTypeIds.filter((x) => x !== id));
+  }
+
   return (
     <>
-      <Field label="Regulation" htmlFor={`${idPrefix}-regulation`}>
-        <select
-          id={`${idPrefix}-regulation`}
-          className="ep-select"
-          value={regulation}
-          onChange={(e) => onRegulationChange(e.target.value as DataDiscoveryRegulation)}
-        >
-          {REGULATIONS.map((r) => (
-            <option key={r} value={r}>
-              {REGULATION_LABEL[r]}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <div className="ep-field" role="group" aria-labelledby={`${idPrefix}-categories`}>
+        <span className="ep-label" id={`${idPrefix}-categories`}>
+          Data categories<span className="ep-req">*</span>
+        </span>
+        {isLoading ? (
+          <Skeleton lines={2} />
+        ) : (
+          <div className="app-check-grid">
+            {options.map((d) => (
+              <Check
+                key={d.id}
+                checked={dataTypeIds.includes(d.id)}
+                onChange={(checked) => toggle(d.id, checked)}
+                label={d.name}
+                hint={`${d.values.length} ${d.kind === "KEYWORD" ? "keywords" : "patterns"}${d.builtIn ? "" : " · custom"}`}
+              />
+            ))}
+          </div>
+        )}
+        {legacyRegulation ? (
+          <span className="ep-help">
+            Set up by regulation ({REGULATION_LABEL[legacyRegulation]}). Saving switches this policy to the categories ticked above.
+          </span>
+        ) : (
+          <span className="ep-help">From Data Governance → Data types. Add your own keyword lists there.</span>
+        )}
+      </div>
       <Field label="Target paths" htmlFor={`${idPrefix}-paths`} required help={TARGET_PATHS_HELP}>
         <textarea
           id={`${idPrefix}-paths`}
@@ -110,15 +152,16 @@ function PolicySettingsPanel({ policy }: { policy: DataDiscoveryPolicyDetail }) 
   const updatePolicy = useUpdateDataDiscoveryPolicy();
   const [name, setName] = useState(policy.name);
   const [description, setDescription] = useState(policy.description ?? "");
-  const [regulation, setRegulation] = useState<DataDiscoveryRegulation>(policy.regulation);
+  const [dataTypeIds, setDataTypeIds] = useState(policyDataTypeIds(policy));
   const [pathsText, setPathsText] = useState(pathsToText(policy.targetPaths));
 
   useEffect(() => {
     setName(policy.name);
     setDescription(policy.description ?? "");
-    setRegulation(policy.regulation);
+    setDataTypeIds(policyDataTypeIds(policy));
     setPathsText(pathsToText(policy.targetPaths));
-  }, [policy.id, policy.name, policy.description, policy.regulation, policy.targetPaths]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policy.id, policy.name, policy.description, policy.regulation, policy.dataTypeIds, policy.targetPaths]);
 
   function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -126,7 +169,7 @@ function PolicySettingsPanel({ policy }: { policy: DataDiscoveryPolicyDetail }) 
       id: policy.id,
       name,
       description: description.trim() || null,
-      regulation,
+      dataTypeIds,
       targetPaths: textToPaths(pathsText),
     });
   }
@@ -142,8 +185,9 @@ function PolicySettingsPanel({ policy }: { policy: DataDiscoveryPolicyDetail }) 
         </Field>
         <ScanFields
           idPrefix={`dd-${policy.id}`}
-          regulation={regulation}
-          onRegulationChange={setRegulation}
+          dataTypeIds={dataTypeIds}
+          onDataTypeIdsChange={setDataTypeIds}
+          legacyRegulation={policy.dataTypeIds ? undefined : policy.regulation}
           pathsText={pathsText}
           onPathsTextChange={setPathsText}
         />
@@ -151,7 +195,7 @@ function PolicySettingsPanel({ policy }: { policy: DataDiscoveryPolicyDetail }) 
       </div>
       <FormFooter>
         {updatePolicy.isSuccess && !updatePolicy.isPending && <span className="app-saved">Saved</span>}
-        <Button variant="primary" type="submit" disabled={updatePolicy.isPending || !name.trim() || textToPaths(pathsText).length === 0}>
+        <Button variant="primary" type="submit" disabled={updatePolicy.isPending || !name.trim() || dataTypeIds.length === 0 || textToPaths(pathsText).length === 0}>
           {updatePolicy.isPending ? "Saving…" : "Save policy"}
         </Button>
       </FormFooter>
@@ -423,16 +467,17 @@ export default function DataDiscoveryPage() {
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
-  const [regulation, setRegulation] = useState<DataDiscoveryRegulation>("DPDP");
+  const [dataTypeIds, setDataTypeIds] = useState(DEFAULT_DATA_TYPE_IDS);
   const [pathsText, setPathsText] = useState(pathsToText(DEFAULT_TARGET_PATHS));
 
   const { data: policy } = useDataDiscoveryPolicy(selectedId);
 
   function handleCreate(values: { name: string; description: string | null }) {
     return createPolicy
-      .mutateAsync({ name: values.name, description: values.description, regulation, targetPaths: textToPaths(pathsText) })
+      .mutateAsync({ name: values.name, description: values.description, dataTypeIds, targetPaths: textToPaths(pathsText) })
       .then((result) => {
         setSelectedId(result.id);
+        setDataTypeIds(DEFAULT_DATA_TYPE_IDS);
         setPathsText(pathsToText(DEFAULT_TARGET_PATHS));
       });
   }
@@ -505,7 +550,7 @@ export default function DataDiscoveryPage() {
                 <tr>
                   <th scope="col">Policy</th>
                   <th scope="col">Status</th>
-                  <th scope="col">Regulation</th>
+                  <th scope="col">Data categories</th>
                   <th scope="col">Target paths</th>
                   <th scope="col" style={{ textAlign: "right" }}>
                     Assigned endpoints
@@ -528,7 +573,7 @@ export default function DataDiscoveryPage() {
                     <td onClick={(e) => e.stopPropagation()}>
                       <Switch checked={p.enabled} onChange={(enabled) => toggleEnabled(p.id, enabled)} label={p.enabled ? "Enabled" : "Paused"} />
                     </td>
-                    <td>{REGULATION_LABEL[p.regulation]}</td>
+                    <td>{categoriesLabel(p)}</td>
                     <td className="ep-mono" style={{ overflowWrap: "anywhere" }}>
                       {p.targetPaths.join(", ")}
                     </td>
@@ -569,7 +614,7 @@ export default function DataDiscoveryPage() {
           policyId={policy.id}
           name={policy.name}
           enabled={policy.enabled}
-          meta={`${REGULATION_LABEL[policy.regulation]} · ${policy.assignedAgentCount} ${policy.assignedAgentCount === 1 ? "endpoint" : "endpoints"}`}
+          meta={`${categoriesLabel(policy)} · ${policy.assignedAgentCount} ${policy.assignedAgentCount === 1 ? "endpoint" : "endpoints"}`}
           onClose={() => setSelectedId(undefined)}
           tabs={[
             { value: "results", label: "Discovery results", content: <ResultsPanel policyId={policy.id} /> },
@@ -584,13 +629,13 @@ export default function DataDiscoveryPage() {
           onClose={() => setCreating(false)}
           pending={createPolicy.isPending}
           error={createPolicy.error}
-          extraValid={textToPaths(pathsText).length > 0}
+          extraValid={dataTypeIds.length > 0 && textToPaths(pathsText).length > 0}
           onCreate={handleCreate}
         >
           <ScanFields
             idPrefix="dd-new"
-            regulation={regulation}
-            onRegulationChange={setRegulation}
+            dataTypeIds={dataTypeIds}
+            onDataTypeIdsChange={setDataTypeIds}
             pathsText={pathsText}
             onPathsTextChange={setPathsText}
           />

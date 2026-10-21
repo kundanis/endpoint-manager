@@ -21,6 +21,7 @@ export * from "./zeroTrust.schema";
 export * from "./dataDiscovery.schema";
 export * from "./dlp.schema";
 export * from "./dataMovement.schema";
+export * from "./screenCapture.schema";
 export * from "./appControl.schema";
 export * from "./webBlock.schema";
 export * from "./piiBlock.schema";

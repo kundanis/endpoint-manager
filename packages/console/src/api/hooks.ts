@@ -1,7 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AppControlRuleType,
-  DataDiscoveryRegulation,
   DlpEnforcementMode,
   DlpRuleType,
   GpoImportPreview,
@@ -139,6 +138,10 @@ import type {
   ZeroTrustPolicyDetail,
   SecurityProductOption,
   ZeroTrustPolicySummary,
+  ScreenCaptureAssignmentView,
+  ScreenCaptureItem,
+  ScreenCapturePolicyDetail,
+  ScreenCaptureReport,
 } from "./types";
 
 export function useMe() {
@@ -1523,7 +1526,7 @@ export function useCreateDataDiscoveryPolicy() {
     mutationFn: (body: {
       name: string;
       description?: string | null;
-      regulation: DataDiscoveryRegulation;
+      dataTypeIds: string[];
       targetPaths: string[];
       enabled?: boolean;
     }) => api.post<DataDiscoveryPolicyDetail>("/admin/data-discovery", body),
@@ -1541,7 +1544,7 @@ export function useUpdateDataDiscoveryPolicy() {
       id: string;
       name?: string;
       description?: string | null;
-      regulation?: DataDiscoveryRegulation;
+      dataTypeIds?: string[];
       targetPaths?: string[];
       enabled?: boolean;
     }) => api.patch<DataDiscoveryPolicyDetail>(`/admin/data-discovery/${id}`, body),
@@ -3240,7 +3243,7 @@ export function useApplyDataTypes() {
   const qc = useQueryClient();
   return useMutation({
     // policyId = an existing policy; newPolicyName = create one in that area first.
-    mutationFn: (body: { target: DataTypeTarget; policyId?: string; newPolicyName?: string; dataTypeIds: string[] }) =>
+    mutationFn: (body: { target: DataTypeTarget; policyId?: string; newPolicyName?: string; dataTypeIds: string[]; values?: string[] }) =>
       api.post<{ added: number; skipped: number; incompatible: string[]; policyId: string }>("/admin/data-types/apply", body),
     onSuccess: (r, v) => {
       qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target]] });
@@ -3256,5 +3259,121 @@ export function useDataTypeTargetPolicies(target: DataTypeTarget | undefined) {
     queryKey: ["dataTypePolicies", target],
     queryFn: () => api.get<{ id: string; name: string }[]>(`/admin/data-types/policies?target=${target}`),
     enabled: !!target,
+  });
+}
+
+// ---- DLP -> Screen capture monitoring
+
+type ScreenCapturePolicyBody = {
+  name: string;
+  description?: string | null;
+  dailyThreshold: number;
+  quickDeleteMinutes: number;
+  monitorWindows: boolean;
+  monitorSnippingTool: boolean;
+  monitorGameBar: boolean;
+  monitorThirdParty: boolean;
+  extraPaths: string[];
+  trackOpenedBy: boolean;
+  enabled?: boolean;
+};
+
+export function useScreenCapturePolicies() {
+  return useQuery({
+    queryKey: ["screenCapturePolicies"],
+    queryFn: () => api.get<ScreenCapturePolicyDetail[]>("/admin/screen-capture"),
+    refetchInterval: 15000,
+  });
+}
+
+export function useScreenCapturePolicy(id: string | undefined) {
+  return useQuery({
+    queryKey: ["screenCapturePolicies", id],
+    queryFn: () => api.get<ScreenCapturePolicyDetail>(`/admin/screen-capture/${id}`),
+    enabled: !!id,
+    refetchInterval: 15000,
+  });
+}
+
+export function useCreateScreenCapturePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ScreenCapturePolicyBody) => api.post<ScreenCapturePolicyDetail>("/admin/screen-capture", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screenCapturePolicies"] }),
+  });
+}
+
+export function useUpdateScreenCapturePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<ScreenCapturePolicyBody>) =>
+      api.patch<ScreenCapturePolicyDetail>(`/admin/screen-capture/${id}`, body),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["screenCapturePolicies"] });
+      qc.invalidateQueries({ queryKey: ["screenCaptureReport", variables.id] });
+    },
+  });
+}
+
+export function useDeleteScreenCapturePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/screen-capture/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screenCapturePolicies"] }),
+  });
+}
+
+export function useScreenCaptureAssignments(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["screenCaptureAssignments", policyId],
+    queryFn: () => api.get<ScreenCaptureAssignmentView[]>(`/admin/screen-capture/${policyId}/assignments`),
+    enabled: !!policyId,
+  });
+}
+
+export function useAssignScreenCapturePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, agentIds, groupIds }: { policyId: string; agentIds: string[]; groupIds: string[] }) =>
+      api.post<ScreenCapturePolicyDetail>(`/admin/screen-capture/${policyId}/assign`, { agentIds, groupIds }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["screenCapturePolicies"] });
+      qc.invalidateQueries({ queryKey: ["screenCaptureAssignments", variables.policyId] });
+      qc.invalidateQueries({ queryKey: ["screenCaptureReport", variables.policyId] });
+    },
+  });
+}
+
+export function useUnassignScreenCapturePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, assignmentId }: { policyId: string; assignmentId: string }) =>
+      api.del(`/admin/screen-capture/${policyId}/assign/${assignmentId}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["screenCapturePolicies"] });
+      qc.invalidateQueries({ queryKey: ["screenCaptureAssignments", variables.policyId] });
+      qc.invalidateQueries({ queryKey: ["screenCaptureReport", variables.policyId] });
+    },
+  });
+}
+
+export function useScreenCaptureReport(policyId: string | undefined, days: number) {
+  return useQuery({
+    queryKey: ["screenCaptureReport", policyId, days],
+    queryFn: () => api.get<ScreenCaptureReport>(`/admin/screen-capture/${policyId}/report?days=${days}`),
+    enabled: !!policyId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useScreenCaptures(policyId: string, row: { agentId: string; username: string; day: string } | null) {
+  return useQuery({
+    queryKey: ["screenCaptures", policyId, row?.agentId, row?.username, row?.day],
+    queryFn: () =>
+      api.get<ScreenCaptureItem[]>(
+        `/admin/screen-capture/${policyId}/captures?agentId=${encodeURIComponent(row!.agentId)}&username=${encodeURIComponent(row!.username)}&day=${row!.day}`,
+      ),
+    enabled: !!row,
+    refetchInterval: 15000,
   });
 }

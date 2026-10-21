@@ -75,3 +75,26 @@ test("applying data types adds each value once, as the right rule type", async (
   assert.ok(created.every((r) => r.ruleType === "EXECUTABLE" && r.label === "Remote access tools"));
   assert.ok(!created.some((r) => r.value === "AnyDesk.exe"));
 });
+
+test("applying only the picked values of a data type", async () => {
+  const { applyDataTypes } = await import("../src/services/dataTypes.service");
+  const { BUILT_IN_DATA_TYPES: builtIns, targetsForDataType: targets } = await import("@em/shared");
+  const views = builtIns.map((d) => ({ ...d, description: d.description, builtIn: true, targets: targets(d) }));
+  const created: { value: string }[] = [];
+  const fakeDb = {
+    appControlPolicy: { findUnique: async () => ({ id: "p1" }) },
+    appControlRule: {
+      findMany: async () => [],
+      createMany: async (args: { data: { value: string }[] }) => created.push(...args.data),
+    },
+  };
+  const result = await applyDataTypes(
+    { target: "appControl", policyId: "p1", dataTypeIds: ["builtin:remote-access-apps"], values: ["anydesk.exe", "TeamViewer.exe"] },
+    { db: fakeDb as never, dataTypes: views },
+  );
+  assert.equal(result.added, 2);
+  assert.deepEqual(created.map((r) => r.value).sort(), ["AnyDesk.exe", "TeamViewer.exe"]);
+  await assert.rejects(
+    applyDataTypes({ target: "appControl", policyId: "p1", dataTypeIds: ["builtin:remote-access-apps"], values: ["notepad.exe"] }, { db: fakeDb as never, dataTypes: views }),
+  );
+});
