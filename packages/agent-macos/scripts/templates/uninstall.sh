@@ -1,5 +1,5 @@
 #!/bin/bash
-# Uninstalls the Endpoint One agent from this Mac.
+# Uninstalls the Endpoint IQ agent from this Mac.
 #
 # Usage: sudo /Library/EndpointProAgent/uninstall.sh
 set -uo pipefail
@@ -43,4 +43,4 @@ echo "Removing $INSTALL_DIR and $LOG_DIR ..."
 rm -rf "$INSTALL_DIR" "$LOG_DIR"
 
 echo ""
-echo "Endpoint One agent uninstalled."
+echo "Endpoint IQ agent uninstalled."

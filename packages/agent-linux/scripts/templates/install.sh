@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the Endpoint Pro Agent on this Linux machine as a systemd service.
+# Installs the Endpoint IQ Agent on this Linux machine as a systemd service.
 #
 # Usage:
 #   sudo ./install.sh --server-url https://uem.example.com:4000 --enrollment-token <token>
@@ -113,6 +113,6 @@ systemctl daemon-reload
 systemctl enable --now endpointpro-agent.service
 
 echo ""
-echo "Done. The Endpoint Pro agent is installed and running (systemd service 'endpointpro-agent')."
+echo "Done. The Endpoint IQ agent is installed and running (systemd service 'endpointpro-agent')."
 echo "Check status with: systemctl status endpointpro-agent"
 echo "View logs with:    journalctl -u endpointpro-agent -f"

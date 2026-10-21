@@ -1,5 +1,5 @@
 [Unit]
-Description=Endpoint Pro Agent
+Description=Endpoint IQ Agent
 After=network-online.target
 Wants=network-online.target
 

@@ -1,6 +1,6 @@
-# Endpoint One — server installation guide
+# Endpoint IQ — server installation guide
 
-This bundle installs the Endpoint One server (web console, agent API, Outlook add-in) and its
+This bundle installs the Endpoint IQ server (web console, agent API, Outlook add-in) and its
 SQL Server database as Docker containers. It contains a prebuilt image only; nothing is
 compiled on the server.
 

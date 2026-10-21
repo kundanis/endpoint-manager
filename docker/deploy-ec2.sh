@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Endpoint One - one-command deployment on a fresh Linux host (AWS EC2: Amazon Linux 2023 or
+# Endpoint IQ - one-command deployment on a fresh Linux host (AWS EC2: Amazon Linux 2023 or
 # Ubuntu 22.04/24.04, x86_64).
 #
 #   git clone https://github.com/kundanis/endpoint-one.git
@@ -137,7 +137,7 @@ ip="$(curl -fs -m 2 -H "X-aws-ec2-metadata-token: ${imds_token}" \
 # Best effort only - never fail the install over a cosmetic lookup (minimal images lack hostname).
 [ -n "$ip" ] || ip="$( (hostname -I 2>/dev/null || true) | awk '{print $1}')"
 [ -n "$ip" ] || ip="<server-ip>"
-log "Endpoint One is running"
+log "Endpoint IQ is running"
 echo "  Console:  http://${ip}:4000"
 echo "  Next:     sign in, then Endpoint Hub -> Enrollment tokens -> Server connection details:"
 echo "            set the address agents use (e.g. http://${ip}:4000) before downloading installers."

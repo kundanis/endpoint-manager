@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds a customer release bundle of Endpoint One: prebuilt image + installer, no source code.
+  Builds a customer release bundle of Endpoint IQ: prebuilt image + installer, no source code.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File docker\release.ps1 -Version 1.0.0
@@ -98,7 +98,7 @@ setTimeout(async () => {
     if (!h.ok) { console.log('SMOKE FAIL health ' + h.status); ok = false; }
     const r = await fetch('http://127.0.0.1:4000/');
     const t = await r.text();
-    if (r.status !== 200 || !/<title>Endpoint One/i.test(t)) { console.log('SMOKE FAIL console ' + r.status + ' ' + t.slice(0, 80)); ok = false; }
+    if (r.status !== 200 || !/<title>Endpoint IQ/i.test(t)) { console.log('SMOKE FAIL console ' + r.status + ' ' + t.slice(0, 80)); ok = false; }
   } catch (e) { console.log('SMOKE FAIL ' + e.message); ok = false; }
   console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
   process.exit(ok ? 0 : 1);
@@ -130,7 +130,7 @@ setTimeout(() => {
     let body = '';
     res.on('data', (d) => (body += d));
     res.on('end', async () => {
-      let ok = res.statusCode === 200 && /<title>Endpoint One/i.test(body);
+      let ok = res.statusCode === 200 && /<title>Endpoint IQ/i.test(body);
       if (!ok) console.log('SMOKE FAIL https console ' + res.statusCode);
       try {
         const h = await fetch('http://127.0.0.1:4000/health');
@@ -164,7 +164,7 @@ setTimeout(() => {
   Write-LfFile (Join-Path $bundleDir "VERSION") "$Version`n"
   $builtAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   Write-LfFile (Join-Path $bundleDir "RELEASE-INFO.txt") @"
-Endpoint One $Version
+Endpoint IQ $Version
 Built:   $builtAt
 Commit:  $commit
 Image:   $image

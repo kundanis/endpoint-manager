@@ -1,5 +1,5 @@
 #!/bin/bash
-# Uninstalls the Endpoint Pro Agent from this Linux machine.
+# Uninstalls the Endpoint IQ Agent from this Linux machine.
 #
 # Usage: sudo ./uninstall.sh
 set -uo pipefail
@@ -41,4 +41,4 @@ echo "Removing $INSTALL_DIR ..."
 rm -rf "$INSTALL_DIR"
 
 echo ""
-echo "Endpoint Pro agent uninstalled."
+echo "Endpoint IQ agent uninstalled."

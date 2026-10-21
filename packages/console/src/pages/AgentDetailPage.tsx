@@ -989,7 +989,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
 
   async function handleUninstall() {
     const confirmed = await confirm({
-      title: `Uninstall the Endpoint One agent from ${agent.hostname}?`,
+      title: `Uninstall the Endpoint IQ agent from ${agent.hostname}?`,
       body:
         "This removes management of this endpoint entirely - it will stop checking in and disappear from monitoring. " +
         "This cannot be undone from here; re-enrolling requires running the installer on the endpoint again. " +
@@ -1020,7 +1020,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
     <Card title="Uninstall agent">
       <div className="app-stack">
         <p className="app-text">
-          Remotely removes the Endpoint One agent (and its watchdog task) from this endpoint. Requires the endpoint to
+          Remotely removes the Endpoint IQ agent (and its watchdog task) from this endpoint. Requires the endpoint to
           be online to pick up the command, and the deployment's uninstall password if one is configured (Asset
           settings → Tamper protection).
         </p>

@@ -1,4 +1,4 @@
-# Endpoint One - one-command deployment (server + console + SQL Server).
+# Endpoint IQ - one-command deployment (server + console + SQL Server).
 #
 #   cd docker
 #   ./deploy-ec2.sh          # EC2/Linux: installs Docker, generates .env secrets, starts it

@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $TaskName = "EndpointProAgent"
 $WatchdogTaskName = "EndpointProWatchdog"
 
-Write-Host "Endpoint Pro Agent Installer"
+Write-Host "Endpoint IQ Agent Installer"
 Write-Host "============================"
 
 if (-not $ServerUrl) {
@@ -204,5 +204,5 @@ schtasks /run /tn $TaskName | Out-Null
 
 Start-Sleep -Seconds 2
 Write-Host ""
-Write-Host "Done. The Endpoint Pro agent is installed and running (scheduled task '$TaskName')."
+Write-Host "Done. The Endpoint IQ agent is installed and running (scheduled task '$TaskName')."
 Write-Host "It will start automatically on every boot, and a watchdog task will restore it if stopped or disabled."

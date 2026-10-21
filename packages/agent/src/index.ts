@@ -4,7 +4,7 @@ import { startCheckinLoop } from "./checkinLoop";
 
 async function main() {
   startFileLog();
-  console.log(`Endpoint One agent starting (pid ${process.pid})`);
+  console.log(`Endpoint IQ agent starting (pid ${process.pid})`);
   const { agentId, apiKey } = await ensureEnrolled();
   startCheckinLoop(agentId, apiKey);
 }

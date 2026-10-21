@@ -6,6 +6,9 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.13
+- The product is now called Endpoint IQ: setup, uninstall and log messages use the new name.
+
 ## 0.2.12
 - Data discovery scans look for the data categories chosen on the policy (from Data types), including
   keyword lists such as "Confidentiality markers", instead of a fixed DPDP / GDPR pattern set.

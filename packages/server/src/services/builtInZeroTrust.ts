@@ -165,7 +165,7 @@ export const ANTIVIRUS_PRODUCTS: SecurityProductOption[] = [
 
 // Names as they appear in Programs and Features (the Uninstall registry keys).
 export const MANAGEMENT_AGENTS: SecurityProductOption[] = [
-  { id: "endpoint-one", label: "Endpoint One agent", match: ["Endpoint Pro", "Endpoint One"] },
+  { id: "endpoint-one", label: "Endpoint IQ agent", match: ["Endpoint Pro", "Endpoint One", "Endpoint IQ"] },
   { id: "intune", label: "Microsoft Intune Management Extension", match: ["Intune Management Extension"] },
   { id: "configmgr", label: "Microsoft Configuration Manager (SCCM) client", match: ["Configuration Manager Client"] },
   { id: "kaspersky-ksc", label: "Kaspersky Security Center Network Agent", match: ["Kaspersky Security Center Network Agent"] },

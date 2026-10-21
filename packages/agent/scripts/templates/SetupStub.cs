@@ -34,7 +34,7 @@ internal static class SetupStub
                 // way, which is indistinguishable from "nothing happened" to whoever ran this.
                 MessageBox.Show(
                     "Could not get administrator privileges, so setup did not run.\n\n" + ex.Message,
-                    "Endpoint Pro Agent Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    "Endpoint IQ Agent Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             return 0;
         }
@@ -42,8 +42,8 @@ internal static class SetupStub
         if (uninstallMode)
         {
             DialogResult confirm = MessageBox.Show(
-                "This will stop and remove the Endpoint Pro agent from this computer.\n\nContinue?",
-                "Endpoint Pro Agent Setup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                "This will stop and remove the Endpoint IQ agent from this computer.\n\nContinue?",
+                "Endpoint IQ Agent Setup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (confirm != DialogResult.Yes)
             {
                 return 0;
@@ -51,11 +51,11 @@ internal static class SetupStub
 
             string uninstallPassword = Microsoft.VisualBasic.Interaction.InputBox(
                 "If this deployment has uninstall protection enabled, enter the password. " +
-                "Leave blank if none is set.", "Endpoint Pro Agent Setup", "");
+                "Leave blank if none is set.", "Endpoint IQ Agent Setup", "");
 
             string uninstallArgs = " -UninstallPassword \"" + uninstallPassword.Replace("\"", "`\"") + "\"";
             return RunBundledScript("uninstall.ps1", uninstallArgs, "Uninstall Complete",
-                "The Endpoint Pro agent was removed.", "Uninstall Failed", "Uninstall failed:");
+                "The Endpoint IQ agent was removed.", "Uninstall Failed", "Uninstall failed:");
         }
 
         string serverUrl;
@@ -76,10 +76,10 @@ internal static class SetupStub
             if (string.IsNullOrWhiteSpace(token))
             {
                 token = Microsoft.VisualBasic.Interaction.InputBox(
-                    "Enrollment token:", "Endpoint Pro Agent Setup", "").Trim();
+                    "Enrollment token:", "Endpoint IQ Agent Setup", "").Trim();
                 if (string.IsNullOrWhiteSpace(token))
                 {
-                    MessageBox.Show("An enrollment token is required.", "Endpoint Pro Agent Setup",
+                    MessageBox.Show("An enrollment token is required.", "Endpoint IQ Agent Setup",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return 1;
                 }
@@ -88,19 +88,19 @@ internal static class SetupStub
         else
         {
             serverUrl = Microsoft.VisualBasic.Interaction.InputBox(
-                "Server URL (e.g. http://your-server:4000 - several can be given, comma-separated):", "Endpoint Pro Agent Setup", "");
+                "Server URL (e.g. http://your-server:4000 - several can be given, comma-separated):", "Endpoint IQ Agent Setup", "");
             if (string.IsNullOrWhiteSpace(serverUrl))
             {
-                MessageBox.Show("A server URL is required.", "Endpoint Pro Agent Setup",
+                MessageBox.Show("A server URL is required.", "Endpoint IQ Agent Setup",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }
 
             token = Microsoft.VisualBasic.Interaction.InputBox(
-                "Enrollment token:", "Endpoint Pro Agent Setup", "");
+                "Enrollment token:", "Endpoint IQ Agent Setup", "");
             if (string.IsNullOrWhiteSpace(token))
             {
-                MessageBox.Show("An enrollment token is required.", "Endpoint Pro Agent Setup",
+                MessageBox.Show("An enrollment token is required.", "Endpoint IQ Agent Setup",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }
@@ -108,7 +108,7 @@ internal static class SetupStub
 
         string installArgs = " -ServerUrl \"" + serverUrl + "\" -EnrollmentToken \"" + token + "\"";
         return RunBundledScript("install.ps1", installArgs, "Setup Complete",
-            "The Endpoint Pro agent was installed successfully and is now running.", "Setup Failed", "Installation failed:");
+            "The Endpoint IQ agent was installed successfully and is now running.", "Setup Failed", "Installation failed:");
     }
 
     // Server-appended trailer: [UTF-8 "url1,url2,...\ntoken"][int32 LE length][16-byte magic]
@@ -170,7 +170,7 @@ internal static class SetupStub
                 n => n.EndsWith("installer.zip", StringComparison.OrdinalIgnoreCase));
             if (resName == null)
             {
-                MessageBox.Show("Embedded installer payload not found.", "Endpoint Pro Agent Setup",
+                MessageBox.Show("Embedded installer payload not found.", "Endpoint IQ Agent Setup",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }

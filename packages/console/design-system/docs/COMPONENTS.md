@@ -35,7 +35,7 @@ Conventions:
   <div class="ep-brandrow">
     <!-- logo: 28px tile, radius 7px, fill var(--ep-brand), white shield-check mark -->
     <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">…</svg>
-    <div><b>Endpoint One</b></div>
+    <div><b>Endpoint IQ</b></div>
   </div>
 
   <div class="ep-ov">Operations</div>
@@ -94,7 +94,7 @@ Conventions:
 <div class="ep-ph">
   <div>
     <h1>Endpoints</h1>
-    <p>All devices with the Endpoint Pro agent installed</p>
+    <p>All devices with the Endpoint IQ agent installed</p>
     <!-- live pages: <p><span class="ep-live">Live</span>· 292 managed endpoints · Updated 2 min ago</p> -->
   </div>
   <div class="ep-acts">

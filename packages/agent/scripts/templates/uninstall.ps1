@@ -123,7 +123,7 @@ if ($config -and $state) {
     } catch {}
 }
 
-Write-Host "Stopping and removing the Endpoint Pro agent..."
+Write-Host "Stopping and removing the Endpoint IQ agent..."
 schtasks /change /tn $TaskName /disable 2>$null | Out-Null
 schtasks /end /tn $TaskName 2>$null | Out-Null
 schtasks /delete /tn $TaskName /f 2>$null | Out-Null
@@ -142,4 +142,4 @@ if (Test-Path $installDir) {
     Remove-Item -Path $installDir -Recurse -Force
 }
 
-Write-Host "Endpoint Pro agent removed."
+Write-Host "Endpoint IQ agent removed."

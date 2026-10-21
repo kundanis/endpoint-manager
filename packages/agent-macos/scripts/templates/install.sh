@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the Endpoint One agent on this Mac as a launchd daemon.
+# Installs the Endpoint IQ agent on this Mac as a launchd daemon.
 #
 # Usage:
 #   sudo bash install.sh --server-url https://uem.example.com:4443 --enrollment-token <token>
@@ -151,7 +151,7 @@ launchctl enable "system/$LABEL"
 launchctl kickstart -k "system/$LABEL" 2>/dev/null || true
 
 echo ""
-echo "Done. The Endpoint One agent is installed and running (launchd daemon '$LABEL')."
+echo "Done. The Endpoint IQ agent is installed and running (launchd daemon '$LABEL')."
 echo "Check status with: sudo launchctl print system/$LABEL | head -20"
 echo "View logs with:    tail -f $LOG_DIR/agent.log"
 echo "Uninstall with:    sudo $INSTALL_DIR/uninstall.sh"

@@ -1,4 +1,4 @@
-# Endpoint Pro Agent Watchdog - runs on its own independent Scheduled Task (registered by
+# Endpoint IQ Agent Watchdog - runs on its own independent Scheduled Task (registered by
 # install.ps1), checking and restoring the main "EndpointProAgent" task if it's been
 # disabled or deleted. Deliberately self-contained (duplicates the task-registration XML
 # from install.ps1) rather than depending on the agent's own compiled code, since it must

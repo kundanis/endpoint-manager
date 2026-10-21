@@ -1,6 +1,6 @@
 # Meridian — design system specification
 
-Meridian is the light enterprise look for Endpoint One. It keeps the brand crimson as an identity colour but uses it sparingly, on calm white surfaces. Everything here is implemented in `tokens/tokens.css` and `css/meridian.css`.
+Meridian is the light enterprise look for Endpoint IQ. It keeps the brand crimson as an identity colour but uses it sparingly, on calm white surfaces. Everything here is implemented in `tokens/tokens.css` and `css/meridian.css`.
 
 ## 1. Principles
 

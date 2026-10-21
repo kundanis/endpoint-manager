@@ -1,4 +1,4 @@
-# Endpoint One server - Linux image, built entirely from the repo (no Windows staging step).
+# Endpoint IQ server - Linux image, built entirely from the repo (no Windows staging step).
 # Build context is the REPO ROOT:
 #   docker build -f docker/Dockerfile -t endpoint-one-server:latest .
 # or via compose: `docker compose build`.

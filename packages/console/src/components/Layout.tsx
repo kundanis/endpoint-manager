@@ -231,7 +231,7 @@ export default function Layout() {
         <div className="ep-brandrow">
           <Logo size={28} />
           <div>
-            <b>Endpoint One</b>
+            <b>Endpoint IQ</b>
           </div>
         </div>
         <nav className="app-nav">

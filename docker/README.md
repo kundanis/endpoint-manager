@@ -1,4 +1,4 @@
-# Endpoint One — Docker deployment
+# Endpoint IQ — Docker deployment
 
 One-command deployment of the **server + web console + SQL Server** as Linux containers. The
 application is compiled to **V8 bytecode** with a startup integrity check (no readable JS in
@@ -10,8 +10,10 @@ For customer servers, ship a **release bundle** instead of the repo:
 
 ```powershell
 # on your build machine (Windows, Docker Desktop):
-powershell -ExecutionPolicy Bypass -File dockerelease.ps1 -Version 1.0.0          # online customers
-powershell -ExecutionPolicy Bypass -File dockerelease.ps1 -Version 1.0.0 -Offline # + SQL Server image
+powershell -ExecutionPolicy Bypass -File docker
+elease.ps1 -Version 1.0.0          # online customers
+powershell -ExecutionPolicy Bypass -File docker
+elease.ps1 -Version 1.0.0 -Offline # + SQL Server image
 ```
 
 The output is `release/endpoint-one-<version>.tar.gz`: the prebuilt image (V8 bytecode), the customer

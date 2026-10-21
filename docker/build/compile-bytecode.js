@@ -38,7 +38,7 @@ try {
   process.exit(1);
 }
 if (actual !== "${hash}") {
-  console.error("FATAL: integrity check failed - this Endpoint Pro server build has been modified or corrupted. Refusing to start.");
+  console.error("FATAL: integrity check failed - this Endpoint IQ server build has been modified or corrupted. Refusing to start.");
   process.exit(1);
 }
 require("./${jscName}");

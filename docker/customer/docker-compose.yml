@@ -1,4 +1,4 @@
-# Endpoint One - customer deployment (prebuilt image only, no source code).
+# Endpoint IQ - customer deployment (prebuilt image only, no source code).
 #
 # Installed to /opt/endpoint-one by deploy.sh, which also writes .env (secrets + APP_VERSION).
 # Manage with:  cd /opt/endpoint-one && docker compose <ps|logs -f server|restart|down>
