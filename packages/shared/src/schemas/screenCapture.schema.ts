@@ -5,6 +5,29 @@ import { z } from "zod";
 // and - through Windows file-access auditing - the programs that opened it. Only metadata
 // leaves the endpoint, never the image.
 
+// Programs that read a new screenshot without the user sending it anywhere: the Windows shell
+// and thumbnails, search indexing, the capture tools, the agent itself and antivirus / EDR
+// scanners (which scan every new file). Never reported as "opened by".
+export const SCREENSHOT_IGNORED_OPENERS: readonly string[] = [
+  "explorer.exe", "dllhost.exe", "svchost.exe", "searchprotocolhost.exe", "searchindexer.exe", "searchfilterhost.exe",
+  "runtimebroker.exe", "backgroundtaskhost.exe", "system", "node.exe", "powershell.exe", "conhost.exe",
+  "snippingtool.exe", "screenclippinghost.exe", "screensketch.exe", "gamebar.exe", "gamebarftserver.exe", "sharex.exe",
+  // Microsoft Defender
+  "msmpeng.exe", "mssense.exe", "nissrv.exe", "mpdefendercoreservice.exe",
+  // Kaspersky, ESET, Bitdefender, Norton / Symantec, McAfee / Trellix, Sophos
+  "avp.exe", "avpui.exe", "kavfs.exe", "ekrn.exe", "egui.exe", "vsserv.exe", "bdservicehost.exe", "epsecurityservice.exe",
+  "ccsvchst.exe", "nortonsecurity.exe", "sepwscsvc64.exe", "mcshield.exe", "mfemms.exe", "mfetp.exe", "mfeesp.exe",
+  "sophosfilescanner.exe", "savservice.exe", "sophosntpservice.exe", "sspservice.exe",
+  // Quick Heal / Seqrite, Avast / AVG, Malwarebytes, Trend Micro, Webroot, K7, Cylance, SentinelOne, CrowdStrike, Carbon Black
+  "scsecsvc.exe", "qhactivedefense.exe", "qhpisvr.exe", "avastsvc.exe", "avgsvc.exe", "mbamservice.exe",
+  "ntrtscan.exe", "tmbmsrv.exe", "pccntmon.exe", "wrsa.exe", "k7tsmngr.exe", "k7rtscan.exe", "cylancesvc.exe",
+  "sentinelagent.exe", "csfalconservice.exe", "repmgr.exe", "cb.exe",
+];
+
+export function isIgnoredScreenshotOpener(process: string): boolean {
+  return SCREENSHOT_IGNORED_OPENERS.includes(process.trim().toLowerCase());
+}
+
 export const SCREEN_CAPTURE_SOURCES = ["WINDOWS", "SNIPPING_TOOL", "GAME_BAR", "THIRD_PARTY", "CUSTOM"] as const;
 export type ScreenCaptureSource = (typeof SCREEN_CAPTURE_SOURCES)[number];
 

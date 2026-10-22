@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import type { AdminModuleKey } from "@em/shared";
+import type { AdminModuleKey, AdminPermissionKey } from "@em/shared";
 import { isModuleHidden } from "../services/moduleVisibility.service";
 
 // The identity-level counterpart to requireModule.ts's deployment-level license gate -
@@ -22,6 +22,15 @@ export function requireModuleAccess(moduleKey: AdminModuleKey) {
 // visibility) that overrides even a SUPER_ADMIN, unlike requireModuleAccess above. Checked
 // first (cheapest failure path, no DB read needed for the other two gates once this one
 // already rejected).
+// A narrower grant inside a module (see ADMIN_PERMISSION_KEYS) - super admins always pass.
+export function requirePermission(permission: AdminPermissionKey) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.adminRole === "SUPER_ADMIN") return next();
+    if (req.adminModuleGrantKeys?.includes(permission)) return next();
+    return res.status(403).json({ error: `You don't have ${permission === "USER_RISK" ? "User risk" : permission} access`, permission });
+  };
+}
+
 export function requireModuleVisible(moduleKey: AdminModuleKey) {
   return async (_req: Request, res: Response, next: NextFunction) => {
     try {

@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AssignedScreenCaptureWire, ScreenCaptureCapture, ScreenCaptureReportPayload, ScreenCaptureSource } from "@em/shared";
+import { isIgnoredScreenshotOpener } from "@em/shared";
 import { agentConfig } from "./config";
 import { listUserProfiles, resolveTargetPath } from "./userPaths";
 
@@ -35,16 +36,6 @@ const SNIPPING_TEMP_DIRS = [
   "AppData\\Local\\Packages\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TempState\\ScreenClip",
 ];
 
-// Programs that touch screenshots without the user sending them anywhere: the shell and its
-// thumbnails, search indexing, antivirus, the capture tools themselves and this agent.
-const IGNORED_OPENERS = new Set(
-  [
-    "explorer.exe", "dllhost.exe", "svchost.exe", "searchprotocolhost.exe", "searchindexer.exe", "searchfilterhost.exe",
-    "msmpeng.exe", "mssense.exe", "nissrv.exe", "runtimebroker.exe", "backgroundtaskhost.exe", "system",
-    "snippingtool.exe", "screenclippinghost.exe", "screensketch.exe", "gamebar.exe", "gamebarftserver.exe", "sharex.exe",
-    "node.exe", "powershell.exe", "conhost.exe",
-  ],
-);
 
 interface WatchedDir {
   dir: string;
@@ -356,7 +347,7 @@ async function readOpens() {
     const file = r.File.toLowerCase();
     if (!dirs.some((d) => file.startsWith(d)) || !CAPTURE_EXTENSIONS.has(path.extname(file))) continue;
     const proc = path.win32.basename(r.Process);
-    if (IGNORED_OPENERS.has(proc.toLowerCase())) continue;
+    if (isIgnoredScreenshotOpener(proc)) continue; // shell, indexing, antivirus... (shared list)
     const key = `${file}|${proc.toLowerCase()}`;
     if (reportedOpens.has(key)) continue;
     reportedOpens.add(key);

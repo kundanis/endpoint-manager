@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import type { AdminModuleKey, AdminRole, CreateAdminUserRequest, UpdateAdminUserRequest } from "@em/shared";
+import type { AdminGrantKey, AdminRole, CreateAdminUserRequest, UpdateAdminUserRequest } from "@em/shared";
 import { prisma } from "../db";
 
 export class EmailAlreadyExistsError extends Error {}
@@ -19,7 +19,7 @@ function serialize(admin: {
     id: admin.id,
     email: admin.email,
     role: admin.role as AdminRole,
-    moduleGrants: admin.moduleGrants.map((g) => g.moduleKey as AdminModuleKey),
+    moduleGrants: admin.moduleGrants.map((g) => g.moduleKey as AdminGrantKey),
     lastLoginAt: admin.lastLoginAt?.toISOString() ?? null,
     createdAt: admin.createdAt.toISOString(),
   };

@@ -138,10 +138,21 @@ import type {
   ZeroTrustPolicyDetail,
   SecurityProductOption,
   ZeroTrustPolicySummary,
+  AdminGrantKey,
   ScreenCaptureAssignmentView,
   ScreenCaptureItem,
   ScreenCapturePolicyDetail,
   ScreenCaptureReport,
+  UserActivityItem,
+  UserRiskAlert,
+  UserRiskIdentities,
+  UserRiskNotifications,
+  UserRiskNotificationsInput,
+  UserRiskOverview,
+  UserRiskRuleView,
+  UserRiskSettings,
+  UserRiskUserDetail,
+  UserRiskUserRow,
 } from "./types";
 
 export function useMe() {
@@ -172,7 +183,7 @@ export interface CreateAdminUserInput {
   email: string;
   password: string;
   role: AdminRole;
-  moduleGrants: LicenseModuleKey[];
+  moduleGrants: AdminGrantKey[];
 }
 
 export function useCreateAdminUser() {
@@ -186,7 +197,7 @@ export function useCreateAdminUser() {
 export interface UpdateAdminUserInput {
   id: string;
   role?: AdminRole;
-  moduleGrants?: LicenseModuleKey[];
+  moduleGrants?: AdminGrantKey[];
   password?: string;
 }
 
@@ -3375,5 +3386,104 @@ export function useScreenCaptures(policyId: string, row: { agentId: string; user
       ),
     enabled: !!row,
     refetchInterval: 15000,
+  });
+}
+
+// ---- Identity Governance -> User Risk
+
+export function useUserRiskOverview(enabled = true) {
+  return useQuery({ queryKey: ["userRisk", "overview"], queryFn: () => api.get<UserRiskOverview>("/admin/user-risk/overview"), refetchInterval: 30000, enabled });
+}
+
+export function useUserRiskUsers(days: number, enabled = true) {
+  return useQuery({ queryKey: ["userRisk", "users", days], queryFn: () => api.get<UserRiskUserRow[]>(`/admin/user-risk/users?days=${days}`), refetchInterval: 30000, enabled });
+}
+
+export function useUserRiskUser(userKey: string | undefined) {
+  return useQuery({
+    queryKey: ["userRisk", "user", userKey],
+    queryFn: () => api.get<UserRiskUserDetail>(`/admin/user-risk/users/${encodeURIComponent(userKey!)}`),
+    enabled: !!userKey,
+    refetchInterval: 30000,
+  });
+}
+
+export function useUserTimeline(userKey: string | undefined, days: number, types: string[]) {
+  return useQuery({
+    queryKey: ["userRisk", "timeline", userKey, days, types.join(",")],
+    queryFn: () => api.get<UserActivityItem[]>(`/admin/user-risk/users/${encodeURIComponent(userKey!)}/timeline?days=${days}&types=${types.join(",")}`),
+    enabled: !!userKey,
+    refetchInterval: 30000,
+  });
+}
+
+export function useUserRiskAlerts(params: { days: number; status: string; severity: string }) {
+  return useQuery({
+    queryKey: ["userRisk", "alerts", params.days, params.status, params.severity],
+    queryFn: () => api.get<UserRiskAlert[]>(`/admin/user-risk/alerts?days=${params.days}&status=${params.status}&severity=${params.severity}`),
+    refetchInterval: 30000,
+  });
+}
+
+export function useUserRiskAlertEvents(alertId: string | null) {
+  return useQuery({
+    queryKey: ["userRisk", "alertEvents", alertId],
+    queryFn: () => api.get<UserActivityItem[]>(`/admin/user-risk/alerts/${alertId}/events`),
+    enabled: !!alertId,
+  });
+}
+
+export function useUpdateUserRiskAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; status?: string; note?: string }) => api.patch<UserRiskAlert>(`/admin/user-risk/alerts/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["userRisk"] }),
+  });
+}
+
+export function useUserRiskSettings() {
+  return useQuery({
+    queryKey: ["userRisk", "settings"],
+    queryFn: () => api.get<{ settings: UserRiskSettings; rules: UserRiskRuleView[] }>("/admin/user-risk/settings"),
+  });
+}
+
+export function useSaveUserRiskSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: UserRiskSettings) => api.put<{ settings: UserRiskSettings; rules: UserRiskRuleView[] }>("/admin/user-risk/settings", settings),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["userRisk"] }),
+  });
+}
+
+export function useUserRiskIdentities() {
+  return useQuery({ queryKey: ["userRisk", "identities"], queryFn: () => api.get<UserRiskIdentities>("/admin/user-risk/identities") });
+}
+
+export function useUserRiskNotifications() {
+  return useQuery({ queryKey: ["userRisk", "notifications"], queryFn: () => api.get<UserRiskNotifications>("/admin/user-risk/notifications") });
+}
+
+export function useSaveUserRiskNotifications() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UserRiskNotificationsInput) => api.put<UserRiskNotifications>("/admin/user-risk/notifications", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["userRisk", "notifications"] }),
+  });
+}
+
+export function useTestUserRiskEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ sent: boolean }>("/admin/user-risk/notifications/test", {}),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["userRisk", "notifications"] }),
+  });
+}
+
+export function useRunUserRisk() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ collected: number; alerts: number }>("/admin/user-risk/run", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["userRisk"] }),
   });
 }

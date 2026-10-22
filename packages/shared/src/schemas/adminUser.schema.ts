@@ -18,13 +18,22 @@ export const ADMIN_MODULE_KEYS = [
 ] as const;
 export type AdminModuleKey = (typeof ADMIN_MODULE_KEYS)[number];
 
+// Extra, narrower grants on top of the modules - stored alongside them (AdminModuleGrant rows).
+// USER_RISK: Identity Governance -> User risk, which shows individual users' activity, so it is
+// limited to admins chosen for it even when they have the Identity Governance module.
+export const ADMIN_PERMISSION_KEYS = ["USER_RISK"] as const;
+export type AdminPermissionKey = (typeof ADMIN_PERMISSION_KEYS)[number];
+
+export const ADMIN_GRANT_KEYS = [...ADMIN_MODULE_KEYS, ...ADMIN_PERMISSION_KEYS] as const;
+export type AdminGrantKey = (typeof ADMIN_GRANT_KEYS)[number];
+
 export const createAdminUserRequestSchema = z.object({
   email: z.string().email().max(255),
   password: z.string().min(8).max(72),
   role: z.enum(ADMIN_ROLES).default("ADMIN"),
   // Ignored server-side when role is SUPER_ADMIN (they get everything) - still accepted
   // here rather than rejected, so a caller doesn't need to conditionally omit the field.
-  moduleGrants: z.array(z.enum(ADMIN_MODULE_KEYS)).max(ADMIN_MODULE_KEYS.length).default([]),
+  moduleGrants: z.array(z.enum(ADMIN_GRANT_KEYS)).max(ADMIN_GRANT_KEYS.length).default([]),
 });
 export type CreateAdminUserRequest = z.infer<typeof createAdminUserRequestSchema>;
 
@@ -33,7 +42,7 @@ export type CreateAdminUserRequest = z.infer<typeof createAdminUserRequestSchema
 // just one without resending the other.
 export const updateAdminUserRequestSchema = z.object({
   role: z.enum(ADMIN_ROLES).optional(),
-  moduleGrants: z.array(z.enum(ADMIN_MODULE_KEYS)).max(ADMIN_MODULE_KEYS.length).optional(),
+  moduleGrants: z.array(z.enum(ADMIN_GRANT_KEYS)).max(ADMIN_GRANT_KEYS.length).optional(),
   password: z.string().min(8).max(72).optional(),
 });
 export type UpdateAdminUserRequest = z.infer<typeof updateAdminUserRequestSchema>;

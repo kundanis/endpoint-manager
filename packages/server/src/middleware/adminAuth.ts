@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import type { AdminModuleKey, AdminRole } from "@em/shared";
+import type { AdminGrantKey, AdminRole } from "@em/shared";
 import { verifyAdminJwt } from "../utils/jwt";
 import { prisma } from "../db";
 
@@ -10,7 +10,7 @@ declare global {
       adminId?: string;
       adminEmail?: string;
       adminRole?: AdminRole;
-      adminModuleGrantKeys?: AdminModuleKey[];
+      adminModuleGrantKeys?: AdminGrantKey[];
     }
   }
 }
@@ -54,7 +54,7 @@ export async function adminAuthMiddleware(req: Request, res: Response, next: Nex
     req.adminId = payload.sub;
     req.adminEmail = payload.email;
     req.adminRole = admin.role as AdminRole;
-    req.adminModuleGrantKeys = admin.moduleGrants.map((g) => g.moduleKey as AdminModuleKey);
+    req.adminModuleGrantKeys = admin.moduleGrants.map((g) => g.moduleKey as AdminGrantKey);
     next();
   } catch (err) {
     next(err);

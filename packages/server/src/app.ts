@@ -43,6 +43,7 @@ import { dataTypesRouter } from "./routes/dataTypes.routes";
 import { policyAccessExceptionRouter } from "./routes/policyAccessException.routes";
 import { agentSecurityRouter } from "./routes/agentSecurity.routes";
 import { userProductivityRouter } from "./routes/userProductivity.routes";
+import { userRiskRouter } from "./routes/userRisk.routes";
 import { edrRouter } from "./routes/edr.routes";
 import { licenseActivationRouter } from "./routes/licenseActivation.routes";
 import { adminUsersRouter } from "./routes/adminUsers.routes";
@@ -50,7 +51,7 @@ import { moduleVisibilityRouter } from "./routes/moduleVisibility.routes";
 import { agentAuthMiddleware } from "./middleware/agentAuth";
 import { adminAuthMiddleware } from "./middleware/adminAuth";
 import { requireModule } from "./middleware/requireModule";
-import { requireModuleAccess, requireModuleVisible, requireSuperAdmin } from "./middleware/requireAdminRole";
+import { requireModuleAccess, requireModuleVisible, requirePermission, requireSuperAdmin } from "./middleware/requireAdminRole";
 import { errorHandler } from "./middleware/errorHandler";
 import { publicAccessAllowlist } from "./middleware/publicAccessAllowlist";
 import { behindCloudflare, trustCloudflare } from "./middleware/clientAddress";
@@ -158,6 +159,7 @@ export function createApp() {
   app.use("/api/admin/policy-exceptions", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), policyAccessExceptionRouter);
   app.use("/api/admin/agent-security", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), agentSecurityRouter);
   app.use("/api/admin/user-productivity", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), userProductivityRouter);
+  app.use("/api/admin/user-risk", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), requirePermission("USER_RISK"), userRiskRouter);
   app.use("/api/admin/edr", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), edrRouter);
   app.use("/api/admin/license", adminAuthMiddleware, licenseActivationRouter);
   // Readable by any admin (nav filtering needs it regardless of role); the PUT inside this

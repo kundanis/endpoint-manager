@@ -154,6 +154,7 @@ model Agent {
   dataMovementEvents      DataMovementEvent[]
   dataMovementAssignments DataMovementPolicyAssignment[]
   screenCaptureEvents      ScreenCaptureEvent[]
+  userActivityEvents       UserActivityEvent[]
   screenCaptureAssignments ScreenCapturePolicyAssignment[]
   appControlEvents      AppControlEvent[]
   appControlAssignments AppControlPolicyAssignment[]
@@ -1111,6 +1112,62 @@ model ScreenCaptureEvent {
 
   @@unique([agentId, filePath, capturedAt])
   @@index([agentId, captureDay])
+}
+
+// Identity Governance -> User Risk. Activity from every module (screen capture, data movement,
+// DLP, USB / app / command blocking, email blocking, EDR, logons) is copied into one per-user
+// stream by a server job, attributed to whoever was signed in to the endpoint at the time.
+// Built-in rules (services/userRisk/rules.ts) turn that stream into alerts; a user's risk score
+// is computed from their recent alerts on read, so it is never stored.
+model UserActivityEvent {
+  id          String   @id @default(uuid())
+  userKey     String   @db.NVarChar(200) // normalised: lower-case, no DOMAIN\ prefix
+  username    String   @db.NVarChar(300) // as reported
+  agentId     String?
+  agent       Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  hostname    String?  @db.NVarChar(255)
+  type        String   @db.NVarChar(40) // SCREENSHOT | USB_COPY | DLP_EVENT | LOGON | ...
+  summary     String   @db.NVarChar(500)
+  detail      String   @default("{}") @db.NVarChar(2000) // JSON
+  occurredAt  DateTime
+  sourceTable String   @db.NVarChar(40)
+  sourceId    String   @db.NVarChar(100)
+  createdAt   DateTime @default(now())
+
+  @@unique([sourceTable, sourceId, type])
+  @@index([userKey, occurredAt])
+  @@index([occurredAt])
+}
+
+model UserRiskAlert {
+  id          String   @id @default(uuid())
+  dedupeKey   String   @unique @db.NVarChar(400) // rule|user|time bucket - one alert per occurrence
+  userKey     String   @db.NVarChar(200)
+  username    String   @db.NVarChar(300)
+  ruleKey     String   @db.NVarChar(60)
+  severity    String   @db.NVarChar(10) // LOW | MEDIUM | HIGH | CRITICAL
+  points      Int
+  title       String   @db.NVarChar(300)
+  detail      String   @db.NVarChar(2000)
+  eventCount  Int
+  eventIds    String   @default("[]") @db.NVarChar(Max) // JSON, capped
+  windowStart DateTime
+  windowEnd   DateTime
+  status      String   @default("NEW") @db.NVarChar(20) // NEW | INVESTIGATING | CLOSED_TRUE | CLOSED_FALSE
+  notes       String   @default("[]") @db.NVarChar(Max) // JSON [{ at, by, text }]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userKey, createdAt])
+  @@index([status, createdAt])
+}
+
+// Singleton: settings (JSON) plus the collector's per-source progress.
+model UserRiskConfig {
+  id        String   @id @default("singleton")
+  settings  String   @default("{}") @db.NVarChar(Max)
+  cursors   String   @default("{}") @db.NVarChar(Max)
+  updatedAt DateTime @updatedAt
 }
 
 // User Productivity — passive session/idle tracking, not policy-gated (every enrolled

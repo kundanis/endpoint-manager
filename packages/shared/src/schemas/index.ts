@@ -22,6 +22,8 @@ export * from "./dataDiscovery.schema";
 export * from "./dlp.schema";
 export * from "./dataMovement.schema";
 export * from "./screenCapture.schema";
+export * from "./userRisk.schema";
+export * from "./securitySignals.schema";
 export * from "./appControl.schema";
 export * from "./webBlock.schema";
 export * from "./piiBlock.schema";

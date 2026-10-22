@@ -269,7 +269,7 @@ async function collectSoftwareViaReg(): Promise<InstalledSoftwareEntry[]> {
   return outputs.flatMap(parseRegQueryUninstall);
 }
 
-async function collectInstalledSoftware(): Promise<InstalledSoftwareEntry[]> {
+export async function collectInstalledSoftware(): Promise<InstalledSoftwareEntry[]> {
   if (process.platform !== "win32") return [];
 
   let entries: InstalledSoftwareEntry[] = [];

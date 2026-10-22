@@ -1,13 +1,11 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, ListChecks, Pencil, Plus, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2, Users } from "lucide-react";
+import { RefreshCw, ListChecks, Pencil, Plus, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2 } from "lucide-react";
 import type { SecurityRuleOperator } from "@em/shared";
-import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
 import {
   useAddZeroTrustCondition,
   useAgents,
-  useAssetGroups,
   useAssignZeroTrustPolicy,
   useCreateZeroTrustPolicy,
   useDeleteZeroTrustCondition,
@@ -30,7 +28,7 @@ import {
 import { RequiredSoftwareFields, useRequiredSoftwareState } from "../components/RequiredSoftwarePicker";
 import type { ZeroTrustPolicyDetail, ZeroTrustPolicySummary } from "../api/types";
 import { CHART_SEMANTIC } from "../chartTheme";
-import { NewPolicyDialog, PolicyDetail, PolicySettingsForm } from "../components/policy";
+import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm } from "../components/policy";
 import {
   Alert,
   Modal,
@@ -281,116 +279,22 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
   );
 }
 
-// Same layout as components/policy.tsx AssignmentEditor, kept local because this page also
-// shows each endpoint's OS edition in the picker.
+// The shared assignment editor (already-assigned endpoints and groups aren't offered again),
+// with each endpoint's OS edition shown in the picker.
 function AssignmentPanel({ policyId }: { policyId: string }) {
-  const { data: agents } = useAgents();
-  const { data: groups } = useAssetGroups();
   const { data: assignments } = useZeroTrustAssignments(policyId);
   const assign = useAssignZeroTrustPolicy();
   const unassign = useUnassignZeroTrustPolicy();
-
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-
-  function toggleAgent(agentId: string) {
-    setSelectedAgentIds((prev) => (prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]));
-  }
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
-  }
-
-  function handleAssign() {
-    assign.mutate(
-      { policyId, agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-      { onSuccess: () => { setSelectedAgentIds([]); setSelectedGroupIds([]); } },
-    );
-  }
-
   return (
-    <div className="app-stack">
-      <div className="app-stack-sm">
-        <span className="app-subhead">Currently assigned</span>
-        {assignments && assignments.length === 0 ? (
-          <EmptyState icon={Users} title="Not assigned to any endpoint or group yet">
-            Pick groups or endpoints below. A policy does nothing until it's assigned.
-          </EmptyState>
-        ) : (
-          <div className="app-table-wrap">
-            <table className="ep-tbl">
-              <thead>
-                <tr>
-                  <th scope="col">Target</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">
-                    <span className="app-vh">Remove</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {assignments?.map((a) => (
-                  <tr key={a.id}>
-                    <td>{a.hostname ? <EndpointLabel hostname={a.hostname} agentId={a.agentId} /> : a.groupName}</td>
-                    <td>{a.hostname ? "Endpoint" : <Badge tone="neu">Group</Badge>}</td>
-                    <td>
-                      <div className="app-cell-actions">
-                        <Button
-                          size="sm"
-                          onClick={() => unassign.mutate({ policyId, assignmentId: a.id })}
-                          disabled={unassign.isPending}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="app-stack-sm">
-        <span className="app-subhead">Assign to</span>
-        {groups && groups.length > 0 && (
-          <div className="app-check-grid">
-            {groups.map((g) => (
-              <Check
-                key={g.id}
-                checked={selectedGroupIds.includes(g.id)}
-                onChange={() => toggleGroup(g.id)}
-                label={
-                  <>
-                    {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
-                  </>
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        <EndpointCheckboxList
-          agents={agents}
-          selectedAgentIds={selectedAgentIds}
-          onToggle={toggleAgent}
-          selectedGroupIds={selectedGroupIds}
-          renderExtra={(agent) => agent.osEditionLabel && <span className="app-muted">({agent.osEditionLabel})</span>}
-        />
-
-        {assign.isError && <Alert tone="critical">{(assign.error as Error).message}</Alert>}
-        <div className="app-actions-row app-end">
-          <Button
-            variant="primary"
-            onClick={handleAssign}
-            disabled={assign.isPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
-          >
-            {assign.isPending ? "Assigning…" : "Assign"}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <AssignmentEditor
+      assignments={assignments}
+      onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
+      unassignPending={unassign.isPending}
+      onAssign={(agentIds, groupIds, done) => assign.mutate({ policyId, agentIds, groupIds }, { onSuccess: done })}
+      assignPending={assign.isPending}
+      assignError={assign.error}
+      renderAgentExtra={(agent) => agent.osEditionLabel && <span className="app-muted">({agent.osEditionLabel})</span>}
+    />
   );
 }
 

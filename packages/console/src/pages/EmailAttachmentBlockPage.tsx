@@ -213,10 +213,16 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   const [emailsText, setEmailsText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Mailboxes already in "Currently assigned" are skipped, not added twice.
+  const assignedEmails = new Set((assignments ?? []).map((a) => a.emailAddress.toLowerCase()));
+  const typed = splitEmailAddresses(emailsText);
+  const newEmails = typed.filter((addr) => !assignedEmails.has(addr));
+  const alreadyAssigned = typed.length - newEmails.length;
+
   function handleAssign(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    const emailAddresses = splitEmailAddresses(emailsText);
+    const emailAddresses = newEmails;
     if (emailAddresses.length === 0) return;
     assign.mutate(
       { policyId, emailAddresses },
@@ -280,9 +286,14 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
             placeholder={"jane.doe@company.com\njohn.smith@company.com"}
           />
         </Field>
+        {alreadyAssigned > 0 && (
+          <p className="app-text app-muted">
+            {alreadyAssigned} {alreadyAssigned === 1 ? "address is" : "addresses are"} already assigned and will be skipped.
+          </p>
+        )}
         {error && <Alert tone="critical">{error}</Alert>}
         <div className="app-actions-row app-end">
-          <Button type="submit" variant="primary" disabled={assign.isPending || splitEmailAddresses(emailsText).length === 0}>
+          <Button type="submit" variant="primary" disabled={assign.isPending || newEmails.length === 0}>
             {assign.isPending ? "Assigning…" : "Assign"}
           </Button>
         </div>

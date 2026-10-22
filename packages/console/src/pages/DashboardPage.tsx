@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Monitor, Network, Radar, ShieldCheck, TriangleAlert, Wifi } from "lucide-react";
 import { useDashboardSummary, useIsItemHidden } from "../api/hooks";
+import UserRiskDashboardCard from "../components/UserRiskDashboardCard";
 import type { DashboardSummary } from "../api/types";
 import { CHART_SEMANTIC, CHART_SERIES } from "../chartTheme";
 import {
@@ -557,6 +558,8 @@ export default function DashboardPage() {
       </Row>
 
       {!networkScanHidden && <UnmanagedDevicesCard summary={summary} onOpenNetworkScan={openNetworkScan} />}
+
+      <UserRiskDashboardCard />
     </>
   );
 }

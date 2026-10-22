@@ -10,6 +10,7 @@ import { reconcileStaleAgentUpdateTasks } from "./services/agentUpdate.service";
 import { failInterruptedSyncRuns } from "./services/vulnerability.service";
 import { startFleetCache } from "./cache/fleetCache";
 import { startPresenceFlush } from "./presence/presence";
+import { scheduleUserRisk } from "./services/userRisk/userRisk.service";
 
 // Last-resort safety net: without this, an unhandled rejection anywhere the request/response
 // try/catch chain doesn't reach (e.g. a future bug shaped like the one just fixed in
@@ -56,6 +57,7 @@ failInterruptedSyncRuns()
 scheduleLicenseRevalidation();
 schedulePatchAutomation();
 scheduleStaleAgentUpdateReconciliation();
+scheduleUserRisk();
 startFleetCache();
 startPresenceFlush();
 

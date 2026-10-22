@@ -4,6 +4,7 @@ import type {
   ScreenCaptureSource,
   UpdateScreenCapturePolicyRequest,
 } from "@em/shared";
+import { isIgnoredScreenshotOpener } from "@em/shared";
 import { prisma } from "../db";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
@@ -44,6 +45,11 @@ interface OpenedBy {
   at: string;
 }
 
+// Programs that opened a screenshot, minus antivirus and the like recorded by older agents.
+function openersOf(e: { openedBy: string }): OpenedBy[] {
+  return (JSON.parse(e.openedBy) as OpenedBy[]).filter((o) => !isIgnoredScreenshotOpener(o.process));
+}
+
 type EventRow = Awaited<ReturnType<typeof prisma.screenCaptureEvent.findMany>>[number];
 
 // Per user per day: how many screenshots, from which tools, how many were deleted soon after,
@@ -63,7 +69,7 @@ export function buildDailyRows(events: EventRow[], policy: Pick<PolicyRow, "dail
     row.count++;
     row.sources.add(e.source);
     if (isQuickDelete(e, policy.quickDeleteMinutes)) row.quickDeleted++;
-    for (const o of JSON.parse(e.openedBy) as OpenedBy[]) row.openedBy.add(o.process);
+    for (const o of openersOf(e)) row.openedBy.add(o.process);
     if (e.capturedAt > row.lastCaptureAt) row.lastCaptureAt = e.capturedAt;
   }
   return [...rows.values()]
@@ -224,7 +230,7 @@ export async function getPolicyReport(policyId: string, days: number) {
       captures: events.length,
       flaggedUserDays: rows.filter((r) => r.overThreshold).length,
       quickDeleted: events.filter((e) => isQuickDelete(e, policy.quickDeleteMinutes)).length,
-      openedByOtherApps: events.filter((e) => e.openedBy !== "[]").length,
+      openedByOtherApps: events.filter((e) => openersOf(e).length > 0).length,
     },
     rows: rows.map((r) => ({ ...r, hostname: hostnames.get(r.agentId) ?? null })),
   };
@@ -246,6 +252,6 @@ export async function getCaptures(policyId: string, agentId: string, username: s
     capturedAt: e.capturedAt.toISOString(),
     deletedAt: e.deletedAt?.toISOString() ?? null,
     quickDeleted: isQuickDelete(e, policy.quickDeleteMinutes),
-    openedBy: JSON.parse(e.openedBy) as OpenedBy[],
+    openedBy: openersOf(e),
   }));
 }

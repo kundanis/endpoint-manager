@@ -49,8 +49,8 @@ function isModuleHidden(module: NavModule, visibility: ModuleVisibilityView | un
   return visibility.hiddenModuleKeys.includes(module.licenseModule);
 }
 
-function visibleItems(module: NavModule, visibility: ModuleVisibilityView | undefined) {
-  const items = module.items ?? [];
+function visibleItems(module: NavModule, visibility: ModuleVisibilityView | undefined, me?: ReturnType<typeof useMe>["data"]) {
+  const items = (module.items ?? []).filter((item) => !item.permission || me?.role === "SUPER_ADMIN" || !!me?.moduleGrants.includes(item.permission));
   if (!visibility) return items;
   return items.filter((item) => !visibility.hiddenItemPaths.includes(item.path));
 }
@@ -173,7 +173,7 @@ export default function Layout() {
 
   const navModules = NAV_MODULES.filter((module) => !module.superAdminOnly || me?.role === "SUPER_ADMIN")
     .filter((module) => !isModuleHidden(module, visibility))
-    .filter((module) => !module.items || visibleItems(module, visibility).length > 0);
+    .filter((module) => !module.items || visibleItems(module, visibility, me).length > 0);
 
   function renderModule(module: NavModule) {
     const Icon = MODULE_ICONS[module.key] ?? LayoutGrid;
@@ -211,7 +211,7 @@ export default function Layout() {
         </button>
         {isExpanded && (
           <div className="ep-sub">
-            {visibleItems(module, visibility).map((item) => (
+            {visibleItems(module, visibility, me).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => (isActive ? "ep-on-sub" : "")}>
                 {item.label}
               </NavLink>

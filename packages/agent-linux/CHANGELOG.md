@@ -6,6 +6,9 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.2
+- The product is now called Endpoint IQ: install and uninstall messages use the new name.
+
 ## 0.1.1
 - Re-enrolls automatically when the server no longer recognises this agent's saved
   identity (e.g. the server was reinstalled), instead of failing every check-in.

@@ -6,6 +6,13 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.14
+- New: Windows signals for User risk - failed sign-ins, users added to local Administrators, cleared
+  event logs, antivirus or firewall switched off, newly installed software and bursts of deleted
+  files in users' folders. Makes sure failed-logon and group-change auditing is on.
+- Screen capture: antivirus and EDR scanners (Kaspersky, ESET, Quick Heal, Sophos and others) reading a new
+  screenshot are no longer reported as "opened by".
+
 ## 0.2.13
 - The product is now called Endpoint IQ: setup, uninstall and log messages use the new name.
 

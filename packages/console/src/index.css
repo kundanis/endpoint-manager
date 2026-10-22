@@ -828,3 +828,33 @@ a.app-legend-link:hover {
 .endpoint-status-dot.offline {
   background: var(--ep-neutral);
 }
+
+/* User risk: 14-day score trend (UserRiskUserPage). */
+.app-risk-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 140px;
+}
+.app-risk-trend-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+}
+.app-risk-trend-bar {
+  width: 100%;
+  max-width: 28px;
+  border-radius: 3px 3px 0 0;
+}
+.app-risk-trend-bar.is-low { background: var(--ep-sev-low); }
+.app-risk-trend-bar.is-med { background: var(--ep-sev-medium); }
+.app-risk-trend-bar.is-high { background: var(--ep-sev-high); }
+.app-risk-trend-bar.is-crit { background: var(--ep-sev-critical); }
+.app-risk-trend-day {
+  font-size: 11px;
+  color: var(--ep-ink-subtle);
+}

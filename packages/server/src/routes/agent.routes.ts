@@ -9,6 +9,7 @@ import {
   dataDiscoveryScanResultPayloadSchema,
   dataMovementScanResultPayloadSchema,
   screenCaptureReportPayloadSchema,
+  securitySignalsPayloadSchema,
   deploymentStatusPayloadSchema,
   dlpEventBatchPayloadSchema,
   edrScanResultPayloadSchema,
@@ -52,6 +53,7 @@ import {
   recordScanResult as recordDataMovementScanResult,
   resolveAssignedPoliciesForAgent as resolveAssignedDataMovementPoliciesForAgent,
 } from "../services/dataMovementEvent.service";
+import { recordAgentSignals } from "../services/userRisk/userRisk.service";
 import { recordReport as recordScreenCaptureReport, resolveAssignedForAgent as resolveScreenCaptureForAgent } from "../services/screenCaptureEvent.service";
 import {
   recordScanResult as recordAppControlScanResult,
@@ -342,6 +344,17 @@ agentRouter.post("/screen-capture/report", async (req, res, next) => {
   try {
     const payload = screenCaptureReportPayloadSchema.parse(req.body);
     await recordScreenCaptureReport(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Windows signals for User Risk (failed sign-ins, admin group changes, ...).
+agentRouter.post("/security-signals", async (req, res, next) => {
+  try {
+    const payload = securitySignalsPayloadSchema.parse(req.body);
+    await recordAgentSignals(req.agentId!, payload);
     res.status(204).send();
   } catch (err) {
     next(err);

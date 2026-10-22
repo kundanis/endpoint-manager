@@ -1,4 +1,5 @@
 import type { AssignedScreenCaptureWire, ScreenCaptureReportPayload, ScreenCaptureSource } from "@em/shared";
+import { isIgnoredScreenshotOpener } from "@em/shared";
 import { prisma } from "../db";
 import { isAgentPaused } from "./pause.service";
 import { policySources } from "./screenCapturePolicy.service";
@@ -59,6 +60,7 @@ export async function recordReport(agentId: string, payload: ScreenCaptureReport
   }
 
   for (const o of payload.opens) {
+    if (isIgnoredScreenshotOpener(o.process)) continue; // antivirus etc. (older agents still send these)
     const event = await latestCapture(agentId, o.filePath);
     if (!event) continue;
     const openedBy = JSON.parse(event.openedBy) as { process: string; at: string }[];

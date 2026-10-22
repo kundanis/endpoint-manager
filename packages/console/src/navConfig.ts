@@ -1,8 +1,10 @@
-import type { LicenseModuleKey } from "./api/types";
+import type { AdminPermissionKey, LicenseModuleKey } from "./api/types";
 
 export interface NavItem {
   path: string;
   label: string;
+  // Shown only to super admins and admins holding this extra grant.
+  permission?: AdminPermissionKey;
 }
 
 export interface NavModule {
@@ -83,7 +85,10 @@ export const NAV_MODULES: NavModule[] = [
     key: "user",
     label: "Identity Governance",
     licenseModule: "USER_MANAGER",
-    items: [{ path: "/user-productivity", label: "User productivity" }],
+    items: [
+      { path: "/user-productivity", label: "User productivity" },
+      { path: "/user-risk", label: "User risk", permission: "USER_RISK" },
+    ],
   },
   {
     key: "licensing",

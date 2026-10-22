@@ -52,18 +52,22 @@ export interface ModuleVisibilityView {
 // requireAdminRole.ts on the server for the exact same rule enforced server-side.
 export type AdminRole = "SUPER_ADMIN" | "ADMIN";
 
+// Narrower grants on top of modules (server: ADMIN_PERMISSION_KEYS).
+export type AdminPermissionKey = "USER_RISK";
+export type AdminGrantKey = LicenseModuleKey | AdminPermissionKey;
+
 export interface MeView {
   id: string;
   email: string;
   role: AdminRole;
-  moduleGrants: LicenseModuleKey[];
+  moduleGrants: AdminGrantKey[];
 }
 
 export interface AdminUserListItem {
   id: string;
   email: string;
   role: AdminRole;
-  moduleGrants: LicenseModuleKey[];
+  moduleGrants: AdminGrantKey[];
   lastLoginAt: string | null;
   createdAt: string;
 }
@@ -1599,3 +1603,117 @@ export interface ScreenCaptureItem {
   quickDeleted: boolean;
   openedBy: { process: string; at: string }[];
 }
+
+// ---- Identity Governance -> User Risk
+
+export type UserRiskSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type UserRiskAlertStatus = "NEW" | "INVESTIGATING" | "CLOSED_TRUE" | "CLOSED_FALSE";
+
+export interface UserRiskOverview {
+  usersByLevel: Record<UserRiskSeverity, number>;
+  openAlerts: Partial<Record<UserRiskSeverity, number>>;
+  monitoredUsers: number;
+  lastRunAt: string | null;
+}
+
+export interface UserRiskUserRow {
+  userKey: string;
+  username: string;
+  score: number;
+  level: UserRiskSeverity;
+  alertCount: number;
+  openAlertCount: number;
+  topRules: { ruleKey: string; title: string; count: number }[];
+  activityCount: number;
+  lastActivityAt: string | null;
+  endpoints: string[];
+}
+
+export interface UserRiskAlert {
+  id: string;
+  userKey: string;
+  username: string;
+  ruleKey: string;
+  ruleTitle: string;
+  severity: UserRiskSeverity;
+  points: number;
+  title: string;
+  detail: string;
+  eventCount: number;
+  windowStart: string;
+  windowEnd: string;
+  status: UserRiskAlertStatus;
+  notes: { at: string; by: string; text: string }[];
+  createdAt: string;
+}
+
+export interface UserRiskUserDetail {
+  userKey: string;
+  username: string;
+  score: number;
+  level: UserRiskSeverity;
+  history: { day: string; score: number }[];
+  alerts: UserRiskAlert[];
+}
+
+export interface UserActivityItem {
+  id: string;
+  type: string;
+  summary: string;
+  occurredAt: string;
+  agentId: string | null;
+  hostname: string | null;
+}
+
+export interface UserRiskRuleSetting {
+  enabled: boolean;
+  threshold?: number;
+  points: number;
+  severity: UserRiskSeverity;
+}
+
+export interface UserRiskSettings {
+  timezone: string;
+  workStartHour: number;
+  workEndHour: number;
+  workDays: number[];
+  excludedUsers: string[];
+  retentionDays: number;
+  rules: Record<string, UserRiskRuleSetting>;
+  autoLinkEmails: boolean;
+  identityLinks: { email: string; userKey: string }[];
+}
+
+export interface UserRiskIdentities {
+  windowsUsers: string[];
+  emails: { email: string; activityCount: number; linkedTo: string | null; auto: boolean }[];
+}
+
+export interface UserRiskRuleView {
+  key: string;
+  title: string;
+  description: string;
+  category: string;
+  kind: "count" | "each" | "combo" | "baseline";
+  window: "hour" | "day" | null;
+  thresholdLabel: string | null;
+  defaults: UserRiskRuleSetting;
+  setting: UserRiskRuleSetting;
+}
+
+export interface UserRiskNotifications {
+  enabled: boolean;
+  recipients: string[];
+  minSeverity: UserRiskSeverity;
+  weeklyDigest: boolean;
+  digestWeekday: number;
+  digestHour: number;
+  consoleUrl: string | null;
+  smtp: { host: string; port: number; secure: boolean; username: string | null; from: string; passwordSet: boolean };
+  lastError?: string | null;
+  lastSentAt?: string | null;
+}
+
+export type UserRiskNotificationsInput = Omit<UserRiskNotifications, "smtp" | "lastError" | "lastSentAt"> & {
+  smtp: { host: string; port: number; secure: boolean; username: string | null; from: string; password?: string };
+};

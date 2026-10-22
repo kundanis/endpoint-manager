@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { KeyRound, Pencil, Trash2, UserPlus, Users } from "lucide-react";
-import type { AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
+import type { AdminGrantKey, AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
 import { useAdminUsers, useCreateAdminUser, useDeleteAdminUser, useMe, useUpdateAdminUser } from "../api/hooks";
 import { LICENSE_MODULE_LABELS } from "../navConfig";
 import {
@@ -37,6 +37,8 @@ const MODULE_KEYS: LicenseModuleKey[] = [
   "USER_MANAGER",
 ];
 const MODULE_LABELS = LICENSE_MODULE_LABELS;
+// Narrower grants on top of the modules; labels for the list and the form.
+const GRANT_LABELS: Record<AdminGrantKey, string> = { ...LICENSE_MODULE_LABELS, USER_RISK: "User risk access" } as Record<AdminGrantKey, string>;
 
 const ADMIN_FORM_ID = "admin-user-form";
 
@@ -55,7 +57,7 @@ export default function AdminUsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<AdminRole>("ADMIN");
-  const [moduleGrants, setModuleGrants] = useState<Set<LicenseModuleKey>>(new Set());
+  const [moduleGrants, setModuleGrants] = useState<Set<AdminGrantKey>>(new Set());
 
   const paged = usePagedList(admins ?? [], 25);
 
@@ -96,7 +98,7 @@ export default function AdminUsersPage() {
     setModuleGrants(new Set(admin.moduleGrants));
   }
 
-  function toggleModule(key: LicenseModuleKey) {
+  function toggleModule(key: AdminGrantKey) {
     setModuleGrants((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -241,7 +243,7 @@ export default function AdminUsersPage() {
                           ) : (
                             <div className="app-badge-row">
                               {admin.moduleGrants.map((m) => (
-                                <Tag key={m}>{MODULE_LABELS[m]}</Tag>
+                                <Tag key={m}>{GRANT_LABELS[m] ?? m}</Tag>
                               ))}
                             </div>
                           )}
@@ -360,6 +362,16 @@ export default function AdminUsersPage() {
                 <p className="app-muted">Super admins have access to every module automatically.</p>
               )}
             </FormSection>
+            {role === "ADMIN" && (
+              <FormSection title="Sensitive access" description="Areas that show individual people's activity. Give them only to admins who investigate users.">
+                <Check
+                  checked={moduleGrants.has("USER_RISK")}
+                  onChange={() => toggleModule("USER_RISK")}
+                  label="User risk"
+                  hint="Risk scores, alerts and each user's activity timeline (also needs Identity Governance)"
+                />
+              </FormSection>
+            )}
             {wouldRemoveLastSuperAdmin && (
               <Alert tone="warn">This is the last super admin — promote another admin to super admin before demoting this one.</Alert>
             )}

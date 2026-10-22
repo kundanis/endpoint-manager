@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Lock, ShieldOff } from "lucide-react";
 import { useLicenseStatus, useMe, useModuleVisibility } from "../api/hooks";
-import type { LicenseModuleKey } from "../api/types";
+import type { AdminPermissionKey, LicenseModuleKey } from "../api/types";
 import { LICENSE_MODULE_LABELS } from "../navConfig";
 import { Card, EmptyState, PageHeader, Skeleton } from "./ui";
 
@@ -13,7 +13,18 @@ const MODULE_LABELS = LICENSE_MODULE_LABELS;
 // instead of touching every individual page component. Purely a UX layer: the real
 // enforcement is requireModule.ts on the server, which rejects the underlying API calls
 // regardless of whether this component is bypassed.
-export default function RequireModule({ module, children }: { module: LicenseModuleKey; children: ReactNode }) {
+const PERMISSION_LABELS: Record<AdminPermissionKey, string> = { USER_RISK: "User risk" };
+
+export default function RequireModule({
+  module,
+  permission,
+  children,
+}: {
+  module: LicenseModuleKey;
+  // An extra grant needed on top of the module (mirrors requirePermission on the server).
+  permission?: AdminPermissionKey;
+  children: ReactNode;
+}) {
   const { data: status, isLoading: licenseLoading } = useLicenseStatus();
   const { data: me, isLoading: meLoading } = useMe();
   const { data: visibility, isLoading: visibilityLoading } = useModuleVisibility();
@@ -60,6 +71,20 @@ export default function RequireModule({ module, children }: { module: LicenseMod
         <Card>
           <EmptyState icon={ShieldOff} title="You don't have access to this module">
             Ask a super admin to grant you access to {MODULE_LABELS[module]} in Administrators.
+          </EmptyState>
+        </Card>
+      </>
+    );
+  }
+
+  if (permission && me?.role !== "SUPER_ADMIN" && !me?.moduleGrants.includes(permission)) {
+    return (
+      <>
+        <PageHeader title={PERMISSION_LABELS[permission]} />
+        <Card>
+          <EmptyState icon={ShieldOff} title={`You don't have access to ${PERMISSION_LABELS[permission]}`}>
+            It shows individual users' activity, so it needs its own access. Ask a super admin to give you{" "}
+            {PERMISSION_LABELS[permission]} access in Administrators.
           </EmptyState>
         </Card>
       </>

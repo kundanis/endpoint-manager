@@ -18,6 +18,8 @@ import DataDiscoveryPage from "./pages/DataDiscoveryPage";
 import DlpPage from "./pages/DlpPage";
 import DlpContentPoliciesPage from "./pages/DlpContentPoliciesPage";
 import ScreenCapturePage from "./pages/ScreenCapturePage";
+import UserRiskPage, { UserRiskAlertsTab, UserRiskSettingsTab, UserRiskUsersTab } from "./pages/UserRiskPage";
+import UserRiskUserPage from "./pages/UserRiskUserPage";
 import DataMovementPage from "./pages/DataMovementPage";
 import EpmPage from "./pages/EpmPage";
 import DataTypesPage from "./pages/DataTypesPage";
@@ -85,6 +87,13 @@ export default function App() {
         </Route>
         <Route path="/access-exceptions" element={<RequireModule module="DATA_MANAGER"><AccessExceptionsPage /></RequireModule>} />
         <Route path="/user-productivity" element={<RequireModule module="USER_MANAGER"><UserProductivityPage /></RequireModule>} />
+        <Route path="/user-risk" element={<RequireModule module="USER_MANAGER" permission="USER_RISK"><UserRiskPage /></RequireModule>}>
+          <Route index element={<Navigate to="users" replace />} />
+          <Route path="users" element={<UserRiskUsersTab />} />
+          <Route path="alerts" element={<UserRiskAlertsTab />} />
+          <Route path="settings" element={<UserRiskSettingsTab />} />
+        </Route>
+        <Route path="/user-risk/user/:userKey" element={<RequireModule module="USER_MANAGER" permission="USER_RISK"><UserRiskUserPage /></RequireModule>} />
         <Route path="/licensing" element={<LicenseActivationPage />} />
         <Route path="/admin-users" element={<RequireSuperAdmin><AdminUsersPage /></RequireSuperAdmin>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
