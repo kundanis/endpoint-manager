@@ -44,6 +44,8 @@ import { policyAccessExceptionRouter } from "./routes/policyAccessException.rout
 import { agentSecurityRouter } from "./routes/agentSecurity.routes";
 import { userProductivityRouter } from "./routes/userProductivity.routes";
 import { userRiskRouter } from "./routes/userRisk.routes";
+import { adminAuditRouter } from "./routes/adminAudit.routes";
+import { auditCapture } from "./services/adminAudit.service";
 import { edrRouter } from "./routes/edr.routes";
 import { licenseActivationRouter } from "./routes/licenseActivation.routes";
 import { adminUsersRouter } from "./routes/adminUsers.routes";
@@ -127,6 +129,9 @@ export function createApp() {
   // gate at all, since both must stay reachable regardless of which modules a license
   // includes (Dashboard for a fleet overview, Licensing so the admin can even see/fix
   // their license in the first place).
+  // Admin logs: records every change made through the admin API (and sensitive views), for
+  // whichever router below handles it. Runs before them so it sees the final response status.
+  app.use("/api/admin", auditCapture);
   app.use("/api/admin/dashboard", adminAuthMiddleware, dashboardRouter);
   // SSE push stream for the console - no module gate (it carries cross-module invalidations).
   app.use("/api/admin/events", adminAuthMiddleware, eventsRouter);
@@ -160,6 +165,7 @@ export function createApp() {
   app.use("/api/admin/agent-security", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), agentSecurityRouter);
   app.use("/api/admin/user-productivity", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), userProductivityRouter);
   app.use("/api/admin/user-risk", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), requirePermission("USER_RISK"), userRiskRouter);
+  app.use("/api/admin/audit-log", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireSuperAdmin, adminAuditRouter);
   app.use("/api/admin/edr", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), edrRouter);
   app.use("/api/admin/license", adminAuthMiddleware, licenseActivationRouter);
   // Readable by any admin (nav filtering needs it regardless of role); the PUT inside this

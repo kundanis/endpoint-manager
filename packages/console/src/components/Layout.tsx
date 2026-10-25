@@ -50,7 +50,9 @@ function isModuleHidden(module: NavModule, visibility: ModuleVisibilityView | un
 }
 
 function visibleItems(module: NavModule, visibility: ModuleVisibilityView | undefined, me?: ReturnType<typeof useMe>["data"]) {
-  const items = (module.items ?? []).filter((item) => !item.permission || me?.role === "SUPER_ADMIN" || !!me?.moduleGrants.includes(item.permission));
+  const items = (module.items ?? [])
+    .filter((item) => !item.superAdminOnly || me?.role === "SUPER_ADMIN")
+    .filter((item) => !item.permission || me?.role === "SUPER_ADMIN" || !!me?.moduleGrants.includes(item.permission));
   if (!visibility) return items;
   return items.filter((item) => !visibility.hiddenItemPaths.includes(item.path));
 }

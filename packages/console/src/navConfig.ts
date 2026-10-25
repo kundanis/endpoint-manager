@@ -5,6 +5,8 @@ export interface NavItem {
   label: string;
   // Shown only to super admins and admins holding this extra grant.
   permission?: AdminPermissionKey;
+  // Shown only to super admins.
+  superAdminOnly?: boolean;
 }
 
 export interface NavModule {
@@ -88,6 +90,7 @@ export const NAV_MODULES: NavModule[] = [
     items: [
       { path: "/user-productivity", label: "User productivity" },
       { path: "/user-risk", label: "User risk", permission: "USER_RISK" },
+      { path: "/admin-logs", label: "Admin logs", superAdminOnly: true },
     ],
   },
   {

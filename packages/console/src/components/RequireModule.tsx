@@ -18,11 +18,14 @@ const PERMISSION_LABELS: Record<AdminPermissionKey, string> = { USER_RISK: "User
 export default function RequireModule({
   module,
   permission,
+  superAdminOnly,
   children,
 }: {
   module: LicenseModuleKey;
   // An extra grant needed on top of the module (mirrors requirePermission on the server).
   permission?: AdminPermissionKey;
+  // Super admins only (mirrors requireSuperAdmin on the server).
+  superAdminOnly?: boolean;
   children: ReactNode;
 }) {
   const { data: status, isLoading: licenseLoading } = useLicenseStatus();
@@ -71,6 +74,19 @@ export default function RequireModule({
         <Card>
           <EmptyState icon={ShieldOff} title="You don't have access to this module">
             Ask a super admin to grant you access to {MODULE_LABELS[module]} in Administrators.
+          </EmptyState>
+        </Card>
+      </>
+    );
+  }
+
+  if (superAdminOnly && me?.role !== "SUPER_ADMIN") {
+    return (
+      <>
+        <PageHeader title="Admin logs" />
+        <Card>
+          <EmptyState icon={ShieldOff} title="Super admins only">
+            Admin logs record what every administrator does, so only super admins can open them.
           </EmptyState>
         </Card>
       </>

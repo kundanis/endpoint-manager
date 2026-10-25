@@ -4,8 +4,26 @@ import { loginRequestSchema } from "@em/shared";
 import { InvalidCredentialsError, login } from "../services/auth.service";
 import { adminAuthMiddleware } from "../middleware/adminAuth";
 import { logger } from "../logger";
+import { writeAudit } from "../services/adminAudit.service";
 
 export const authRouter = Router();
+
+function auditSignIn(req: import("express").Request, email: string, action: "LOGIN" | "LOGIN_FAILED" | "LOGIN_BLOCKED", summary: string, adminId: string | null = null) {
+  void writeAudit({
+    adminId,
+    adminEmail: email,
+    ipAddress: req.ip,
+    category: "Sign-in",
+    action,
+    module: "Console",
+    summary,
+    method: "POST",
+    path: "/api/auth/login",
+    statusCode: action === "LOGIN" ? 200 : action === "LOGIN_BLOCKED" ? 429 : 401,
+    success: action === "LOGIN",
+    detail: { userAgent: req.get("user-agent") ?? null },
+  });
+}
 
 const COOKIE_NAME = "em_admin_jwt";
 const COOKIE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -53,6 +71,7 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
     const until = lockedUntil(key);
     if (until) {
       const minutes = Math.ceil((until - Date.now()) / 60_000);
+      auditSignIn(req, key, "LOGIN_BLOCKED", "Sign-in blocked: too many failed attempts");
       return res.status(429).json({ error: `Too many failed attempts. Try again in ${minutes} minute(s).` });
     }
 
@@ -62,11 +81,13 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
     } catch (err) {
       if (err instanceof InvalidCredentialsError) {
         recordFailure(key);
+        auditSignIn(req, key, "LOGIN_FAILED", "Failed sign-in (wrong email or password)");
         return res.status(401).json({ error: "Invalid email or password" });
       }
       throw err;
     }
     failuresByEmail.delete(key);
+    auditSignIn(req, key, "LOGIN", "Signed in to the console");
 
     res.cookie(COOKIE_NAME, result.token, {
       httpOnly: true,

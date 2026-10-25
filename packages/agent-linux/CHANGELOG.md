@@ -6,6 +6,10 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.3
+- Installer: when the system's own Node.js package is too old (Ubuntu 22.04 ships v12), installs
+  Node.js 20 from NodeSource instead of setting the agent up on a runtime that can't start it.
+
 ## 0.1.2
 - The product is now called Endpoint IQ: install and uninstall messages use the new name.
 

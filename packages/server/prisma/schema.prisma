@@ -1170,6 +1170,38 @@ model UserRiskConfig {
   updatedAt DateTime @updatedAt
 }
 
+// Identity Governance -> Admin logs: one row per admin action (console sign-ins, every change
+// made through the admin API, and viewing of sensitive data such as User risk timelines).
+// Append-only: there is no API to edit or delete a row; old rows go only through the retention
+// setting (AdminAuditConfig) or a super admin's "clear older than", which is itself logged.
+// No foreign key to AdminUser on purpose - an entry outlives the admin it names.
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  at         DateTime @default(now())
+  adminId    String?
+  adminEmail String   @db.NVarChar(320)
+  ipAddress  String?  @db.NVarChar(64)
+  category   String   @db.NVarChar(40) // Sign-in | Administrators | Policies | Endpoints | Sensitive data | Settings | Admin logs
+  action     String   @db.NVarChar(60) // e.g. LOGIN_FAILED, CREATE, UPDATE, DELETE, ASSIGN, RUN, VIEW
+  module     String?  @db.NVarChar(60) // console area, e.g. "Zero Trust"
+  summary    String   @db.NVarChar(500)
+  targetId   String?  @db.NVarChar(100)
+  method     String?  @db.NVarChar(10)
+  path       String?  @db.NVarChar(500)
+  statusCode Int?
+  success    Boolean
+  detail     String   @default("{}") @db.NVarChar(Max) // JSON: submitted values, secrets redacted
+
+  @@index([at])
+  @@index([adminEmail, at])
+}
+
+model AdminAuditConfig {
+  id            String   @id @default("singleton")
+  retentionDays Int      @default(365)
+  updatedAt     DateTime @updatedAt
+}
+
 // User Productivity — passive session/idle tracking, not policy-gated (every enrolled
 // agent always reports this, like inventory/patch scanning). loginAt is part of the
 // identity key because the same (agent, username) has many distinct sign-ins over time,

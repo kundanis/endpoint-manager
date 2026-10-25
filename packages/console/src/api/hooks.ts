@@ -138,6 +138,8 @@ import type {
   ZeroTrustPolicyDetail,
   SecurityProductOption,
   ZeroTrustPolicySummary,
+  AdminAuditEntry,
+  AdminAuditSettings,
   AdminGrantKey,
   ScreenCaptureAssignmentView,
   ScreenCaptureItem,
@@ -3485,5 +3487,54 @@ export function useRunUserRisk() {
   return useMutation({
     mutationFn: () => api.post<{ collected: number; alerts: number }>("/admin/user-risk/run", {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["userRisk"] }),
+  });
+}
+
+// ---- Identity Governance -> Admin logs (super admins only)
+
+export interface AdminAuditFilters {
+  q: string;
+  admin: string;
+  category: string;
+  result: string;
+  from: string;
+  to: string;
+}
+
+function auditQuery(f: AdminAuditFilters, page: number, pageSize: number) {
+  const p = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  for (const [k, v] of Object.entries(f)) if (v) p.set(k, k === "from" ? new Date(`${v}T00:00:00`).toISOString() : k === "to" ? new Date(`${v}T23:59:59.999`).toISOString() : v);
+  return p.toString();
+}
+
+export function useAdminAuditLog(filters: AdminAuditFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: ["adminAudit", "list", filters, page, pageSize],
+    queryFn: () => api.get<{ total: number; items: AdminAuditEntry[] }>(`/admin/audit-log?${auditQuery(filters, page, pageSize)}`),
+    refetchInterval: 30000,
+  });
+}
+
+export function useAdminAuditFacets() {
+  return useQuery({ queryKey: ["adminAudit", "facets"], queryFn: () => api.get<{ admins: string[]; categories: string[] }>("/admin/audit-log/facets") });
+}
+
+export function useAdminAuditSettings() {
+  return useQuery({ queryKey: ["adminAudit", "settings"], queryFn: () => api.get<AdminAuditSettings>("/admin/audit-log/settings") });
+}
+
+export function useSaveAdminAuditSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (retentionDays: number) => api.put<AdminAuditSettings>("/admin/audit-log/settings", { retentionDays }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["adminAudit"] }),
+  });
+}
+
+export function useClearAdminAudit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (before: string) => api.post<{ removed: number }>("/admin/audit-log/clear", { before: new Date(`${before}T00:00:00`).toISOString() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["adminAudit"] }),
   });
 }

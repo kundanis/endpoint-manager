@@ -42,8 +42,11 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Checking for a usable Node.js runtime..."
-NODE_BIN="$(command -v node || true)"
-if [[ -z "$NODE_BIN" ]] || [[ "$(node -v | sed 's/^v//' | cut -d. -f1)" -lt 18 ]]; then
+node_ok() {
+  command -v node >/dev/null && [[ "$(node -v | sed 's/^v//' | cut -d. -f1)" -ge 18 ]]
+}
+
+if ! node_ok; then
   echo "Node.js >=18 not found — attempting to install it via this system's package manager..."
   if command -v apt-get >/dev/null; then
     apt-get update
@@ -57,12 +60,33 @@ if [[ -z "$NODE_BIN" ]] || [[ "$(node -v | sed 's/^v//' | cut -d. -f1)" -lt 18 ]
     echo "Install Node.js 18+ yourself (see https://nodejs.org), then re-run this installer." >&2
     exit 1
   fi
-  NODE_BIN="$(command -v node || true)"
-  if [[ -z "$NODE_BIN" ]]; then
-    echo "Node.js installation did not result in a 'node' binary on PATH — install it manually and re-run." >&2
-    exit 1
+fi
+
+# Distro repositories often carry an old Node (Ubuntu 22.04: v12), which can't run the agent
+# (it fails with MODULE_NOT_FOUND on "node:" imports). Fall back to NodeSource's Node 20.
+if ! node_ok; then
+  echo "The system's Node.js ($(node -v 2>/dev/null || echo none)) is older than 18 — installing Node.js 20 from NodeSource..."
+  if ! command -v curl >/dev/null; then
+    if command -v apt-get >/dev/null; then apt-get install -y curl; elif command -v dnf >/dev/null; then dnf install -y curl; else yum install -y curl; fi
+  fi
+  if command -v apt-get >/dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+  elif command -v dnf >/dev/null; then
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+    dnf install -y nodejs
+  else
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+    yum install -y nodejs
   fi
 fi
+
+if ! node_ok; then
+  echo "Could not get Node.js 18 or newer (found: $(node -v 2>/dev/null || echo none))." >&2
+  echo "Install Node.js 20 yourself (see https://nodejs.org/en/download), then re-run this installer." >&2
+  exit 1
+fi
+NODE_BIN="$(command -v node)"
 echo "Using Node.js at $NODE_BIN ($(node -v))"
 
 # Stop any existing install first (re-running this script updates an existing enrollment's

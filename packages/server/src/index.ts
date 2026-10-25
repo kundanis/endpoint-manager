@@ -11,6 +11,7 @@ import { failInterruptedSyncRuns } from "./services/vulnerability.service";
 import { startFleetCache } from "./cache/fleetCache";
 import { startPresenceFlush } from "./presence/presence";
 import { scheduleUserRisk } from "./services/userRisk/userRisk.service";
+import { scheduleAuditRetention } from "./services/adminAudit.service";
 
 // Last-resort safety net: without this, an unhandled rejection anywhere the request/response
 // try/catch chain doesn't reach (e.g. a future bug shaped like the one just fixed in
@@ -58,6 +59,7 @@ scheduleLicenseRevalidation();
 schedulePatchAutomation();
 scheduleStaleAgentUpdateReconciliation();
 scheduleUserRisk();
+scheduleAuditRetention();
 startFleetCache();
 startPresenceFlush();
 

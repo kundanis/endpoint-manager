@@ -1717,3 +1717,30 @@ export interface UserRiskNotifications {
 export type UserRiskNotificationsInput = Omit<UserRiskNotifications, "smtp" | "lastError" | "lastSentAt"> & {
   smtp: { host: string; port: number; secure: boolean; username: string | null; from: string; password?: string };
 };
+
+// ---- Identity Governance -> Admin logs
+
+export interface AdminAuditEntry {
+  id: string;
+  at: string;
+  adminId: string | null;
+  adminEmail: string;
+  ipAddress: string | null;
+  category: string;
+  action: string;
+  module: string | null;
+  summary: string;
+  targetId: string | null;
+  method: string | null;
+  path: string | null;
+  statusCode: number | null;
+  success: boolean;
+  detail: unknown;
+}
+
+export interface AdminAuditSettings {
+  retentionDays: number;
+  minRetentionDays: number;
+  oldestEntryAt: string | null;
+  totalEntries: number;
+}
