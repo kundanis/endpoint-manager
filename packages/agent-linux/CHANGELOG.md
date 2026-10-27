@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.4
+- Ships its own Node.js 22 runtime (x64 and arm64), so the agent no longer depends on the Linux
+  machine's Node.js - an old distro Node (Ubuntu 22.04: v12) made it crash with MODULE_NOT_FOUND.
+  Falls back to the system Node.js only on other CPUs or very old Linux.
+
 ## 0.1.3
 - Installer: when the system's own Node.js package is too old (Ubuntu 22.04 ships v12), installs
   Node.js 20 from NodeSource instead of setting the agent up on a runtime that can't start it.

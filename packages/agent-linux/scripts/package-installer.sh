@@ -1,8 +1,10 @@
 #!/bin/bash
 # Builds the self-installing Linux agent tarball (mirrors packages/agent/scripts/
 # package-installer.ps1's structure exactly, adapted for tar/systemd instead of
-# zip/Scheduled-Tasks). No portable Node runtime is bundled — install.sh installs one via
-# the target's own package manager if it's missing (see install.sh's comments for why).
+# zip/Scheduled-Tasks). The official nodejs.org runtime is bundled for x64 and arm64
+# (checked against nodejs.org's SHASUMS256.txt), so the agent never depends on the Linux
+# machine's own Node - distro packages are often too old (Ubuntu 22.04 ships v12).
+# NODE_VERSION overrides the bundled version; downloads are cached in dist-installer/.node-cache.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,6 +89,34 @@ SHARED_DEST="$APP_NODE_MODULES/@em/shared"
 mkdir -p "$SHARED_DEST"
 cp -r "$SHARED_DIR/dist" "$SHARED_DEST/dist"
 cp "$SHARED_DIR/package.json" "$SHARED_DEST/package.json"
+
+NODE_VERSION="${NODE_VERSION:-v22.23.2}"
+NODE_CACHE_DIR="$DIST_INSTALLER_DIR/.node-cache"
+mkdir -p "$NODE_CACHE_DIR"
+echo "Fetching the Node.js $NODE_VERSION runtime for Linux..."
+SHASUMS="$(curl -fsSL "https://nodejs.org/dist/$NODE_VERSION/SHASUMS256.txt")"
+for NODE_ARCH in x64 arm64; do
+  NODE_FILE="node-$NODE_VERSION-linux-$NODE_ARCH.tar.gz"
+  EXPECTED="$(printf '%s\n' "$SHASUMS" | awk -v f="$NODE_FILE" '$2 == f { print $1 }')"
+  if [[ -z "$EXPECTED" ]]; then echo "$NODE_FILE is not listed in SHASUMS256.txt" >&2; exit 1; fi
+  CACHED="$NODE_CACHE_DIR/$NODE_FILE"
+  if [[ ! -f "$CACHED" ]] || [[ "$(sha256sum "$CACHED" | cut -d' ' -f1)" != "$EXPECTED" ]]; then
+    echo "Downloading $NODE_FILE..."
+    curl -fsSL -o "$CACHED" "https://nodejs.org/dist/$NODE_VERSION/$NODE_FILE"
+    if [[ "$(sha256sum "$CACHED" | cut -d' ' -f1)" != "$EXPECTED" ]]; then
+      echo "$NODE_FILE: SHA-256 does not match nodejs.org's SHASUMS256.txt" >&2
+      rm -f "$CACHED"
+      exit 1
+    fi
+  else
+    echo "Using cached $NODE_FILE"
+  fi
+  RUNTIME_DEST="$STAGING_ROOT/runtime/node-linux-$NODE_ARCH"
+  mkdir -p "$RUNTIME_DEST/bin"
+  NODE_ROOT="node-$NODE_VERSION-linux-$NODE_ARCH"
+  tar --force-local -xzf "$CACHED" -C "$RUNTIME_DEST" --strip-components=1 "$NODE_ROOT/bin/node" "$NODE_ROOT/LICENSE"
+  chmod 755 "$RUNTIME_DEST/bin/node" 2>/dev/null || true
+done
 
 echo "Staging install/uninstall scripts and systemd unit template..."
 cp "$TEMPLATES_DIR/install.sh" "$STAGING_ROOT/"

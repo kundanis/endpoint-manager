@@ -67,9 +67,8 @@ export async function processAgentUpdate(
   }
 
   const installDir = getInstallDir();
-  // Unlike the Windows agent, there's no bundled node/ sibling to check for here — this
-  // agent relies on the target's own system Node (see install.sh), not a portable runtime
-  // shipped alongside it. Checking for this very file (the packaged app/dist/index.js this
+  // The package carries Node.js under runtime/ (0.1.4+); agents installed before that run on
+  // the system Node and keep doing so. Checking for this very file (the packaged app/dist/index.js this
   // process is running from) is a weaker but still meaningful "am I actually a packaged
   // install, not a dev checkout" sanity check — it resolves to something under the repo's
   // packages/ dir in local dev (tsx watch src/index.ts), never a real dist/index.js there.
@@ -103,6 +102,12 @@ export async function processAgentUpdate(
       return;
     }
     fs.unlinkSync(tarballPath);
+
+    // tar keeps file modes, but a package built on Windows may not carry the execute bit.
+    for (const arch of ["x64", "arm64"]) {
+      const bundledNode = path.join(installDir, "runtime", `node-linux-${arch}`, "bin", "node");
+      if (fs.existsSync(bundledNode)) fs.chmodSync(bundledNode, 0o755);
+    }
 
     // Report SUCCESS before triggering the restart — once systemctl asks systemd to stop
     // this unit, this process could be sent SIGTERM at any moment, so anything that still
