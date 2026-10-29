@@ -12,6 +12,13 @@
 #              database up first, loads the new image, restarts, migrates automatically.
 # Rollback   : cd /opt/endpoint-one && sudo bash deploy.sh --rollback
 #
+# Upgrade options (install/upgrade only):
+#   --backup-in-place  take the pre-upgrade database backup but leave it inside the database
+#                      volume instead of copying it to /opt/endpoint-one/backups (about half
+#                      the time on a large database or a slow disk)
+#   --skip-backup      no pre-upgrade backup at all; asks you to type SKIP to confirm
+#                      (non-interactive: CONFIRM_SKIP_BACKUP=yes)
+#
 # Env overrides: INSTALL_DIR (default /opt/endpoint-one), ADMIN_EMAIL (first install only),
 #                APP_PORT (default 4000).
 set -euo pipefail
@@ -20,6 +27,7 @@ BUNDLE_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/endpoint-one}"
 MODE="install"
 [ "${1:-}" = "--rollback" ] && MODE="rollback"
+BACKUP_MODE="copy" # copy | in-place | skip
 
 log()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
@@ -191,6 +199,15 @@ if [ "${1:-}" = "--install-cert" ]; then
   exit 0
 fi
 
+# --- Install / upgrade options ----------------------------------------------------------------
+for arg in "$@"; do
+  case "$arg" in
+    --backup-in-place) BACKUP_MODE="in-place" ;;
+    --skip-backup) BACKUP_MODE="skip" ;;
+    *) die "Unknown option '$arg'. Use: sudo bash deploy.sh [--backup-in-place | --skip-backup], --rollback, or --install-cert" ;;
+  esac
+done
+
 # --- Bundle checks ----------------------------------------------------------------------------
 RELEASE_VERSION="$(tr -d '[:space:]' < "$BUNDLE_DIR/VERSION" 2>/dev/null || true)"
 [ -n "$RELEASE_VERSION" ] || die "VERSION file missing - run deploy.sh from inside the extracted release bundle."
@@ -253,15 +270,35 @@ if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEAS
   if [ "$db_exists" -eq 0 ]; then
     echo "No existing database [$db_name] yet (previous start never completed) - nothing to back up."
   fi
+  if [ "$db_exists" -eq 1 ] && [ "$BACKUP_MODE" = "skip" ]; then
+    warn "--skip-backup: the database will NOT be backed up before upgrading to $RELEASE_VERSION."
+    warn "If the upgrade fails while changing the database, rollback cannot restore your data."
+    if [ "${CONFIRM_SKIP_BACKUP:-}" = "yes" ]; then
+      echo "Confirmed by CONFIRM_SKIP_BACKUP=yes."
+    elif (: < /dev/tty) 2>/dev/null; then # a terminal we can actually open (not just the device file)
+      printf 'Type SKIP to continue without a backup (anything else aborts): ' > /dev/tty
+      read -r answer < /dev/tty || answer=""
+      [ "$answer" = "SKIP" ] || die "Aborted - nothing was changed. Run without --skip-backup to back up first."
+    else
+      die "--skip-backup needs confirmation: type SKIP when asked, or set CONFIRM_SKIP_BACKUP=yes."
+    fi
+    db_exists=0 # nothing to back up from here on
+    echo "Skipping the pre-upgrade database backup."
+  fi
   if [ "$db_exists" -eq 1 ]; then
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     bak="pre-upgrade-${PREVIOUS}-${stamp}.bak"
-    echo "Backing up database [$db_name] before upgrading..."
-    if compose exec -T db sh -c "mkdir -p /var/opt/mssql/backup && (/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\" || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\")" >/dev/null \
-       && compose cp "db:/var/opt/mssql/backup/$bak" "$INSTALL_DIR/backups/$bak"; then
-      echo "Backup saved: $INSTALL_DIR/backups/$bak"
+    echo "Backing up database [$db_name] before upgrading (this can take several minutes on a large database)..."
+    compose exec -T db sh -c "mkdir -p /var/opt/mssql/backup && (/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\" || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\")" >/dev/null \
+      || die "Pre-upgrade database backup failed - upgrade aborted, nothing was changed."
+    if [ "$BACKUP_MODE" = "in-place" ]; then
+      echo "Backup kept inside the database volume: /var/opt/mssql/backup/$bak (db container)"
+      echo "  Copy it off the server later with: cd $INSTALL_DIR && sudo docker compose cp db:/var/opt/mssql/backup/$bak backups/"
     else
-      die "Pre-upgrade database backup failed - upgrade aborted, nothing was changed."
+      echo "Copying the backup to $INSTALL_DIR/backups (no progress shown; large databases take a while)..."
+      compose cp "db:/var/opt/mssql/backup/$bak" "$INSTALL_DIR/backups/$bak" \
+        || die "Copying the backup out of the database container failed - upgrade aborted, nothing was changed. The backup is still at /var/opt/mssql/backup/$bak in the db container."
+      echo "Backup saved: $INSTALL_DIR/backups/$bak"
     fi
   fi
 fi

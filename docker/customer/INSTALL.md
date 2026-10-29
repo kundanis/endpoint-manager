@@ -105,6 +105,14 @@ The script keeps `.env` and all data, **backs up the database first** (to
 automatically. Agents update themselves from the new installer files (if the bundle includes
 a newer agent) via **Endpoint Hub → Agent updates**.
 
+On a large database or a slow disk the backup takes a while. Two options change it:
+
+| Command | Backup | When to use it |
+| --- | --- | --- |
+| `sudo bash deploy.sh` | Taken and copied to `/opt/endpoint-one/backups/` | Default; safest |
+| `sudo bash deploy.sh --backup-in-place` | Taken, but left inside the database volume (`/var/opt/mssql/backup/` in the `db` container) | Roughly half the time; copy it off later if you want to keep it |
+| `sudo bash deploy.sh --skip-backup` | None. You must type `SKIP` to confirm (`CONFIRM_SKIP_BACKUP=yes` when not interactive) | Only when you already have a recent backup; rollback cannot restore data |
+
 ## 6. Rollback
 
 ```bash
@@ -112,7 +120,8 @@ cd /opt/endpoint-one && sudo bash deploy.sh --rollback
 ```
 
 This switches back to the previous version's image. If the newer version already changed the
-database (migrations), also restore the pre-upgrade backup:
+database (migrations), also restore the pre-upgrade backup. (With `--backup-in-place` the file is
+already inside the container: skip the `docker compose cp` line and use its name in the restore.)
 
 ```bash
 cd /opt/endpoint-one
