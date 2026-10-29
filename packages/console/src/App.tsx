@@ -21,6 +21,7 @@ import ScreenCapturePage from "./pages/ScreenCapturePage";
 import UserRiskPage, { UserRiskAlertsTab, UserRiskSettingsTab, UserRiskUsersTab } from "./pages/UserRiskPage";
 import UserRiskUserPage from "./pages/UserRiskUserPage";
 import AdminLogsPage from "./pages/AdminLogsPage";
+import HelpCenterPage from "./pages/HelpCenterPage";
 import DataMovementPage from "./pages/DataMovementPage";
 import EpmPage from "./pages/EpmPage";
 import DataTypesPage from "./pages/DataTypesPage";
@@ -54,6 +55,7 @@ export default function App() {
       >
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/help" element={<HelpCenterPage />} />
         <Route path="/endpoints" element={<RequireModule module="ENDPOINT_MANAGER"><AgentsPage /></RequireModule>} />
         <Route path="/endpoints/:id" element={<RequireModule module="ENDPOINT_MANAGER"><AgentDetailPage /></RequireModule>} />
         <Route path="/enrollment-tokens" element={<RequireModule module="ENDPOINT_MANAGER"><EnrollmentTokensPage /></RequireModule>} />

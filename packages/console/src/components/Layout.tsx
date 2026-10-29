@@ -16,12 +16,14 @@ import {
   Shield,
   Users,
   type LucideIcon,
+  CircleHelp,
 } from "lucide-react";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
 import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
 import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
+import { HelpProvider, useHelp } from "../help/HelpProvider";
 
 // Lucide icon per nav module (design-system/docs/COMPONENTS.md §18).
 const MODULE_ICONS: Record<string, LucideIcon> = {
@@ -93,6 +95,16 @@ function roleLabel(role: string | undefined): string {
 }
 
 // Avatar button + dropdown in the top bar; the only home of "Log out" (COMPONENTS.md §3).
+// "?" in the top bar: help for the page you're on (see help/HelpProvider.tsx).
+function HelpButton() {
+  const { panelOpen, togglePanel } = useHelp();
+  return (
+    <button type="button" className="ep-iconbtn" aria-label="Help" aria-expanded={panelOpen} title="Help" onClick={togglePanel}>
+      <CircleHelp {...ICON_PROPS} />
+    </button>
+  );
+}
+
 function AccountMenu({ email, role, onLogout }: { email?: string; role?: string; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -228,6 +240,7 @@ export default function Layout() {
   const administration = navModules.filter((m) => ADMIN_MODULE_KEYS.has(m.key));
 
   return (
+    <HelpProvider>
     <div className="ep-app">
       <aside className={`ep-sb ${drawerOpen ? "ep-open" : ""}`} aria-label="Main navigation">
         <div className="ep-brandrow">
@@ -270,10 +283,11 @@ export default function Layout() {
                 <b>{activeItem.label}</b>
               </>
             ) : (
-              <b>{matchedModule?.label ?? ""}</b>
+              <b>{matchedModule?.label ?? (location.pathname === "/help" ? "Help" : "")}</b>
             )}
           </nav>
           <div className="ep-tbr">
+            <HelpButton />
             <AccountMenu email={me?.email} role={me?.role} onLogout={() => logout.mutate()} />
           </div>
         </header>
@@ -282,5 +296,6 @@ export default function Layout() {
         </div>
       </main>
     </div>
+    </HelpProvider>
   );
 }

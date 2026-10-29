@@ -858,3 +858,160 @@ a.app-legend-link:hover {
   font-size: 11px;
   color: var(--ep-ink-subtle);
 }
+
+/* Help Center: side panel, guides ("Show me") and the Help page (help/, pages/HelpCenterPage). */
+.app-help-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100vw);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--ep-surface);
+  border-left: 1px solid var(--ep-border);
+  box-shadow: var(--ep-shadow-pop);
+}
+.app-help-panel-head,
+.app-help-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ep-space-3) var(--ep-space-4);
+  border-bottom: 1px solid var(--ep-border);
+}
+.app-help-panel-foot {
+  border-bottom: 0;
+  border-top: 1px solid var(--ep-border);
+}
+.app-help-panel-foot .ep-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ep-space-2);
+}
+.app-help-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--ep-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ep-space-4);
+}
+.app-help-result {
+  padding: var(--ep-space-4);
+}
+.app-help-title {
+  margin: 0;
+  font-size: var(--ep-text-card-title-size);
+  line-height: var(--ep-text-card-title-line);
+  font-weight: var(--ep-text-card-title-weight);
+  color: var(--ep-ink);
+}
+.app-help-list,
+.app-help-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ep-space-1);
+  color: var(--ep-ink-muted);
+  font-size: var(--ep-text-body-size);
+  line-height: var(--ep-text-body-line);
+}
+.app-help-howto {
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-radius-md);
+  padding: var(--ep-space-2) var(--ep-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ep-space-2);
+}
+.app-help-howto-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ep-space-2);
+}
+.app-help-howto-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ep-space-1);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-weight: 500;
+  color: var(--ep-ink);
+  cursor: pointer;
+}
+.app-help-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--ep-space-4);
+  align-items: start;
+}
+.app-help-nav {
+  padding: var(--ep-space-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ep-space-2);
+}
+.app-help-nav .ep-ov {
+  padding: var(--ep-space-2) var(--ep-space-4) 0;
+}
+.app-help-nav .ep-sub {
+  padding: 0 var(--ep-space-2);
+}
+/* Same look as the sidebar's sub-items (.ep-sub > a), for buttons. */
+.app-help-nav .ep-sub button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  font-size: var(--ep-text-body-sm-size);
+  color: var(--ep-sidebar-ink-muted);
+  padding: 5px 10px;
+  border-radius: var(--ep-radius-md);
+  cursor: pointer;
+}
+.app-help-nav .ep-sub button:hover {
+  background: var(--ep-surface-2);
+}
+.app-help-nav .ep-sub button.ep-on-sub {
+  background: var(--ep-sidebar-active-bg);
+  color: var(--ep-sidebar-ink);
+  font-weight: 500;
+}
+@media (max-width: 960px) {
+  .app-help-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.app-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  pointer-events: none;
+}
+.app-tour-spot {
+  position: fixed;
+  border-radius: var(--ep-radius-md);
+  outline: 2px solid var(--ep-focus);
+  outline-offset: 0;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--ep-ink) 30%, transparent);
+  transition: top var(--ep-dur-fast) var(--ep-ease), left var(--ep-dur-fast) var(--ep-ease), width var(--ep-dur-fast) var(--ep-ease), height var(--ep-dur-fast) var(--ep-ease);
+}
+.app-tour-card {
+  position: fixed;
+  width: min(360px, calc(100vw - 32px));
+  padding: var(--ep-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ep-space-3);
+  pointer-events: auto;
+  box-shadow: var(--ep-shadow-pop);
+}
