@@ -3,8 +3,10 @@ import https from "node:https";
 import { createApp } from "./app";
 import { config } from "./config";
 import { logger } from "./logger";
+import { scheduleRevokeNoticeRetries } from "./services/revokeNotice.service";
 
 const app = createApp();
+scheduleRevokeNoticeRetries();
 
 if (config.tlsPfxPath && config.tlsPfxPassphrase) {
   const pfx = fs.readFileSync(config.tlsPfxPath);

@@ -32,7 +32,7 @@ export async function getLicenseServerConfig(): Promise<LicenseServerConfigView>
 }
 
 // Returns the currently-configured base URL, throwing a clear error if none has ever
-// been set — the only entry point activate()/revalidate()/requestUnlock() use, so they
+// been set — the only entry point activate()/registerCallback()/requestUnlock() use, so they
 // never silently fall back to a stale or wrong default.
 export async function getConfiguredServerUrl(): Promise<string> {
   const existing = await prisma.licenseServerConfig.findUnique({ where: { id: SINGLETON_ID } });

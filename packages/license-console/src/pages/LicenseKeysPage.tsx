@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import type { LicenseModule, ValidityType } from "@license/shared";
+import type { LicenseModule, LicenseProduct, ValidityType } from "@license/shared";
 import { useEntities, useIssueLicenseKey, useLicenseKeys, useRevokeLicenseKey } from "../api/hooks";
 import type { IssuedLicenseKey } from "../api/types";
 
@@ -14,16 +14,45 @@ const VALIDITY_LABELS: Record<ValidityType, string> = {
 // compiles to CommonJS, and Vite/Rollup's CJS-interop analysis can't statically resolve
 // a raw runtime export (const array) through it, only `import type`. Same landmine
 // already hit and fixed this way for @em/shared in the main console (DEFAULT_POLL_
-// INTERVAL_SEC) - keep these six in sync with common.schema.ts's LICENSE_MODULES by hand.
-const MODULE_LABELS: Record<LicenseModule, string> = {
-  ENDPOINT_MANAGER: "Endpoint Manager",
-  NETWORK_MANAGER: "Network Manager",
-  SOFTWARE_MANAGER: "Software Manager",
-  SECURITY_MANAGER: "Security Manager",
-  DATA_MANAGER: "Data Manager",
-  USER_MANAGER: "User Manager",
+// INTERVAL_SEC) - keep these in sync with common.schema.ts's LICENSE_MODULES and
+// LICENSE_PRODUCTS by hand.
+const PRODUCT_LABELS: Record<LicenseProduct, string> = {
+  ENDPOINT_ONE: "Endpoint One",
+  ENDPOINT_IQ: "Endpoint IQ",
 };
-const LICENSE_MODULES = Object.keys(MODULE_LABELS) as LicenseModule[];
+
+// Both products license the same module keys; each shows them under its own names.
+// Endpoint IQ's names match its console menu (endpoint-manager packages/console/src/navConfig.ts).
+const MODULE_LABELS: Record<LicenseProduct, Record<LicenseModule, string>> = {
+  ENDPOINT_ONE: {
+    ENDPOINT_MANAGER: "Endpoint Manager",
+    NETWORK_MANAGER: "Network Manager",
+    SOFTWARE_MANAGER: "Software Manager",
+    SECURITY_MANAGER: "Security Manager",
+    DATA_MANAGER: "Data Manager",
+    USER_MANAGER: "User Manager",
+  },
+  ENDPOINT_IQ: {
+    ENDPOINT_MANAGER: "Endpoint Hub",
+    NETWORK_MANAGER: "Network Insight",
+    SOFTWARE_MANAGER: "App Center",
+    SECURITY_MANAGER: "Security Posture",
+    DATA_MANAGER: "Data Governance",
+    USER_MANAGER: "Identity Governance",
+  },
+};
+
+// One-line hint under each Endpoint IQ module, from the Endpoint IQ module-wise feature guide.
+const IQ_MODULE_HINTS: Record<LicenseModule, string> = {
+  ENDPOINT_MANAGER: "Endpoints, enrollment, commands, packages, agent updates, asset settings",
+  NETWORK_MANAGER: "Network discovery of managed and unmanaged devices",
+  SOFTWARE_MANAGER: "Software licence compliance",
+  SECURITY_MANAGER: "Vulnerabilities, patches, security configuration, Zero Trust, threat detection",
+  DATA_MANAGER: "Data types, data discovery, DLP, data movement, EPM, access exceptions",
+  USER_MANAGER: "User productivity, user risk, admin logs",
+};
+
+const LICENSE_MODULES = Object.keys(MODULE_LABELS.ENDPOINT_ONE) as LicenseModule[];
 
 function statusBadgeClass(status: string): string {
   if (status === "ACTIVATED") return "online";
@@ -38,6 +67,7 @@ export default function LicenseKeysPage() {
   const revokeKey = useRevokeLicenseKey();
 
   const [entityId, setEntityId] = useState("");
+  const [product, setProduct] = useState<LicenseProduct>("ENDPOINT_IQ");
   const [maxAgents, setMaxAgents] = useState(10);
   const [validityType, setValidityType] = useState<ValidityType>("ONE_YEAR");
   const [modules, setModules] = useState<LicenseModule[]>([...LICENSE_MODULES]);
@@ -51,7 +81,7 @@ export default function LicenseKeysPage() {
   function handleIssue(e: FormEvent) {
     e.preventDefault();
     issueKey.mutate(
-      { entityId, maxAgents, validityType, modules },
+      { entityId, product, maxAgents, validityType, modules },
       {
         onSuccess: (result) => {
           setJustIssued(result);
@@ -68,11 +98,16 @@ export default function LicenseKeysPage() {
   return (
     <div>
       <h1>License Keys</h1>
-      <p>Each key locks to exactly one Endpoint Manager deployment on first activation.</p>
+      <p>
+        Each key locks to exactly one Endpoint One or Endpoint IQ deployment on first activation. Activated deployments
+        don't check back in - revoking a key sends the deployment a revoke notice.
+      </p>
 
       {justIssued && (
         <div className="panel">
-          <h2>Key issued for "{justIssued.entity.name}"</h2>
+          <h2>
+            {PRODUCT_LABELS[justIssued.product]} key issued for "{justIssued.entity.name}"
+          </h2>
           <p className="error-text">
             This is the only time the full key value is shown — copy it now and deliver it to the customer securely.
             After this, only the last 4 characters ({justIssued.keySuffix}) remain visible.
@@ -88,6 +123,7 @@ export default function LicenseKeysPage() {
         <thead>
           <tr>
             <th>Entity</th>
+            <th>Product</th>
             <th>Key (suffix)</th>
             <th>Max agents</th>
             <th>Validity</th>
@@ -102,17 +138,25 @@ export default function LicenseKeysPage() {
           {keys?.map((k) => (
             <tr key={k.id}>
               <td>{k.entity.name}</td>
+              <td>{PRODUCT_LABELS[k.product]}</td>
               <td className="mono-cell">…{k.keySuffix}</td>
               <td>{k.maxAgents}</td>
               <td>{VALIDITY_LABELS[k.validityType]}</td>
               <td>
                 {k.modules.length === LICENSE_MODULES.length
                   ? "All"
-                  : k.modules.map((m) => MODULE_LABELS[m]).join(", ") || "None"}
+                  : k.modules.map((m) => MODULE_LABELS[k.product][m]).join(", ") || "None"}
               </td>
               <td>{k.validUntil ? new Date(k.validUntil).toLocaleDateString() : "—"}</td>
               <td>
                 <span className={`status-badge ${statusBadgeClass(k.status)}`}>{k.status}</span>
+                {k.status === "REVOKED" && k.boundDeploymentId && (
+                  <div className="module-hint" title={k.revokeNoticeLastError ?? undefined}>
+                    {k.revokeNoticeDeliveredAt
+                      ? `Deployment notified ${new Date(k.revokeNoticeDeliveredAt).toLocaleString()}`
+                      : "Notice pending - retrying every 5 min"}
+                  </div>
+                )}
               </td>
               <td>{k.boundDeploymentId ?? "—"}</td>
               <td>
@@ -128,7 +172,7 @@ export default function LicenseKeysPage() {
           ))}
           {keys?.length === 0 && (
             <tr>
-              <td colSpan={9}>No license keys issued yet.</td>
+              <td colSpan={10}>No license keys issued yet.</td>
             </tr>
           )}
         </tbody>
@@ -150,6 +194,16 @@ export default function LicenseKeysPage() {
           </select>
         </label>
         <label>
+          Product
+          <select value={product} onChange={(e) => setProduct(e.target.value as LicenseProduct)}>
+            {Object.entries(PRODUCT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Max agents (fleet-wide cap)
           <input type="number" min={1} value={maxAgents} onChange={(e) => setMaxAgents(Number(e.target.value))} required />
         </label>
@@ -164,13 +218,17 @@ export default function LicenseKeysPage() {
           </select>
         </label>
         <fieldset>
-          <legend>Modules included</legend>
+          <legend>{PRODUCT_LABELS[product]} modules included</legend>
           {LICENSE_MODULES.map((m) => (
             <label key={m} className="checkbox-row">
               <input type="checkbox" checked={modules.includes(m)} onChange={() => toggleModule(m)} />
-              {MODULE_LABELS[m]}
+              {MODULE_LABELS[product][m]}
+              {product === "ENDPOINT_IQ" && <span className="module-hint"> — {IQ_MODULE_HINTS[m]}</span>}
             </label>
           ))}
+          {product === "ENDPOINT_IQ" && (
+            <p className="module-hint">Dashboard, Licensing and Administrators are always included.</p>
+          )}
         </fieldset>
         {issueKey.isError && <p className="error-text">{(issueKey.error as Error).message}</p>}
         <button type="submit" disabled={issueKey.isPending || !entityId || modules.length === 0}>

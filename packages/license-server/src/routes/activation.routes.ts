@@ -1,6 +1,11 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { activateRequestSchema, revalidateRequestSchema, unlockRequestRequestSchema } from "@license/shared";
+import {
+  activateRequestSchema,
+  registerCallbackRequestSchema,
+  revalidateRequestSchema,
+  unlockRequestRequestSchema,
+} from "@license/shared";
 import {
   BindingMismatchError,
   LicenseKeyAlreadyActivatedError,
@@ -8,6 +13,7 @@ import {
   LicenseKeyNotFoundError,
   LicenseKeyRevokedError,
   activate,
+  registerCallback,
   revalidate,
 } from "../services/activation.service";
 import { createUnlockRequest } from "../services/unlockRequest.service";
@@ -50,6 +56,24 @@ activationRouter.post("/revalidate", publicRateLimiter, async (req, res, next) =
   try {
     const payload = revalidateRequestSchema.parse(req.body);
     const result = await revalidate(payload.keyString, payload.deploymentId, payload.bindingToken);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof LicenseKeyNotFoundError || err instanceof BindingMismatchError) {
+      return res.status(403).json({ error: "License key or binding could not be verified" });
+    }
+    next(err);
+  }
+});
+
+activationRouter.post("/register-callback", publicRateLimiter, async (req, res, next) => {
+  try {
+    const payload = registerCallbackRequestSchema.parse(req.body);
+    const result = await registerCallback(
+      payload.keyString,
+      payload.deploymentId,
+      payload.bindingToken,
+      payload.callbackUrls
+    );
     res.json(result);
   } catch (err) {
     if (err instanceof LicenseKeyNotFoundError || err instanceof BindingMismatchError) {

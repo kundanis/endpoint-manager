@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { prisma } from "../db";
 import { verifyAdminJwt } from "../utils/jwt";
 
 declare global {
@@ -11,7 +12,7 @@ declare global {
   }
 }
 
-export function adminAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+export async function adminAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   const bearer = req.headers.authorization?.startsWith("Bearer ")
     ? req.headers.authorization.slice("Bearer ".length)
     : undefined;
@@ -21,12 +22,24 @@ export function adminAuthMiddleware(req: Request, res: Response, next: NextFunct
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  let payload: ReturnType<typeof verifyAdminJwt>;
   try {
-    const payload = verifyAdminJwt(token);
+    payload = verifyAdminJwt(token);
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  // A removed admin's JWT stays cryptographically valid until it expires, so confirm the
+  // account still exists. Errors go to next() - Express 4 doesn't catch async rejections.
+  try {
+    const admin = await prisma.licenseAdmin.findUnique({ where: { id: payload.sub }, select: { id: true } });
+    if (!admin) {
+      return res.status(401).json({ error: "Invalid or expired session" });
+    }
     req.adminId = payload.sub;
     req.adminEmail = payload.email;
     next();
-  } catch {
-    return res.status(401).json({ error: "Invalid or expired session" });
+  } catch (err) {
+    next(err);
   }
 }

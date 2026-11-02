@@ -1,8 +1,9 @@
-import type { LicenseModule, ValidityType } from "@license/shared";
+import type { LicenseModule, LicenseProduct, ValidityType } from "@license/shared";
 import { prisma } from "../db";
 import { generateLicenseKey, keySuffix } from "../utils/licenseKeyGenerator";
 import { hashToken } from "../utils/tokens";
 import { EntityNotFoundError } from "./entity.service";
+import { deliverRevokeNotice } from "./revokeNotice.service";
 
 export class LicenseKeyNotFoundError extends Error {}
 export class LicenseKeyNotRevocableError extends Error {}
@@ -22,14 +23,21 @@ function computeValidUntil(validityType: ValidityType, from: Date): Date | null 
   }
 }
 
-// modules is stored as a denormalized JSON string (see schema.prisma's comment) - every
-// API consumer should only ever see a real string[], never the raw JSON text.
-function withParsedModules<T extends { modules: string }>(row: T): Omit<T, "modules"> & { modules: LicenseModule[] } {
-  return { ...row, modules: JSON.parse(row.modules) };
+// modules and callbackUrls are stored as denormalized JSON strings (see schema.prisma's
+// comment) - every API consumer should only ever see real string[]s, never the raw JSON
+// text. revocationSecret never leaves this server except on the revoke notice itself.
+function toApiRow<T extends { modules: string; callbackUrls: string | null; revocationSecret: string | null }>(row: T) {
+  const { revocationSecret: _secret, ...rest } = row;
+  return {
+    ...rest,
+    modules: JSON.parse(row.modules) as LicenseModule[],
+    callbackUrls: row.callbackUrls ? (JSON.parse(row.callbackUrls) as string[]) : [],
+  };
 }
 
 export interface IssueLicenseKeyInput {
   entityId: string;
+  product: LicenseProduct;
   maxAgents: number;
   validityType: ValidityType;
   modules: LicenseModule[];
@@ -51,6 +59,7 @@ export async function issueLicenseKey(input: IssueLicenseKeyInput) {
       keyStringHash: hashToken(keyString),
       keySuffix: keySuffix(keyString),
       entityId: input.entityId,
+      product: input.product,
       maxAgents: input.maxAgents,
       validityType: input.validityType,
       modules: JSON.stringify(input.modules),
@@ -64,7 +73,7 @@ export async function issueLicenseKey(input: IssueLicenseKeyInput) {
     include: { entity: true },
   });
 
-  return { licenseKey: withParsedModules(licenseKey), keyString };
+  return { licenseKey: toApiRow(licenseKey), keyString };
 }
 
 export async function listLicenseKeys() {
@@ -72,7 +81,7 @@ export async function listLicenseKeys() {
     orderBy: { issuedAt: "desc" },
     include: { entity: true },
   });
-  return rows.map(withParsedModules);
+  return rows.map(toApiRow);
 }
 
 export async function getLicenseKeyById(id: string) {
@@ -81,7 +90,7 @@ export async function getLicenseKeyById(id: string) {
     include: { entity: true, unlockRequests: true },
   });
   if (!licenseKey) throw new LicenseKeyNotFoundError();
-  return withParsedModules(licenseKey);
+  return toApiRow(licenseKey);
 }
 
 export async function revokeLicenseKey(id: string) {
@@ -90,5 +99,8 @@ export async function revokeLicenseKey(id: string) {
     data: { status: "REVOKED", revokedAt: new Date() },
   });
   if (result.count !== 1) throw new LicenseKeyNotRevocableError();
+  // Activated deployments never poll, so the revoke only reaches them via this notice.
+  // Waited on so the console shows straight away whether it landed; a failure is retried.
+  await deliverRevokeNotice(id);
   return getLicenseKeyById(id);
 }

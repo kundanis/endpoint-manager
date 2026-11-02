@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { licenseModuleSchema, validityTypeSchema } from "@license/shared";
+import { licenseModuleSchema, licenseProductSchema, validityTypeSchema } from "@license/shared";
 
 // Admin-console-facing request shapes. Deliberately NOT part of @license/shared —
 // that package is the cross-system wire contract between License Server and each
@@ -17,9 +17,20 @@ export const updateEntityRequestSchema = z.object({
 
 export const issueLicenseKeyRequestSchema = z.object({
   entityId: z.string().uuid(),
+  product: licenseProductSchema.default("ENDPOINT_ONE"),
   maxAgents: z.number().int().positive(),
   validityType: validityTypeSchema,
   modules: z.array(licenseModuleSchema).min(1, "Select at least one module"),
+});
+
+export const createAdminRequestSchema = z.object({
+  email: z.string().email().max(255),
+  password: z.string().min(10, "Password must be at least 10 characters").max(200),
+});
+
+export const changeAdminPasswordRequestSchema = z.object({
+  password: z.string().min(10, "Password must be at least 10 characters").max(200),
+  otp: z.string().min(1, "Enter the OTP").max(20),
 });
 
 export const resolveUnlockRequestSchema = z.object({

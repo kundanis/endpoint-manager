@@ -25,7 +25,9 @@ import { behindCloudflare, clientAddress } from "./clientAddress";
 // IPs/ranges can be allowed explicitly with ADMIN_ALLOWED_NETWORKS - everyone else still gets
 // the 404 below.
 
-const PUBLIC_PATH_PREFIXES = ["/outlook-addin/", "/api/email-addin/", "/api/agent/"];
+// /api/license-callback/ receives revoke notices from the License Server (usually in the
+// cloud); it accepts nothing but a notice carrying this deployment's revocation secret.
+const PUBLIC_PATH_PREFIXES = ["/outlook-addin/", "/api/email-addin/", "/api/agent/", "/api/license-callback/"];
 const PUBLIC_EXACT_PATHS = new Set(["/health"]);
 
 const privateIpv4 = new net.BlockList();

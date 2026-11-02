@@ -51,6 +51,9 @@ model LicenseKey {
   entityId          String
   entity            Entity          @relation(fields: [entityId], references: [id], onDelete: Cascade)
   maxAgents         Int
+  // ENDPOINT_ONE | ENDPOINT_IQ (see @license/shared's LICENSE_PRODUCTS). Keys issued before
+  // this column existed were all Endpoint One keys.
+  product           String          @default("ENDPOINT_ONE") @db.NVarChar(20)
   // Denormalized JSON array of LicenseModule keys (see @license/shared's LICENSE_MODULES)
   // — same idiom this vendor's own Endpoint Manager product already uses for small,
   // fixed-vocabulary sets (e.g. CommandJob.targetGroupIds). Defaults to every module for
@@ -76,6 +79,15 @@ model LicenseKey {
   // Uniqueness is instead enforced by a hand-written FILTERED unique index (WHERE
   // bindingTokenHash IS NOT NULL) in the migration - see migration.sql's comment.
   bindingTokenHash  String?         @db.NVarChar(128)
+  // Revoke push (see revokeNotice.service.ts). callbackUrls is a JSON array of the bound
+  // deployment's base URLs, registered via /api/register-callback. revocationSecret is
+  // kept in plaintext because this server must present it on every revoke notice - it
+  // only authorizes revoking this one deployment, which an admin can do anyway. Never
+  // returned to the console.
+  callbackUrls            String?   @db.NVarChar(2000)
+  revocationSecret        String?   @db.NVarChar(128)
+  revokeNoticeDeliveredAt DateTime?
+  revokeNoticeLastError   String?   @db.NVarChar(1000)
   issuedByAdminId   String
   issuedAt          DateTime        @default(now())
   activatedAt       DateTime?

@@ -10,6 +10,7 @@ import { entitiesRouter } from "./routes/entities.routes";
 import { licenseKeysRouter } from "./routes/licenseKeys.routes";
 import { unlockRequestsRouter } from "./routes/unlockRequests.routes";
 import { activationRouter } from "./routes/activation.routes";
+import { adminsRouter } from "./routes/admins.routes";
 import { adminAuthMiddleware } from "./middleware/adminAuth";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -43,6 +44,7 @@ export function createApp() {
   app.use("/api/admin/entities", adminAuthMiddleware, entitiesRouter);
   app.use("/api/admin/license-keys", adminAuthMiddleware, licenseKeysRouter);
   app.use("/api/admin/unlock-requests", adminAuthMiddleware, unlockRequestsRouter);
+  app.use("/api/admin/admins", adminAuthMiddleware, adminsRouter);
 
   // SPA fallback — any GET that isn't /api/* or /health and didn't match a static asset
   // above falls through to the console's index.html, same as packages/server/src/app.ts.

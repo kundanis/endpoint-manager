@@ -1,4 +1,4 @@
-import type { ActivateResponse, LicenseModule, RevalidateResponse } from "@license/shared";
+import type { ActivateResponse, LicenseModule, RegisterCallbackResponse, RevalidateResponse } from "@license/shared";
 import { prisma } from "../db";
 import { generateToken, hashToken, tokensMatch } from "../utils/tokens";
 
@@ -53,11 +53,9 @@ export async function activate(keyString: string, deploymentId: string): Promise
   };
 }
 
-export async function revalidate(
-  keyString: string,
-  deploymentId: string,
-  bindingToken: string
-): Promise<RevalidateResponse> {
+// Proof of possession for an already-activated key: the key, the deployment it's bound to,
+// and the bindingToken handed out at activation must all match.
+async function findBoundKey(keyString: string, deploymentId: string, bindingToken: string) {
   const keyStringHash = hashToken(keyString);
   const existing = await prisma.licenseKey.findUnique({ where: { keyStringHash } });
   if (!existing) throw new LicenseKeyNotFoundError();
@@ -67,6 +65,17 @@ export async function revalidate(
   if (!existing.bindingTokenHash || !tokensMatch(hashToken(bindingToken), existing.bindingTokenHash)) {
     throw new BindingMismatchError();
   }
+  return existing;
+}
+
+// Kept for deployments still running a version that polls; current versions only call
+// registerCallback and wait for a revoke notice instead.
+export async function revalidate(
+  keyString: string,
+  deploymentId: string,
+  bindingToken: string
+): Promise<RevalidateResponse> {
+  const existing = await findBoundKey(keyString, deploymentId, bindingToken);
 
   const revoked = existing.status === "REVOKED" || isExpired(existing.validUntil);
 
@@ -77,4 +86,33 @@ export async function revalidate(
     validUntil: existing.validUntil ? existing.validUntil.toISOString() : null,
     modules: parseModules(existing.modules),
   };
+}
+
+// Records where the bound deployment can be reached for a revoke notice. The secret is
+// generated once and handed back on every re-registration (e.g. after the deployment's
+// address changes), so a deployment that lost the response can simply register again.
+export async function registerCallback(
+  keyString: string,
+  deploymentId: string,
+  bindingToken: string,
+  callbackUrls: string[]
+): Promise<RegisterCallbackResponse> {
+  const existing = await findBoundKey(keyString, deploymentId, bindingToken);
+  const revocationSecret = existing.revocationSecret ?? generateToken();
+  const revoked = existing.status === "REVOKED";
+
+  await prisma.licenseKey.update({
+    where: { id: existing.id },
+    data: {
+      callbackUrls: JSON.stringify(callbackUrls),
+      revocationSecret,
+      // Revoked before the deployment had registered anywhere to be told - this response
+      // tells it, so there's no separate notice left to deliver.
+      ...(revoked && !existing.revokeNoticeDeliveredAt
+        ? { revokeNoticeDeliveredAt: new Date(), revokeNoticeLastError: null }
+        : {}),
+    },
+  });
+
+  return { revocationSecret, status: revoked ? "REVOKED" : "ACTIVATED" };
 }

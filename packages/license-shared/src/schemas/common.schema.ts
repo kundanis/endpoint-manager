@@ -21,3 +21,11 @@ export const LICENSE_MODULES = [
 ] as const;
 export const licenseModuleSchema = z.enum(LICENSE_MODULES);
 export type LicenseModule = z.infer<typeof licenseModuleSchema>;
+
+// Which product a key is sold for. Both products gate features on the same
+// LICENSE_MODULES keys above - Endpoint IQ just names them differently (Endpoint Hub,
+// Network Insight, ...) - so the product is a record on the key, not part of the
+// activate/revalidate wire contract, and any key still activates any deployment.
+export const LICENSE_PRODUCTS = ["ENDPOINT_ONE", "ENDPOINT_IQ"] as const;
+export const licenseProductSchema = z.enum(LICENSE_PRODUCTS);
+export type LicenseProduct = z.infer<typeof licenseProductSchema>;

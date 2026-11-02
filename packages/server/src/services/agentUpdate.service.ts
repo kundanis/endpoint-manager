@@ -236,7 +236,7 @@ export async function recordAgentUpdateStatus(
 // progress. Left alone, a task stuck like this blocks every future update attempt at this
 // agent forever, since createAgentUpdateJob refuses to create a second in-flight task -
 // same "periodic sweep over precise event-driven triggers" idiom already used by
-// scheduleLicenseRevalidation/schedulePatchAutomation in index.ts.
+// schedulePatchAutomation in index.ts.
 const STALE_AFTER_MS = 15 * 60 * 1000;
 
 export async function reconcileStaleAgentUpdateTasks(): Promise<number> {

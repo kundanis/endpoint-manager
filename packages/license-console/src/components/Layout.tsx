@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { path: "/entities", label: "Entities" },
   { path: "/license-keys", label: "License Keys" },
   { path: "/unlock-requests", label: "Unlock Requests" },
+  { path: "/admins", label: "Administrators" },
 ];
 
 export default function Layout() {

@@ -56,6 +56,7 @@ import { requireModule } from "./middleware/requireModule";
 import { requireModuleAccess, requireModuleVisible, requirePermission, requireSuperAdmin } from "./middleware/requireAdminRole";
 import { errorHandler } from "./middleware/errorHandler";
 import { publicAccessAllowlist } from "./middleware/publicAccessAllowlist";
+import { licenseCallbackRouter } from "./routes/licenseCallback.routes";
 import { behindCloudflare, trustCloudflare } from "./middleware/clientAddress";
 
 // Set by the packaged deployment (packages/server/scripts/package-server.ps1 copies the
@@ -118,6 +119,8 @@ export function createApp() {
   // emailAddin.routes.ts for why (the add-in's sandboxed runtime can't hold either kind of
   // credential this app otherwise requires).
   app.use("/api/email-addin", emailAddinRouter);
+  // License Server -> this deployment (revoke notices); see licenseCallback.routes.ts.
+  app.use("/api/license-callback", licenseCallbackRouter);
   app.use("/api/agent", agentAuthMiddleware, agentRouter);
 
   // More specific /api/admin/commands mount registered before the broader /api/admin

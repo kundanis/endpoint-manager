@@ -4,14 +4,15 @@ import type {
   ActivateRequest,
   ActivateResponse,
   LicenseModule,
-  RevalidateRequest,
-  RevalidateResponse,
+  RegisterCallbackRequest,
+  RegisterCallbackResponse,
   UnlockRequestRequest,
 } from "@license/shared";
 import { prisma } from "../db";
 import { config } from "../config";
 import { buildLicenseServerClient } from "../licenseServerClient";
 import { decryptField, encryptField } from "../utils/fieldEncryption";
+import { getAgentConnectionSettings } from "./agentConnection.service";
 import { LicenseServerUnreachableError, getConfiguredServerUrl } from "./licenseServerConfig.service";
 
 export { LicenseServerUnreachableError };
@@ -36,8 +37,10 @@ export interface LicenseStatus {
   validUntil?: Date | null;
   status?: string;
   activatedAt?: Date;
-  lastRevalidatedAt?: Date | null;
-  lastRevalidationError?: string | null;
+  // Where the License Server sends a revoke notice to, and when that was last registered.
+  callbackUrls?: string[];
+  callbackRegisteredAt?: Date | null;
+  callbackRegistrationError?: string | null;
   currentAgentCount?: number;
   totalAgentsUninstalled?: number;
 }
@@ -49,21 +52,14 @@ function parseModules(raw: string): LicenseModule[] {
 // The single source of truth for "is there a currently-valid license right now" — used
 // by both assertCanEnroll (agent cap) and isModuleLicensed (module access) so the two
 // enforcement paths can never disagree about what counts as licensed. Returns null for
-// anything that should be treated as unlicensed: no activation, explicitly revoked,
-// past validUntil, or an unreachable-License-Server outage that has outlasted the
-// offline grace window.
+// anything that should be treated as unlicensed: no activation, revoked (by a revoke
+// notice from the License Server), or past validUntil. Whether the License Server is
+// reachable never matters once a key is activated - this deployment doesn't check back.
 async function getEffectiveLicense() {
   const existing = await prisma.licenseActivation.findUnique({ where: { id: SINGLETON_ID } });
   if (!existing) return null;
   if (existing.status === "REVOKED") return null;
   if (existing.validUntil && existing.validUntil.getTime() < Date.now()) return null;
-
-  if (existing.lastRevalidationError) {
-    const lastKnownGoodAt = existing.lastRevalidatedAt ?? existing.activatedAt;
-    const graceDeadline = lastKnownGoodAt.getTime() + config.licenseOfflineGraceDays * 24 * 60 * 60 * 1000;
-    if (Date.now() > graceDeadline) return null;
-  }
-
   return existing;
 }
 
@@ -89,8 +85,9 @@ export async function getStatus(): Promise<LicenseStatus> {
     validUntil: existing.validUntil,
     status: existing.status,
     activatedAt: existing.activatedAt,
-    lastRevalidatedAt: existing.lastRevalidatedAt,
-    lastRevalidationError: existing.lastRevalidationError,
+    callbackUrls: existing.callbackUrls ? JSON.parse(existing.callbackUrls) : [],
+    callbackRegisteredAt: existing.callbackRegisteredAt,
+    callbackRegistrationError: existing.callbackRegistrationError,
     currentAgentCount,
     totalAgentsUninstalled: existing.totalAgentsUninstalled,
   };
@@ -130,8 +127,13 @@ export async function activate(keyString: string): Promise<LicenseStatus> {
     bindingTokenEncrypted: encryptField(data.bindingToken),
     status: "ACTIVATED",
     activatedAt: now,
-    lastRevalidatedAt: now,
+    lastRevalidatedAt: null,
     lastRevalidationError: null,
+    // A new key means a new revocation secret - register again for this one.
+    callbackUrls: null,
+    revocationSecretHash: null,
+    callbackRegisteredAt: null,
+    callbackRegistrationError: null,
   };
 
   await prisma.licenseActivation.upsert({
@@ -139,6 +141,10 @@ export async function activate(keyString: string): Promise<LicenseStatus> {
     create: { id: SINGLETON_ID, ...record },
     update: record,
   });
+
+  // Best effort - the license is already active; scheduleLicenseCallbackRegistration
+  // keeps retrying if the License Server can't be reached right now.
+  await registerCallback().catch(() => {});
 
   return getStatus();
 }
@@ -162,66 +168,91 @@ export async function requestUnlock(reason: string): Promise<void> {
   }
 }
 
-// Called periodically (see index.ts's revalidation loop), never inline on the enrollment
-// path. Distinguishes an explicit REVOKED/EXPIRED response (fail closed immediately, status
-// flips to REVOKED) from the License Server simply being unreachable (fail open — leaves
-// status untouched and just records the error; getEffectiveLicense above is what actually
-// enforces the offline grace window against lastRevalidatedAt).
-export async function revalidate(): Promise<void> {
+// Addresses the License Server should try when it sends a revoke notice. It usually runs in
+// the cloud, so the internet-facing addresses come first; the LAN address still works when
+// it sits on the same network. Same settings agents use (Agent connection settings).
+async function getCallbackUrls(): Promise<string[]> {
+  const settings = await getAgentConnectionSettings();
+  const ordered = [settings.webUrl, settings.publicUrl, settings.localUrl ?? settings.detectedLocalUrl];
+  return Array.from(new Set(ordered.filter((u): u is string => !!u)));
+}
+
+function hashSecret(secret: string): string {
+  return crypto.createHash("sha256").update(secret).digest("hex");
+}
+
+// Tells the License Server where to send a revoke notice. Runs after activation and from
+// index.ts's hourly loop, but only does anything when not yet registered or the addresses
+// changed. Never touches the license itself on failure - an unreachable License Server
+// just means a revoke notice can't find us yet, the license stays valid.
+export async function registerCallback(): Promise<void> {
   const existing = await prisma.licenseActivation.findUnique({ where: { id: SINGLETON_ID } });
-  if (!existing) return;
+  if (!existing || existing.status === "REVOKED") return;
+
+  const callbackUrls = await getCallbackUrls();
+  if (existing.revocationSecretHash && existing.callbackUrls === JSON.stringify(callbackUrls)) return;
+
+  async function recordError(message: string) {
+    await prisma.licenseActivation.update({
+      where: { id: SINGLETON_ID },
+      data: { callbackRegistrationError: message },
+    });
+  }
+
+  if (callbackUrls.length === 0) {
+    return recordError("No server address to register - set one in Agent connection settings");
+  }
 
   let serverUrl: string;
   try {
     serverUrl = await getConfiguredServerUrl();
   } catch {
-    // Not configured (or the config row's URL was cleared) is treated the same as
-    // unreachable, not as an explicit denial — never flips status to REVOKED for this.
-    await prisma.licenseActivation.update({
-      where: { id: SINGLETON_ID },
-      data: { lastRevalidationError: "License Server is not configured" },
-    });
-    return;
+    return recordError("License Server is not configured");
   }
   const client = buildLicenseServerClient(serverUrl);
 
-  const keyString = decryptField(existing.keyStringEncrypted);
-  const bindingToken = decryptField(existing.bindingTokenEncrypted);
-
+  let data: RegisterCallbackResponse;
   try {
-    const body: RevalidateRequest = { keyString, deploymentId: existing.deploymentId, bindingToken };
-    const response = await client.post<RevalidateResponse>("/api/revalidate", body);
-    const data = response.data;
-
-    await prisma.licenseActivation.update({
-      where: { id: SINGLETON_ID },
-      data: {
-        status: data.status,
-        maxAgents: data.maxAgents,
-        validityType: data.validityType,
-        modules: JSON.stringify(data.modules),
-        validUntil: data.validUntil ? new Date(data.validUntil) : null,
-        lastRevalidatedAt: new Date(),
-        lastRevalidationError: null,
-      },
-    });
+    const body: RegisterCallbackRequest = {
+      keyString: decryptField(existing.keyStringEncrypted),
+      deploymentId: existing.deploymentId,
+      bindingToken: decryptField(existing.bindingTokenEncrypted),
+      callbackUrls,
+    };
+    const response = await client.post<RegisterCallbackResponse>("/api/register-callback", body);
+    data = response.data;
   } catch (err) {
     if (axios.isAxiosError(err) && err.response) {
-      await prisma.licenseActivation.update({
-        where: { id: SINGLETON_ID },
-        data: {
-          status: "REVOKED",
-          lastRevalidationError: err.response.data?.error ?? "Revalidation denied by License Server",
-        },
-      });
-      return;
+      return recordError(err.response.data?.error ?? `License Server refused the registration (HTTP ${err.response.status})`);
     }
-
-    await prisma.licenseActivation.update({
-      where: { id: SINGLETON_ID },
-      data: { lastRevalidationError: "License Server unreachable" },
-    });
+    return recordError("License Server unreachable");
   }
+
+  await prisma.licenseActivation.update({
+    where: { id: SINGLETON_ID },
+    data: {
+      callbackUrls: JSON.stringify(callbackUrls),
+      revocationSecretHash: hashSecret(data.revocationSecret),
+      callbackRegisteredAt: new Date(),
+      callbackRegistrationError: null,
+      // Revoked before we'd registered anywhere to be told - this response is the notice.
+      ...(data.status === "REVOKED" ? { status: "REVOKED" } : {}),
+    },
+  });
+}
+
+// A revoke notice pushed by the License Server (routes/licenseCallback.routes.ts). Only
+// accepted for this deployment and with the secret it handed us at registration.
+export async function applyRevokeNotice(deploymentId: string, revocationSecret: string): Promise<boolean> {
+  const existing = await prisma.licenseActivation.findUnique({ where: { id: SINGLETON_ID } });
+  if (!existing?.revocationSecretHash || existing.deploymentId !== deploymentId) return false;
+
+  const a = Buffer.from(hashSecret(revocationSecret), "hex");
+  const b = Buffer.from(existing.revocationSecretHash, "hex");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+
+  await prisma.licenseActivation.update({ where: { id: SINGLETON_ID }, data: { status: "REVOKED" } });
+  return true;
 }
 
 // The only function the enrollment path actually calls. A no-op when enforcement is

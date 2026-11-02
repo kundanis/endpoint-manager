@@ -98,8 +98,10 @@ export interface LicenseStatusView {
   validUntil?: string | null;
   status?: LicenseActivationStatus;
   activatedAt?: string;
-  lastRevalidatedAt?: string | null;
-  lastRevalidationError?: string | null;
+  // Where the License Server sends a revoke notice (the license is never re-checked).
+  callbackUrls?: string[];
+  callbackRegisteredAt?: string | null;
+  callbackRegistrationError?: string | null;
   currentAgentCount?: number;
   totalAgentsUninstalled?: number;
 }

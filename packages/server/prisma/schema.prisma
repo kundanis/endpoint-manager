@@ -1772,8 +1772,17 @@ model LicenseActivation {
   bindingTokenEncrypted String    @db.NVarChar(500)
   status                String    @default("ACTIVATED") @db.NVarChar(20) // ACTIVATED | REVOKED
   activatedAt           DateTime
+  // No longer written: activation is never re-checked against the License Server (see
+  // licenseActivation.service.ts). Kept so older rows and the column history stay intact.
   lastRevalidatedAt     DateTime?
   lastRevalidationError String?   @db.NVarChar(1000)
+  // Revoke notices: the License Server pushes a revoke to this deployment instead of the
+  // deployment polling. callbackUrls (JSON array) is the address list last registered
+  // there; revocationSecretHash verifies the notice (the plaintext is never stored here).
+  callbackUrls              String?   @db.NVarChar(2000)
+  revocationSecretHash      String?   @db.NVarChar(128)
+  callbackRegisteredAt      DateTime?
+  callbackRegistrationError String?   @db.NVarChar(1000)
   // Lifetime count of agents actually uninstalled/removed from this deployment (not
   // currently-active seats - see currentAgentCount, which is always a live COUNT(*)).
   // Incremented once per Agent row deletion, whether via the self-report uninstall path

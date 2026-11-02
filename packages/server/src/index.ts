@@ -3,7 +3,7 @@ import https from "node:https";
 import { createApp } from "./app";
 import { config } from "./config";
 import { logger } from "./logger";
-import { getStatus, revalidate } from "./services/licenseActivation.service";
+import { registerCallback } from "./services/licenseActivation.service";
 import { promoteScheduledPatchTasks } from "./services/patch.service";
 import { runAutoPatchPolicies } from "./services/autoPatchPolicy.service";
 import { reconcileStaleAgentUpdateTasks } from "./services/agentUpdate.service";
@@ -55,7 +55,7 @@ failInterruptedSyncRuns()
   })
   .catch((err) => logger.error({ err }, "Failed to reconcile interrupted vulnerability sync runs"));
 
-scheduleLicenseRevalidation();
+scheduleLicenseCallbackRegistration();
 schedulePatchAutomation();
 scheduleStaleAgentUpdateReconciliation();
 scheduleUserRisk();
@@ -63,32 +63,19 @@ scheduleAuditRetention();
 startFleetCache();
 startPresenceFlush();
 
-// Re-validates roughly once a day against the License Server, not on a fixed wall-clock
-// time — scheduled off lastRevalidatedAt so a fleet of separate customer installs doesn't
-// all hammer the License Server at once. A per-process random jitter (rolled once at
-// startup, not re-rolled every tick) spreads that further without making the interval
-// drift across restarts within the same day. Checking hourly rather than scheduling one
-// precise timer is deliberate: it's simple, survives process restarts with no saved timer
-// state, and being an hour late to revalidate is inconsequential.
-function scheduleLicenseRevalidation() {
+// Once activated, the license is never re-checked against the License Server - it stays
+// valid offline, and a revoke arrives as a notice pushed to this server instead. This loop
+// only keeps the License Server told where to send that notice: registerCallback is a
+// no-op once registered, and runs again if registration failed or the server's addresses
+// (Agent connection settings) changed. Hourly is plenty for that.
+function scheduleLicenseCallbackRegistration() {
   const CHECK_INTERVAL_MS = 60 * 60 * 1000;
-  const REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
-  const JITTER_MS = 2 * 60 * 60 * 1000;
-  const jitterMs = Math.floor(Math.random() * JITTER_MS);
 
   async function tick() {
     try {
-      const status = await getStatus();
-      if (!status.activated || !status.activatedAt) return;
-
-      const lastKnownGoodAt = status.lastRevalidatedAt ?? status.activatedAt;
-      const dueAt = lastKnownGoodAt.getTime() + REVALIDATION_INTERVAL_MS + jitterMs;
-      if (Date.now() >= dueAt) {
-        logger.info("Revalidating license with License Server");
-        await revalidate();
-      }
+      await registerCallback();
     } catch (err) {
-      logger.error({ err }, "License revalidation tick failed");
+      logger.error({ err }, "License callback registration tick failed");
     }
   }
 
@@ -99,7 +86,7 @@ function scheduleLicenseRevalidation() {
 // Promotes due SCHEDULED patch tasks to PENDING and runs "Automatic Mode" policies. A
 // 2-minute cadence is deliberate: frequent enough that a scheduled deployment or a newly
 // qualifying auto-policy patch feels responsive, infrequent enough not to matter for load -
-// same "polling beats precise timers" reasoning as scheduleLicenseRevalidation above.
+// same "polling beats precise timers" reasoning as the other schedulers here.
 function schedulePatchAutomation() {
   const INTERVAL_MS = 2 * 60 * 1000;
 

@@ -3,6 +3,7 @@ import LoginPage from "./pages/LoginPage";
 import EntitiesPage from "./pages/EntitiesPage";
 import LicenseKeysPage from "./pages/LicenseKeysPage";
 import UnlockRequestsPage from "./pages/UnlockRequestsPage";
+import AdminsPage from "./pages/AdminsPage";
 import RequireAuth from "./components/RequireAuth";
 import Layout from "./components/Layout";
 
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/entities" element={<EntitiesPage />} />
         <Route path="/license-keys" element={<LicenseKeysPage />} />
         <Route path="/unlock-requests" element={<UnlockRequestsPage />} />
+        <Route path="/admins" element={<AdminsPage />} />
         <Route path="*" element={<Navigate to="/entities" replace />} />
       </Route>
     </Routes>

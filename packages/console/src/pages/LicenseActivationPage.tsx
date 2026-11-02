@@ -262,7 +262,7 @@ export default function LicenseActivationPage() {
 
   const isExpired = status?.validUntil ? new Date(status.validUntil) < new Date() : false;
   const isRevoked = status?.status === "REVOKED";
-  const isUnreachable = !!status?.lastRevalidationError;
+  const callbackIssue = status?.callbackRegisteredAt ? null : status?.callbackRegistrationError;
   const atCap = status?.activated && status.maxAgents !== undefined && (status.currentAgentCount ?? 0) >= status.maxAgents;
   const canActivate = !!serverConfig?.configured && serverConfig.lastConnectionOk === true;
 
@@ -445,12 +445,17 @@ export default function LicenseActivationPage() {
                     },
                     { label: "Valid until", value: status.validUntil ? formatDate(status.validUntil) : "Perpetual" },
                     { label: "Deployment ID", value: status.deploymentId, mono: true },
-                    { label: "Last re-validated", value: formatDateTime(status.lastRevalidatedAt, "Never") },
+                    {
+                      label: "Revoke notices",
+                      value: status.callbackRegisteredAt
+                        ? `Registered ${formatDateTime(status.callbackRegisteredAt, "")}`
+                        : "Not registered yet",
+                    },
                   ]}
                 />
-                {isUnreachable && (
-                  <Alert tone="critical" title="Re-validation issue">
-                    {status.lastRevalidationError}
+                {callbackIssue && !isRevoked && (
+                  <Alert tone="warn" title="Couldn't register with the License Server">
+                    {callbackIssue}. The license stays active; this deployment retries every hour.
                   </Alert>
                 )}
               </div>
@@ -465,6 +470,7 @@ export default function LicenseActivationPage() {
           <Alert tone="info">
             This deployment must activate a license key (issued by the vendor's central License Server) before it can
             enroll new agents. Activation is one-time-use — once a key is redeemed here, it locks to this deployment.
+            After that the license stays active even if the License Server is offline.
           </Alert>
         </div>
       </Row>

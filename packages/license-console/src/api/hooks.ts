@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { LicenseModule, ValidityType } from "@license/shared";
+import type { LicenseModule, LicenseProduct, ValidityType } from "@license/shared";
 import { api } from "./client";
 import type {
+  AdminListItem,
   EntityDetail,
   EntityListItem,
   IssuedLicenseKey,
@@ -68,7 +69,13 @@ export function useLicenseKeys() {
 export function useIssueLicenseKey() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { entityId: string; maxAgents: number; validityType: ValidityType; modules: LicenseModule[] }) =>
+    mutationFn: (body: {
+      entityId: string;
+      product: LicenseProduct;
+      maxAgents: number;
+      validityType: ValidityType;
+      modules: LicenseModule[];
+    }) =>
       api.post<IssuedLicenseKey>("/admin/license-keys", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["licenseKeys"] }),
   });
@@ -107,5 +114,35 @@ export function useRejectUnlockRequest() {
     mutationFn: ({ id, resolutionNote }: { id: string; resolutionNote?: string }) =>
       api.post<UnlockRequestListItem>(`/admin/unlock-requests/${id}/reject`, { resolutionNote }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["unlockRequests"] }),
+  });
+}
+
+export function useAdmins() {
+  return useQuery({
+    queryKey: ["admins"],
+    queryFn: () => api.get<AdminListItem[]>("/admin/admins"),
+  });
+}
+
+export function useCreateAdmin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { email: string; password: string }) => api.post<AdminListItem>("/admin/admins", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admins"] }),
+  });
+}
+
+export function useDeleteAdmin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/admins/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admins"] }),
+  });
+}
+
+export function useChangeAdminPassword() {
+  return useMutation({
+    mutationFn: ({ id, password, otp }: { id: string; password: string; otp: string }) =>
+      api.post(`/admin/admins/${id}/password`, { password, otp }),
   });
 }

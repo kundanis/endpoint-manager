@@ -44,10 +44,6 @@ const envSchema = z.object({
   // packages/agent/src/config.ts and docs/tls-setup.md). Unset in any real deployment
   // where the License Server has a publicly-trusted certificate.
   LICENSE_SERVER_CA_PATH: z.string().optional(),
-  // How long this deployment keeps operating on cached license state after the License
-  // Server becomes unreachable (network error, not an explicit REVOKED/EXPIRED response —
-  // those fail closed immediately regardless of this setting).
-  LICENSE_OFFLINE_GRACE_DAYS: z.coerce.number().int().positive().default(14),
   // Kept OFF by default so the licensing plumbing can be built, wired, and manually
   // verified end-to-end before it ever actually blocks a real enrollment.
   LICENSE_ENFORCEMENT_ENABLED: z
@@ -105,7 +101,6 @@ export const config = {
   licenseServerCaPath: parsed.data.LICENSE_SERVER_CA_PATH
     ? path.resolve(process.cwd(), parsed.data.LICENSE_SERVER_CA_PATH)
     : undefined,
-  licenseOfflineGraceDays: parsed.data.LICENSE_OFFLINE_GRACE_DAYS,
   licenseEnforcementEnabled: parsed.data.LICENSE_ENFORCEMENT_ENABLED,
   trustedProxy: parsed.data.TRUSTED_PROXY,
   adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")

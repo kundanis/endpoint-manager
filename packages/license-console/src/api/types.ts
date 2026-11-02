@@ -1,4 +1,11 @@
-import type { LicenseKeyStatus, LicenseModule, ValidityType } from "@license/shared";
+import type { LicenseKeyStatus, LicenseModule, LicenseProduct, ValidityType } from "@license/shared";
+
+export interface AdminListItem {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
 
 export interface EntityListItem {
   id: string;
@@ -17,6 +24,7 @@ export interface LicenseKeyListItem {
   keySuffix: string;
   entityId: string;
   entity: { id: string; name: string };
+  product: LicenseProduct;
   maxAgents: number;
   validityType: ValidityType;
   modules: LicenseModule[];
@@ -26,6 +34,10 @@ export interface LicenseKeyListItem {
   issuedAt: string;
   activatedAt: string | null;
   revokedAt: string | null;
+  // Where the bound deployment asked to be sent a revoke notice, and whether it got one.
+  callbackUrls: string[];
+  revokeNoticeDeliveredAt: string | null;
+  revokeNoticeLastError: string | null;
 }
 
 export interface IssuedLicenseKey extends LicenseKeyListItem {
