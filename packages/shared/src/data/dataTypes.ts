@@ -129,6 +129,9 @@ export const BUILT_IN_DATA_TYPES: BuiltInDataType[] = [
     description: "Programs and scripts - block these to stop unapproved software and script-based malware.",
     kind: "FILE_EXTENSION",
     values: [".exe", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".jse", ".wsf", ".wsh", ".hta", ".scr", ".com", ".jar", ".pif"],
+    // DLP only: as Application control rules, ".exe" / ".com" / ".scr" stop every program,
+    // including the Windows desktop at sign-in (a black screen).
+    onlyTargets: ["dlp"],
   },
 
   // ---- Personal data

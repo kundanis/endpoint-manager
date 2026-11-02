@@ -91,3 +91,17 @@ export async function resumeAgent(agentId: string, createdByAdminId: string): Pr
     await enableRemoteAccess(agentId, agent.pausedFromRemoteAccessAllowedIp, createdByAdminId);
   }
 }
+
+// Emergency release (EPM page): pause every endpoint that isn't paused yet, so all blocking is
+// released fleet-wide at the next sync. Resume-all undoes it once the cause is fixed.
+export async function pauseAllAgents(createdByAdminId: string): Promise<number> {
+  const agents = await prisma.agent.findMany({ where: { paused: false }, select: { id: true } });
+  for (const a of agents) await pauseAgent(a.id, createdByAdminId);
+  return agents.length;
+}
+
+export async function resumeAllAgents(createdByAdminId: string): Promise<number> {
+  const agents = await prisma.agent.findMany({ where: { paused: true }, select: { id: true } });
+  for (const a of agents) await resumeAgent(a.id, createdByAdminId);
+  return agents.length;
+}

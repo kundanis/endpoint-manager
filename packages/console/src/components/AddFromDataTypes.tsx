@@ -43,7 +43,8 @@ function AddFromDataTypesDialog({ target, policyId, onClose }: { target: DataTyp
           toast(
             `Added ${r.added} ${r.added === 1 ? "rule" : "rules"}` +
               (r.skipped ? ` (${r.skipped} already in this policy)` : "") +
-              ".",
+              "." +
+              (r.refused && r.refused.length > 0 ? ` ${r.refused.length} value${r.refused.length === 1 ? " was" : "s were"} left out because blocking ${r.refused.length === 1 ? "it" : "them"} would stop Windows itself (${r.refused.join(", ")}).` : ""),
           );
           onClose();
         },

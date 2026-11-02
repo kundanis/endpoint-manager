@@ -1209,11 +1209,22 @@ function SecurityFindingsSection({ agentId }: { agentId: string }) {
   const { data: findings, isLoading, error } = useAgentSecurityFindings(agentId);
   const remediate = useRemediateSecurityRule();
   const remediateAll = useRemediateAllForAgent();
+  const confirmFix = useConfirm();
   const [remediatingRuleId, setRemediatingRuleId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{ ruleId: string; jobId?: string; error?: string } | null>(null);
   const paged = usePagedList(findings ?? []);
 
-  function handleRemediate(ruleId: string) {
+  async function handleRemediate(ruleId: string) {
+    const warning = findings?.find((f) => f.ruleId === ruleId)?.remediationWarning;
+    if (warning) {
+      const ok = await confirmFix({
+        title: "This fix changes how Windows starts or signs in",
+        body: `${warning} The change takes effect after the next restart.`,
+        confirmLabel: "Apply on this device",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
     setRemediatingRuleId(ruleId);
     setLastResult(null);
     remediate.mutate(
@@ -1272,7 +1283,10 @@ function SecurityFindingsSection({ agentId }: { agentId: string }) {
           {remediateAll.isSuccess && (
             <Alert tone="success">
               Dispatched {remediateAll.data.remediatedCount} remediation job(s)
-              {remediateAll.data.skippedCount > 0 ? ` — ${remediateAll.data.skippedCount} failing rule(s) had no remediation script` : ""}.
+              {remediateAll.data.skippedCount > 0 ? ` — ${remediateAll.data.skippedCount} failing rule(s) were not fixed automatically` : ""}.
+              {remediateAll.data.needsReview && remediateAll.data.needsReview.length > 0 && (
+                <> Fix these one at a time, after checking the device: {remediateAll.data.needsReview.join(", ")}.</>
+              )}
             </Alert>
           )}
           {remediateAll.isError && <Alert tone="critical">{(remediateAll.error as Error).message}</Alert>}

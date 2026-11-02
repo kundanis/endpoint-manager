@@ -63,9 +63,17 @@ if (-not $enforce) { Write-Output '[]'; return }
 
 $disks = Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' }
 
+# The disks holding Windows and the user profiles (an external SSD or Windows To Go) are never
+# disabled - that would hang the device.
+$protectedDisks = @()
+foreach ($letter in @($env:SystemDrive, (Split-Path $env:PUBLIC -Qualifier))) {
+  try { $protectedDisks += (Get-Partition -DriveLetter $letter.TrimEnd(':') -ErrorAction Stop | Get-Disk).Number } catch {}
+}
+
 foreach ($disk in $disks) {
   $pnp = $disk.PNPDeviceID
   if ([string]::IsNullOrEmpty($pnp)) { continue }
+  if ($protectedDisks -contains $disk.Index) { continue }
   $serial = Get-UsbSerial $pnp
 
   if ($allowed -notcontains (Get-UsbSerial $pnp)) {

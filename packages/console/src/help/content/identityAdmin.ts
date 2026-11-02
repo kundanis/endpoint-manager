@@ -89,6 +89,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     module: "Identity Governance",
     title: "Admin logs",
     path: "/admin-logs",
+    superAdminOnly: true,
     summary: "Everything administrators do, for super admins only: changes, sign-ins and views of sensitive data.",
     keywords: ["audit", "audit trail", "who changed", "sign-in history", "compliance"],
     sections: [
@@ -146,6 +147,7 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     module: "Administrators",
     title: "Administrators",
     path: "/admin-users",
+    superAdminOnly: true,
     summary: "Who can sign in to the console, as admin or super admin, and which modules each admin can use.",
     keywords: ["users", "roles", "access", "permissions", "password reset"],
     howTos: [

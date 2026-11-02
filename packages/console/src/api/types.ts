@@ -757,6 +757,8 @@ export interface AgentSecurityFindingView {
   actualValue: string | null;
   status: "PASS" | "FAIL" | "ERROR";
   hasRemediation: boolean;
+  // Set when the fix changes how Windows boots or signs in (applied one device at a time).
+  remediationWarning?: string | null;
   lastSeenAt: string;
   // The latest fix dispatched for this rule on this endpoint, and how it went.
   remediation: Omit<FindingRemediation, "action"> | null;

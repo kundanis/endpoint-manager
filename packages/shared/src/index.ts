@@ -6,3 +6,4 @@ export * from "./data/piiPatterns";
 export * from "./data/edrRules";
 export * from "./network";
 export * from "./data/dataTypes";
+export * from "./endpointSafety";

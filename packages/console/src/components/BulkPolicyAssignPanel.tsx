@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useAgents, useAssetGroups } from "../api/hooks";
 import EndpointCheckboxList from "./EndpointCheckboxList";
-import { Alert, Button, Card, Check } from "./ui";
+import { Alert, Button, Card, Check, useConfirm } from "./ui";
+import { confirmLargeBlockingAssignment } from "./policy";
 
 // Shared "assign N selected policies at once" panel for every EPM category page (App
 // Control, Web Block, PII Block, Command Block, IP Block, USB Control). Each of those
@@ -27,6 +28,7 @@ export default function BulkPolicyAssignPanel({
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   if (policyIds.length === 0) return null;
 
@@ -39,6 +41,7 @@ export default function BulkPolicyAssignPanel({
   }
 
   async function handleAssign() {
+    if (!(await confirmLargeBlockingAssignment(confirm, selectedAgentIds, selectedGroupIds, groups ?? []))) return;
     setError(null);
     setIsSubmitting(true);
     try {

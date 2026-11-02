@@ -2,7 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlockRuleWire } from "@em/shared";
-import { COMMAND_BLOCK_PROTECTED_PROCESS_NAMES } from "@em/shared";
+import { COMMAND_BLOCK_KILLABLE_WINDOWS_TOOLS, COMMAND_BLOCK_MAX_KILLS_PER_SCAN, COMMAND_BLOCK_PROTECTED_PROCESS_NAMES, commandBlockRuleProblem } from "@em/shared";
+import { isEnforcementSuspended } from "./shellHealthGuard";
 
 const execFileAsync = promisify(execFile);
 
@@ -42,18 +43,25 @@ function buildScanScript(rules: CommandBlockRuleWire[], ownPid: number): string 
     )
     .join(",\n");
   const protectedNamesLiteral = COMMAND_BLOCK_PROTECTED_PROCESS_NAMES.map((n) => `'${psEscape(n)}'`).join(", ");
+  const killableToolsLiteral = COMMAND_BLOCK_KILLABLE_WINDOWS_TOOLS.map((n) => `'${psEscape(n)}'`).join(", ");
 
   return `
 $ErrorActionPreference = 'SilentlyContinue'
 $ownPid = ${ownPid}
 $protectedNames = @(${protectedNamesLiteral})
+$maxKills = ${COMMAND_BLOCK_MAX_KILLS_PER_SCAN}
+$kills = 0
+# Anything running from the Windows folder (System32, SysWOW64, SystemApps, WinSxS...) is part of
+# Windows and is never matched, whatever the rule says.
+$windowsDir = ($env:SystemRoot.TrimEnd('\\') + '\\').ToLowerInvariant()
+$killableTools = @(${killableToolsLiteral}) # script hosts and attack tools may still be matched
 $rules = @(
 ${rulesLiteral}
 )
 
 $matches = @()
 $processes = Get-CimInstance Win32_Process | Where-Object {
-  $_.ProcessId -ne $ownPid -and $_.ProcessId -ne $PID -and $_.ParentProcessId -ne $ownPid -and $_.ParentProcessId -ne $PID -and ($protectedNames -notcontains $_.Name)
+  $_.ProcessId -ne $ownPid -and $_.ProcessId -ne $PID -and $_.ParentProcessId -ne $ownPid -and $_.ParentProcessId -ne $PID -and ($protectedNames -notcontains $_.Name.ToLowerInvariant()) -and -not ($_.ExecutablePath -and $_.ExecutablePath.ToLowerInvariant().StartsWith($windowsDir) -and ($killableTools -notcontains $_.Name.ToLowerInvariant()))
 }
 
 foreach ($proc in $processes) {
@@ -87,7 +95,12 @@ foreach ($proc in $processes) {
         OccurredAt = (Get-Date).ToUniversalTime().ToString('o')
       }
       if ($rule.EnforcementMode -eq 'BLOCK') {
-        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        if ($kills -lt $maxKills) {
+          Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+          $kills++
+        } else {
+          $matches[-1].Action = 'ALERTED' # over the per-scan cap: reported, not killed
+        }
       }
       break
     }
@@ -115,6 +128,19 @@ export async function runCommandBlockScan(client: AxiosInstance): Promise<void> 
     return;
   }
 
+  // Rules that would match Windows itself are never used, even if the server sent them; while
+  // the desktop safety net has suspended enforcement, nothing is killed (alert only).
+  const suspended = isEnforcementSuspended();
+  assigned = {
+    ...assigned,
+    rules: assigned.rules
+      .filter((r) => {
+        const problem = commandBlockRuleProblem(r.ruleType, r.pattern);
+        if (problem) console.warn(`Command Block: not applying rule ${r.ruleId}: ${problem}`);
+        return !problem;
+      })
+      .map((r) => (suspended ? { ...r, enforcementMode: "ALERT_ONLY" as const } : r)),
+  };
   if (assigned.rules.length === 0) return;
 
   let events: CommandBlockEventPayload[];

@@ -8,6 +8,7 @@ import type {
   UpdateRuleRequest,
 } from "@em/shared";
 import { DEFAULT_COMMAND_TIMEOUT_SEC } from "@em/shared";
+import { remediationRisk } from "@em/shared";
 import { prisma } from "../db";
 import { newAssignmentTargets } from "../utils/assignments";
 import { getCommandOutcomes } from "./commandResults";
@@ -109,6 +110,7 @@ export async function getBenchmark(id: string) {
         operator: r.operator as SecurityRuleOperator,
         expectedValue: r.expectedValue,
         remediationPowerShell: r.remediationPowerShell,
+        remediationWarning: remediationRisk(r.remediationPowerShell),
         passCount: bucket?.pass ?? 0,
         failCount: bucket?.fail ?? 0,
         errorCount: bucket?.error ?? 0,
@@ -285,6 +287,7 @@ export async function getFindingsForAgent(agentId: string) {
     actualValue: f.actualValue,
     status: f.status as "PASS" | "FAIL" | "ERROR",
     hasRemediation: Boolean(f.rule.remediationPowerShell),
+    remediationWarning: remediationRisk(f.rule.remediationPowerShell),
     lastSeenAt: f.lastSeenAt.toISOString(),
     // The latest fix's outcome on this endpoint (null if never fixed here).
     remediation: f.remediationJobId ? (outcomes.get(`${f.remediationJobId}:${f.agentId}`) ?? null) : null,
@@ -348,14 +351,16 @@ export async function remediateAllForAgent(agentId: string, createdByAdminId: st
     where: { agentId, status: "FAIL" },
     include: { rule: true },
   });
-  const remediable = findings.filter((f) => f.rule.remediationPowerShell);
+  // Fixes that change how Windows boots or signs in are applied one device at a time only.
+  const remediable = findings.filter((f) => f.rule.remediationPowerShell && !remediationRisk(f.rule.remediationPowerShell));
+  const needsReview = findings.filter((f) => remediationRisk(f.rule.remediationPowerShell)).map((f) => f.rule.title);
 
   const jobIds: string[] = [];
   for (const f of remediable) {
     jobIds.push(await dispatchRuleFix(agentId, f.rule, createdByAdminId));
   }
 
-  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
+  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length, needsReview };
 }
 
 // Remediate only the rules the admin ticked on the "Compliance by endpoint" drill-down.
@@ -375,14 +380,16 @@ export async function remediateSelectedForAgentInBenchmark(
     where: { benchmarkId, agentId, status: "FAIL", ruleId: { in: ruleIds } },
     include: { rule: true },
   });
-  const remediable = findings.filter((f) => f.rule.remediationPowerShell);
+  // Fixes that change how Windows boots or signs in are applied one device at a time only.
+  const remediable = findings.filter((f) => f.rule.remediationPowerShell && !remediationRisk(f.rule.remediationPowerShell));
+  const needsReview = findings.filter((f) => remediationRisk(f.rule.remediationPowerShell)).map((f) => f.rule.title);
 
   const jobIds: string[] = [];
   for (const f of remediable) {
     jobIds.push(await dispatchRuleFix(agentId, f.rule, createdByAdminId));
   }
 
-  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
+  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length, needsReview };
 }
 
 // Same one-job-per-rule reasoning as remediateAllForAgent, but scoped to a single
@@ -397,12 +404,14 @@ export async function remediateAllForAgentInBenchmark(benchmarkId: string, agent
     where: { benchmarkId, agentId, status: "FAIL" },
     include: { rule: true },
   });
-  const remediable = findings.filter((f) => f.rule.remediationPowerShell);
+  // Fixes that change how Windows boots or signs in are applied one device at a time only.
+  const remediable = findings.filter((f) => f.rule.remediationPowerShell && !remediationRisk(f.rule.remediationPowerShell));
+  const needsReview = findings.filter((f) => remediationRisk(f.rule.remediationPowerShell)).map((f) => f.rule.title);
 
   const jobIds: string[] = [];
   for (const f of remediable) {
     jobIds.push(await dispatchRuleFix(agentId, f.rule, createdByAdminId));
   }
 
-  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length };
+  return { jobIds, remediatedCount: remediable.length, skippedCount: findings.length - remediable.length, needsReview };
 }

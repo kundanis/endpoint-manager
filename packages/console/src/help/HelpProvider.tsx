@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { BookOpen, ChevronDown, ChevronRight, MousePointerClick, Search, X } from "lucide-react";
+import { useMe } from "../api/hooks";
 import { Button } from "../components/ui";
 import { findTarget, searchHelp, topicForPath, type HelpTopic, type HowTo } from "./index";
 
@@ -116,8 +117,11 @@ export function TopicView({ topic, highlightHowTos }: { topic: HelpTopic; highli
 function HelpPanel({ onClose }: { onClose: () => void }) {
   const location = useLocation();
   const [query, setQuery] = useState("");
-  const topic = topicForPath(location.pathname);
-  const results = useMemo(() => searchHelp(query).slice(0, 8), [query]);
+  const { data: me } = useMe();
+  const isSuperAdmin = me?.role === "SUPER_ADMIN";
+  const pageTopic = topicForPath(location.pathname);
+  const topic = pageTopic && (!pageTopic.superAdminOnly || isSuperAdmin) ? pageTopic : undefined;
+  const results = useMemo(() => searchHelp(query).filter((r) => !r.topic.superAdminOnly || isSuperAdmin).slice(0, 8), [query, isSuperAdmin]);
   const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {

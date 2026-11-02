@@ -253,6 +253,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   const unassign = useUnassignAppControlPolicy();
   return (
     <AssignmentEditor
+      blocking
       assignments={assignments}
       onUnassign={(assignmentId) => unassign.mutate({ policyId, assignmentId })}
       unassignPending={unassign.isPending}

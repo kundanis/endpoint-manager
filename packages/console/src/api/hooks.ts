@@ -936,6 +936,23 @@ export function usePauseAgent() {
   });
 }
 
+// Emergency release: pause every endpoint (all blocking released) / resume every paused one.
+export function useEmergencyRelease() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ paused: number }>("/admin/agents/emergency-release", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+  });
+}
+
+export function useResumeAllAgents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ resumed: number }>("/admin/agents/resume-all", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+  });
+}
+
 export function useResumeAgent() {
   const qc = useQueryClient();
   return useMutation({
@@ -1248,7 +1265,7 @@ export function useRemediateSecurityRule() {
 export function useRemediateAllForAgent() {
   return useMutation({
     mutationFn: (agentId: string) =>
-      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number }>(
+      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number; needsReview?: string[] }>(
         `/admin/security-config/agents/${agentId}/remediate-all`,
       ),
   });
@@ -1257,7 +1274,7 @@ export function useRemediateAllForAgent() {
 export function useRemediateSelectedForAgentInBenchmark() {
   return useMutation({
     mutationFn: ({ benchmarkId, agentId, ruleIds }: { benchmarkId: string; agentId: string; ruleIds: string[] }) =>
-      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number }>(
+      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number; needsReview?: string[] }>(
         `/admin/security-config/${benchmarkId}/agents/${agentId}/remediate-selected`,
         { ruleIds },
       ),
@@ -1267,7 +1284,7 @@ export function useRemediateSelectedForAgentInBenchmark() {
 export function useRemediateAllForAgentInBenchmark() {
   return useMutation({
     mutationFn: ({ benchmarkId, agentId }: { benchmarkId: string; agentId: string }) =>
-      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number }>(
+      api.post<{ jobIds: string[]; remediatedCount: number; skippedCount: number; needsReview?: string[] }>(
         `/admin/security-config/${benchmarkId}/agents/${agentId}/remediate-all`,
       ),
   });
@@ -3257,7 +3274,7 @@ export function useApplyDataTypes() {
   return useMutation({
     // policyId = an existing policy; newPolicyName = create one in that area first.
     mutationFn: (body: { target: DataTypeTarget; policyId?: string; newPolicyName?: string; dataTypeIds: string[]; values?: string[] }) =>
-      api.post<{ added: number; skipped: number; incompatible: string[]; policyId: string }>("/admin/data-types/apply", body),
+      api.post<{ added: number; skipped: number; incompatible: string[]; refused?: string[]; policyId: string }>("/admin/data-types/apply", body),
     onSuccess: (r, v) => {
       qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target]] });
       qc.invalidateQueries({ queryKey: [DATA_TYPE_TARGET_QUERY_KEYS[v.target], r.policyId] });

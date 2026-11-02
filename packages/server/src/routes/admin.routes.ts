@@ -55,7 +55,8 @@ import { getAgentRollupsCached } from "../cache/fleetCache";
 import { effectiveLastCheckin } from "../presence/presence";
 import { quarantineAgents, releaseAgents } from "../services/quarantine.service";
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
-import { pauseAgent, resumeAgent, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
+import { pauseAgent, pauseAllAgents, resumeAgent, resumeAllAgents, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
+import { requireSuperAdmin } from "../middleware/requireAdminRole";
 import { incrementTotalAgentsUninstalled } from "../services/licenseActivation.service";
 import {
   buildBatteryView,
@@ -327,6 +328,23 @@ adminRouter.post("/agents/:id/remote-access/disable", async (req, res, next) => 
     res.status(201).json(result);
   } catch (err) {
     if (err instanceof AgentNotFoundError) return res.status(404).json({ error: "Agent not found" });
+    next(err);
+  }
+});
+
+// Emergency release / resume all - fleet-wide, super admins only.
+adminRouter.post("/agents/emergency-release", requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json({ paused: await pauseAllAgents(req.adminId!) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post("/agents/resume-all", requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json({ resumed: await resumeAllAgents(req.adminId!) });
+  } catch (err) {
     next(err);
   }
 });

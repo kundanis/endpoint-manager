@@ -2,13 +2,16 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AppControlRuleWire, AppControlScanResultPayload, AssignedAppControlResponse } from "@em/shared";
+import { appControlRuleProblem } from "@em/shared";
+import { isEnforcementSuspended } from "./shellHealthGuard";
 
 const execFileAsync = promisify(execFile);
 
 // Software Restriction Policy (SRP), not AppLocker — SRP's default state is "Unrestricted"
-// (allow everything) with specific paths added as explicit "Disallowed" exceptions, so
-// turning it on can never accidentally block everything else the way an AppLocker
-// enforcement-mode misconfiguration could. See project plan notes for the full reasoning.
+// (allow everything) with specific paths added as explicit "Disallowed" exceptions. A single
+// broad rule can still block everything (an extension rule "*.exe" stops explorer.exe and
+// userinit.exe at sign-in: a black screen), so every rule is checked against
+// appControlRuleProblem before it is written, on top of the server's own check.
 const SRP_BASE_KEY = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers";
 const SRP_DISALLOWED_PATHS_KEY = `${SRP_BASE_KEY}\\0\\Paths`;
 // Every subkey this agent creates is tagged with this marker in its Description, so a
@@ -80,7 +83,14 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
 
   try {
     const { data } = await client.get<AssignedAppControlResponse>("/api/agent/app-control/assigned");
-    const script = buildApplyScript(data.rules);
+    const safe = data.rules.filter((r) => {
+      const problem = appControlRuleProblem(r.ruleType, r.value);
+      if (problem) console.warn(`App Control: not applying rule ${r.ruleId} (${r.value}): ${problem}`);
+      return !problem;
+    });
+    // While the desktop safety net has suspended enforcement, write no rules at all (the sync
+    // below then removes any that are present).
+    const script = buildApplyScript(isEnforcementSuspended() ? [] : safe);
 
     const { stdout } = await execFileAsync(
       "powershell.exe",

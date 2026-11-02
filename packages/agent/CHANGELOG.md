@@ -6,6 +6,16 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.15
+- Safety: never applies an Application control rule that would stop Windows (.exe / .com / .scr /
+  .dll extensions, the Windows folder, explorer.exe and other core programs, the agent itself), even
+  if one reaches the device.
+- Safety: Command blocking never touches Windows processes (only script hosts such as PowerShell and
+  cmd can still be matched), skips rules that would match Windows, and stops at most 10 processes per scan.
+- Safety: USB control never disables the disk holding Windows or user profiles.
+- New desktop safety net: if a signed-in user's desktop doesn't start for 2 minutes while blocking rules
+  are in force, the agent removes its rules, tells the user to sign in again, and the endpoint is paused.
+
 ## 0.2.14
 - New: Windows signals for User risk - failed sign-ins, users added to local Administrators, cleared
   event logs, antivirus or firewall switched off, newly installed software and bursts of deleted

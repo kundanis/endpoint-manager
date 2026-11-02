@@ -21,10 +21,7 @@ function query(f: AdminAuditFilters, page: number, pageSize: number) {
 function Detail({ e }: { e: AdminAuditEntry }) {
   return (
     <div className="app-stack-sm">
-      <span className="app-muted ep-mono">
-        {e.method ?? ""} {e.path ?? ""} {e.statusCode ? `→ ${e.statusCode}` : ""}
-        {e.targetId ? ` · target ${e.targetId}` : ""}
-      </span>
+      {e.targetId && <span className="app-muted ep-mono">Target {e.targetId}</span>}
       <pre className="ep-mono" style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflowY: "auto", fontSize: 12 }}>
         {JSON.stringify(e.detail, null, 2)}
       </pre>
@@ -115,8 +112,8 @@ export default function AdminLogsPage() {
       const all = await api.get<{ items: AdminAuditEntry[] }>(`/admin/audit-log?${query(filters, 1, 5000)}`);
       downloadCsv(
         "admin-logs.csv",
-        ["When", "Admin", "IP address", "Category", "Module", "What happened", "Result", "Method", "Path", "Status", "Details"],
-        all.items.map((e) => [csvDate(e.at), e.adminEmail, e.ipAddress ?? "", e.category, e.module ?? "", e.summary, e.success ? "Success" : "Failed", e.method ?? "", e.path ?? "", e.statusCode ?? "", JSON.stringify(e.detail)]),
+        ["When", "Admin", "IP address", "Category", "Module", "What happened", "Result", "Details"],
+        all.items.map((e) => [csvDate(e.at), e.adminEmail, e.ipAddress ?? "", e.category, e.module ?? "", e.summary, e.success ? "Success" : "Failed", JSON.stringify(e.detail)]),
       );
     } finally {
       setExporting(false);
@@ -132,7 +129,7 @@ export default function AdminLogsPage() {
       <div className="app-stack">
         <Card flush title="Activity" hint={data ? `${data.total} ${data.total === 1 ? "entry" : "entries"}` : undefined}>
           <Toolbar>
-            <input type="search" className="ep-input" placeholder="Search what happened, path, admin or IP…" aria-label="Search" value={filters.q} onChange={(e) => set({ q: e.target.value })} />
+            <input type="search" className="ep-input" placeholder="Search what happened, admin or IP…" aria-label="Search" value={filters.q} onChange={(e) => set({ q: e.target.value })} />
             <select className="ep-select" aria-label="Administrator" value={filters.admin} onChange={(e) => set({ admin: e.target.value })}>
               <option value="">Admin: All</option>
               {facets?.admins.map((a) => (

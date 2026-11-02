@@ -21,6 +21,7 @@ import {
   updatePolicy,
   updateRule,
 } from "../services/commandBlockPolicy.service";
+import { UnsafeRuleError } from "../services/commandBlockPolicy.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
 
@@ -85,6 +86,7 @@ commandBlockRouter.post("/:id/rules", async (req, res, next) => {
     const payload = createCommandBlockRuleRequestSchema.parse(req.body);
     res.status(201).json(await addRule(req.params.id, payload));
   } catch (err) {
+    if (err instanceof UnsafeRuleError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -94,6 +96,7 @@ commandBlockRouter.patch("/:id/rules/:ruleId", async (req, res, next) => {
     const payload = updateCommandBlockRuleRequestSchema.parse(req.body);
     res.json(await updateRule(req.params.id, req.params.ruleId, payload));
   } catch (err) {
+    if (err instanceof UnsafeRuleError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });

@@ -3,6 +3,8 @@ import {
   getPiiPatternLabel,
   DATA_TYPE_RULE_TYPES,
   normalizeDataTypeValue,
+  appControlRuleProblem,
+  commandBlockRuleProblem,
   targetsForDataType,
   type ApplyDataTypesRequest,
   type CreateDataTypeRequest,
@@ -180,7 +182,7 @@ export async function applyDataTypes(
   params: ApplyDataTypesRequest,
   // Injectable for tests; defaults to the real database and data type list.
   deps: { db?: Record<string, RuleDelegate & PolicyDelegate>; dataTypes?: DataTypeView[]; adminId?: string } = {},
-): Promise<{ added: number; skipped: number; incompatible: string[]; policyId: string }> {
+): Promise<{ added: number; skipped: number; incompatible: string[]; refused: string[]; policyId: string }> {
   const tables = TARGET_TABLES[params.target];
   const db = deps.db ?? (prisma as unknown as Record<string, RuleDelegate & PolicyDelegate>);
 
@@ -201,6 +203,7 @@ export async function applyDataTypes(
 
   const toCreate: { policyId: string; ruleType: string; value: string; label: string }[] = [];
   const incompatible: string[] = [];
+  const refused: string[] = []; // values that would stop Windows itself (endpointSafety)
   let skipped = 0;
   for (const dt of chosen as DataTypeView[]) {
     const ruleType = dt.targets.includes(params.target) ? DATA_TYPE_RULE_TYPES[params.target][dt.kind] : undefined;
@@ -210,6 +213,12 @@ export async function applyDataTypes(
     }
     for (const value of dt.values) {
       if (picked && !picked.has(value.toLowerCase())) continue;
+      const problem =
+        params.target === "appControl" ? appControlRuleProblem(ruleType, value) : params.target === "commandBlock" ? commandBlockRuleProblem(ruleType, value) : null;
+      if (problem) {
+        refused.push(value);
+        continue;
+      }
       const key = `${ruleType}|${value.toLowerCase()}`;
       if (have.has(key)) {
         skipped++;
@@ -220,5 +229,5 @@ export async function applyDataTypes(
     }
   }
   if (toCreate.length > 0) await db[tables.rule].createMany({ data: toCreate });
-  return { added: toCreate.length, skipped, incompatible, policyId };
+  return { added: toCreate.length, skipped, incompatible, refused, policyId };
 }

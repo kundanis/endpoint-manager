@@ -519,7 +519,7 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
   const remediateSelected = useRemediateSelectedForAgentInBenchmark();
   const confirm = useConfirm();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [result, setResult] = useState<{ remediatedCount: number; skippedCount: number } | null>(null);
+  const [result, setResult] = useState<{ remediatedCount: number; skippedCount: number; needsReview?: string[] } | null>(null);
 
   if (!findings) return <Skeleton lines={2} />;
   const failed = findings.filter((f) => f.benchmarkId === benchmarkId && f.status === "FAIL");
@@ -554,7 +554,7 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
       { benchmarkId, agentId, ruleIds },
       {
         onSuccess: (r) => {
-          setResult({ remediatedCount: r.remediatedCount, skippedCount: r.skippedCount });
+          setResult({ remediatedCount: r.remediatedCount, skippedCount: r.skippedCount, needsReview: r.needsReview });
           setSelected(new Set());
         },
       },
@@ -624,7 +624,10 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
       </div>
       {result && (
         <Alert tone="success">
-          Dispatched {result.remediatedCount} fix(es){result.skippedCount ? ` — ${result.skippedCount} skipped (no script)` : ""}. Each
+          Dispatched {result.remediatedCount} fix(es){result.skippedCount ? ` — ${result.skippedCount} skipped` : ""}.
+          {result.needsReview && result.needsReview.length > 0 && (
+            <> Not fixed automatically because they change how Windows starts or signs in: {result.needsReview.join(", ")}. Apply them one device at a time from the endpoint's Security tab.</>
+          )} Each
           rule's Fix column shows its progress and result; a successful fix re-checks the rule automatically (agent 0.2.10+).
           Details are also under{" "}
           <Link className="ep-link" to="/commands">
@@ -648,6 +651,7 @@ function CompliancePanel({ benchmarkId, onOpenAssignment }: { benchmarkId: strin
     agentId: string;
     remediatedCount?: number;
     skippedCount?: number;
+    needsReview?: string[];
     error?: string;
   } | null>(null);
 
@@ -665,7 +669,7 @@ function CompliancePanel({ benchmarkId, onOpenAssignment }: { benchmarkId: strin
       { benchmarkId, agentId },
       {
         onSuccess: (result) =>
-          setLastResult({ agentId, remediatedCount: result.remediatedCount, skippedCount: result.skippedCount }),
+          setLastResult({ agentId, remediatedCount: result.remediatedCount, skippedCount: result.skippedCount, needsReview: result.needsReview }),
         onError: (err) => setLastResult({ agentId, error: (err as Error).message }),
         onSettled: () => setRemediatingAgentId(null),
       },
@@ -696,7 +700,11 @@ function CompliancePanel({ benchmarkId, onOpenAssignment }: { benchmarkId: strin
       {lastResult?.remediatedCount !== undefined && (
         <Alert tone="success" title={lastResultHost ? `Remediation dispatched for ${lastResultHost}` : "Remediation dispatched"}>
           Dispatched {lastResult.remediatedCount} job(s)
-          {lastResult.skippedCount ? ` — ${lastResult.skippedCount} rule(s) had no remediation script` : ""}. Check the{" "}
+          {lastResult.skippedCount ? ` — ${lastResult.skippedCount} rule(s) not fixed automatically` : ""}.
+          {lastResult.needsReview && lastResult.needsReview.length > 0 && (
+            <> Apply these one device at a time (they change how Windows starts or signs in): {lastResult.needsReview.join(", ")}.</>
+          )}{" "}
+          Check the{" "}
           <Link className="ep-link" to="/commands">
             Commands
           </Link>{" "}

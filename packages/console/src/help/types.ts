@@ -41,4 +41,5 @@ export interface HelpTopic {
   sections?: HelpSection[];
   howTos?: HowTo[];
   keywords?: string[]; // extra search words
+  superAdminOnly?: boolean; // the page is for super admins; hidden from other admins' help
 }

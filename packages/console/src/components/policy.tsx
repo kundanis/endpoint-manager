@@ -5,6 +5,7 @@ import { useAgents, useAssetGroups } from "../api/hooks";
 import EndpointCheckboxList from "./EndpointCheckboxList";
 import EndpointLabel from "./EndpointLabel";
 import {
+  useConfirm,
   Alert,
   Badge,
   Button,
@@ -232,6 +233,26 @@ function foldAssignments(assignments: AssignmentRow[]): (AssignmentRow & { ids: 
   return [...byTarget.values()];
 }
 
+// Blocking policies reach every assigned endpoint at its next sync. Past this many endpoints,
+// assigning one asks for confirmation and suggests trying a small group first.
+export const LARGE_BLOCKING_ASSIGNMENT = 10;
+
+export async function confirmLargeBlockingAssignment(
+  confirm: ReturnType<typeof useConfirm>,
+  agentIds: string[],
+  groupIds: string[],
+  groups: { id: string; memberCount: number }[],
+): Promise<boolean> {
+  const count = agentIds.length + groups.filter((g) => groupIds.includes(g.id)).reduce((n, g) => n + g.memberCount, 0);
+  if (count < LARGE_BLOCKING_ASSIGNMENT) return true;
+  return confirm({
+    title: `Apply a blocking policy to about ${count} endpoints?`,
+    body: "Its rules take effect on every one of them within a minute. If you haven't yet, assign it to a few test devices first and check they still work normally. Endpoints can be released at once with Pause, or from EPM with Emergency release.",
+    confirmLabel: "Assign",
+    tone: "danger",
+  });
+}
+
 // Current assignments (removable) + the group/endpoint picker to add more.
 export function AssignmentEditor({
   assignments,
@@ -241,6 +262,7 @@ export function AssignmentEditor({
   assignPending,
   assignError,
   renderAgentExtra,
+  blocking = false,
 }: {
   assignments: AssignmentRow[] | undefined;
   onUnassign: (assignmentId: string) => void;
@@ -251,7 +273,10 @@ export function AssignmentEditor({
   assignError: unknown;
   // Extra text after each endpoint in the picker (e.g. its OS edition).
   renderAgentExtra?: (agent: AgentListItem) => ReactNode;
+  // A policy that blocks or stops things on endpoints: assigning it widely asks for confirmation.
+  blocking?: boolean;
 }) {
+  const confirmAssign = useConfirm();
   const { data: allAgents } = useAgents();
   const { data: allGroups } = useAssetGroups();
 
@@ -349,12 +374,13 @@ export function AssignmentEditor({
         <div className="app-actions-row app-end">
           <Button
             variant="primary"
-            onClick={() =>
+            onClick={async () => {
+              if (blocking && !(await confirmLargeBlockingAssignment(confirmAssign, selectedAgentIds, selectedGroupIds, allGroups ?? []))) return;
               onAssign(selectedAgentIds, selectedGroupIds, () => {
                 setSelectedAgentIds([]);
                 setSelectedGroupIds([]);
-              })
-            }
+              });
+            }}
             disabled={assignPending || (selectedAgentIds.length === 0 && selectedGroupIds.length === 0)}
           >
             {assignPending ? "Assigning…" : "Assign"}

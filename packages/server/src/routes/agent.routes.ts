@@ -10,6 +10,7 @@ import {
   dataMovementScanResultPayloadSchema,
   screenCaptureReportPayloadSchema,
   securitySignalsPayloadSchema,
+  safetyEventPayloadSchema,
   deploymentStatusPayloadSchema,
   dlpEventBatchPayloadSchema,
   edrScanResultPayloadSchema,
@@ -54,6 +55,7 @@ import {
   resolveAssignedPoliciesForAgent as resolveAssignedDataMovementPoliciesForAgent,
 } from "../services/dataMovementEvent.service";
 import { recordAgentSignals } from "../services/userRisk/userRisk.service";
+import { recordSafetyEvent } from "../services/safetyEvent.service";
 import { recordReport as recordScreenCaptureReport, resolveAssignedForAgent as resolveScreenCaptureForAgent } from "../services/screenCaptureEvent.service";
 import {
   recordScanResult as recordAppControlScanResult,
@@ -344,6 +346,16 @@ agentRouter.post("/screen-capture/report", async (req, res, next) => {
   try {
     const payload = screenCaptureReportPayloadSchema.parse(req.body);
     await recordScreenCaptureReport(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The desktop safety net removed the agent's own blocking rules (see agent shellHealthGuard.ts).
+agentRouter.post("/safety-event", async (req, res, next) => {
+  try {
+    await recordSafetyEvent(req.agentId!, safetyEventPayloadSchema.parse(req.body));
     res.status(204).send();
   } catch (err) {
     next(err);

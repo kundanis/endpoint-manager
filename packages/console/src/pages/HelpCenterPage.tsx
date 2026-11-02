@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search, SearchX } from "lucide-react";
-import { useModuleVisibility } from "../api/hooks";
+import { useMe, useModuleVisibility } from "../api/hooks";
 import { HELP_MODULES, HELP_TOPICS, searchHelp, topicById } from "../help";
 import { TopicView } from "../help/HelpProvider";
 import { NAV_MODULES } from "../navConfig";
@@ -14,17 +14,20 @@ export default function HelpCenterPage() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const { data: visibility } = useModuleVisibility();
+  const { data: me } = useMe();
 
   const visibleTopics = useMemo(() => {
-    if (!visibility) return HELP_TOPICS;
-    return HELP_TOPICS.filter((t) => {
+    const allowed = HELP_TOPICS.filter((t) => !t.superAdminOnly || me?.role === "SUPER_ADMIN");
+    if (!visibility) return allowed;
+    return allowed.filter((t) => {
       const mod = NAV_MODULES.find((m) => m.label === t.module);
       if (mod?.licenseModule && visibility.hiddenModuleKeys.includes(mod.licenseModule)) return false;
       return !visibility.hiddenItemPaths.some((p) => t.path === p || t.path.startsWith(`${p}/`));
     });
-  }, [visibility]);
+  }, [visibility, me]);
 
-  const selected = topicById(params.get("topic") ?? undefined) ?? visibleTopics[0];
+  const requested = topicById(params.get("topic") ?? undefined);
+  const selected = requested && visibleTopics.includes(requested) ? requested : visibleTopics[0];
   const results = useMemo(() => searchHelp(query).filter((r) => visibleTopics.includes(r.topic)), [query, visibleTopics]);
 
   return (

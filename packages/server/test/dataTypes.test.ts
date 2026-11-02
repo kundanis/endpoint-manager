@@ -28,10 +28,10 @@ test("built-in catalogue is well formed", () => {
   }
 });
 
-test("document file types go to DLP only; executables can also go to application control", () => {
+test("file types go to DLP only - executables too (as app control rules they'd stop Windows)", () => {
   const byId = (id: string) => BUILT_IN_DATA_TYPES.find((d) => d.id === id)!;
   assert.deepEqual(targetsForDataType(byId("builtin:office-documents")), ["dlp"]);
-  assert.deepEqual(targetsForDataType(byId("builtin:executables-scripts")).sort(), ["appControl", "dlp"]);
+  assert.deepEqual(targetsForDataType(byId("builtin:executables-scripts")), ["dlp"]);
   assert.deepEqual(targetsForDataType(byId("builtin:india-pii")).sort(), ["dlp", "piiBlock", "piiEmailBlock"]);
   assert.deepEqual(targetsForDataType(byId("builtin:remote-access-apps")).sort(), ["appControl", "commandBlock"]);
   assert.equal(DATA_TYPE_RULE_TYPES.dlp.PII_PATTERN, "CONTENT_PATTERN");

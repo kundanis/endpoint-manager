@@ -138,6 +138,8 @@ const VERBS: Record<string, string> = {
   revalidate: "Revalidated",
   "setup-exe": "Built a setup file",
   delete: "Deleted",
+  "emergency-release": "Emergency release - paused every endpoint",
+  "resume-all": "Resumed every paused endpoint",
 };
 
 // GET requests that read sensitive data - logged as views.
@@ -246,7 +248,7 @@ export async function listAudit(f: { from?: Date; to?: Date; admin?: string; cat
     ...(f.admin ? { adminEmail: f.admin } : {}),
     ...(f.category ? { category: f.category } : {}),
     ...(f.success === undefined ? {} : { success: f.success }),
-    ...(f.q ? { OR: [{ summary: { contains: f.q } }, { path: { contains: f.q } }, { adminEmail: { contains: f.q } }, { ipAddress: { contains: f.q } }] } : {}),
+    ...(f.q ? { OR: [{ summary: { contains: f.q } }, { adminEmail: { contains: f.q } }, { ipAddress: { contains: f.q } }] } : {}),
   };
   const [total, rows] = await Promise.all([
     prisma.adminAuditLog.count({ where }),

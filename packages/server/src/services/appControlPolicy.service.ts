@@ -6,6 +6,7 @@ import type {
   UpdateAppControlPolicyRequest,
   UpdateAppControlRuleRequest,
 } from "@em/shared";
+import { appControlRuleProblem } from "@em/shared";
 import { prisma } from "../db";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
@@ -90,7 +91,16 @@ export async function deletePolicy(id: string): Promise<boolean> {
   }
 }
 
+export class UnsafeRuleError extends Error {}
+
+// Refuses rules that would stop Windows itself (see @em/shared endpointSafety).
+function assertSafe(ruleType: string, value: string) {
+  const problem = appControlRuleProblem(ruleType, value);
+  if (problem) throw new UnsafeRuleError(problem);
+}
+
 export async function addRule(policyId: string, params: CreateAppControlRuleRequest) {
+  assertSafe(params.ruleType, params.value);
   await prisma.appControlRule.create({
     data: { policyId, ruleType: params.ruleType, value: params.value, label: params.label ?? null },
   });
@@ -98,6 +108,10 @@ export async function addRule(policyId: string, params: CreateAppControlRuleRequ
 }
 
 export async function updateRule(policyId: string, ruleId: string, params: UpdateAppControlRuleRequest) {
+  if (params.value !== undefined || params.ruleType !== undefined) {
+    const current = await prisma.appControlRule.findUnique({ where: { id: ruleId } });
+    if (current) assertSafe(params.ruleType ?? current.ruleType, params.value ?? current.value);
+  }
   await prisma.appControlRule.update({
     where: { id: ruleId },
     data: { ruleType: params.ruleType, value: params.value, label: params.label },

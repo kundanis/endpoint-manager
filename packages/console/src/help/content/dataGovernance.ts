@@ -186,8 +186,27 @@ export const DATA_TOPICS: HelpTopic[] = [
     title: "EPM: Application control",
     path: "/epm/app-control",
     summary: "Block applications by name or path, or whole file types such as scripts. Everything else stays allowed.",
-    keywords: ["block app", "whitelist", "blacklist", "executable", "software restriction"],
+    keywords: ["block app", "whitelist", "blacklist", "executable", "software restriction", "black screen", "emergency"],
+    sections: [
+      {
+        title: "Built-in safety",
+        items: [
+          "Rules that would stop Windows itself are refused: file types such as .exe, .com, .scr or .dll, anything in the Windows folder, and programs such as explorer.exe.",
+          "If a user's desktop doesn't start for 2 minutes while blocking rules are in force, the agent removes its rules, pauses the endpoint and records it in Admin logs.",
+          "Assigning a blocking policy to 10 or more endpoints asks for confirmation; try a few test devices first.",
+        ],
+      },
+    ],
     howTos: [
+      {
+        id: "epm-emergency",
+        title: "Release all blocking in an emergency",
+        steps: [
+          { route: "/epm/app-control", text: "Select Emergency release at the top of the EPM page (super admins).", target: { kind: "button", label: "Emergency release" } },
+          { text: "Every endpoint is paused and stops blocking within about a minute. Fix or unassign the policy that caused trouble." },
+          { text: "Select Resume all, or resume endpoints one by one from their Manage tab." },
+        ],
+      },
       {
         id: "epm-app-block",
         title: "Block an application",
