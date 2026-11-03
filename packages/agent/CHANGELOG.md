@@ -6,6 +6,10 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.16
+- Reports installed software straight away when an admin selects Sync now on the endpoint's Software tab,
+  and after every command or deployment finishes (an uninstall no longer shows the app for up to 10 minutes).
+
 ## 0.2.15
 - Safety: never applies an Application control rule that would stop Windows (.exe / .com / .scr /
   .dll extensions, the Windows folder, explorer.exe and other core programs, the agent itself), even

@@ -7,9 +7,11 @@
 // single-process seam as presence.ts - shared storage would be needed for several server
 // instances.
 
-type ScanKind = "zeroTrust" | "securityConfig";
+// "inventory": report installed software now (Sync now on the endpoint's Software tab, and after
+// a command or deployment finishes, since either may have installed or removed something).
+type ScanKind = "zeroTrust" | "securityConfig" | "inventory";
 
-const pending: Record<ScanKind, Set<string>> = { zeroTrust: new Set(), securityConfig: new Set() };
+const pending: Record<ScanKind, Set<string>> = { zeroTrust: new Set(), securityConfig: new Set(), inventory: new Set() };
 
 export function requestScan(kind: ScanKind, agentIds: string[]): void {
   for (const id of agentIds) pending[kind].add(id);

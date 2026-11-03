@@ -126,6 +126,7 @@ const VERBS: Record<string, string> = {
   resume: "Resumed",
   "uninstall-agent": "Uninstalled the agent",
   "uninstall-software": "Uninstalled software",
+  "sync-inventory": "Requested a software sync",
   enable: "Enabled",
   disable: "Disabled",
   apply: "Applied",
@@ -160,7 +161,7 @@ export function describe(method: string, path: string, body: unknown): { module:
   const targetId = parts.find((p) => ID.test(p)) ?? null;
   const last = [...parts].reverse().find((p) => !ID.test(p)) ?? "";
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const name = [b.name, b.title, b.email, b.hostname, b.label].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+  const name = [b.name, b.title, b.email, b.hostname, b.label, b.softwareName].find((v) => typeof v === "string" && v.trim()) as string | undefined;
 
   let action: string;
   let verb: string;

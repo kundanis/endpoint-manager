@@ -6,6 +6,8 @@ import { verifyUninstallPassword } from "./agentSecurity.service";
 import { incrementTotalAgentsUninstalled } from "./licenseActivation.service";
 import { computeStatus } from "./agentDerived.util";
 import { effectiveLastCheckin } from "../presence/presence";
+import { decryptField } from "../utils/fieldEncryption";
+import { logger } from "../logger";
 
 export class IncorrectUninstallPasswordError extends Error {}
 
@@ -238,6 +240,44 @@ export async function confirmAgentUninstalled(agentId: string): Promise<void> {
     throw err;
   }
   await incrementTotalAgentsUninstalled();
+}
+
+// Safety net for confirmAgentUninstalled: a remote Uninstall whose final "uninstalled" call
+// never reached the server (endpoint dropped off the network mid-teardown) would otherwise
+// leave an offline row behind - still counted in every policy assignment. If the uninstall
+// command reported success and the endpoint hasn't checked in since, it is gone: remove it
+// the same way. An endpoint whose uninstall didn't actually happen keeps checking in, so it
+// is never touched.
+const UNINSTALL_GRACE_MS = 15 * 60_000;
+const UNINSTALL_HELPER_MARKER = "EndpointProUninstallHelper";
+
+export async function removeRemotelyUninstalledAgents(): Promise<number> {
+  const now = Date.now();
+  const tasks = await prisma.commandTask.findMany({
+    where: {
+      status: "SUCCESS",
+      completedAt: { lt: new Date(now - UNINSTALL_GRACE_MS), gt: new Date(now - 30 * 24 * 60 * 60_000) },
+      job: { bypassesPause: true },
+    },
+    select: { agentId: true, completedAt: true, job: { select: { script: true } }, agent: { select: { lastCheckinAt: true } } },
+  });
+  let removed = 0;
+  for (const t of tasks) {
+    const lastSeen = effectiveLastCheckin(t.agentId, t.agent.lastCheckinAt);
+    // The agent keeps checking in for up to about a minute while the helper is scheduled.
+    if (lastSeen && lastSeen.getTime() > t.completedAt!.getTime() + 5 * 60_000) continue;
+    let script: string;
+    try {
+      script = decryptField(t.job.script);
+    } catch {
+      continue;
+    }
+    if (!script.includes(UNINSTALL_HELPER_MARKER)) continue;
+    await confirmAgentUninstalled(t.agentId);
+    logger.info({ agentId: t.agentId }, "Removed an endpoint whose remote uninstall finished but never confirmed");
+    removed++;
+  }
+  return removed;
 }
 
 export async function uninstallAgentRemotely(

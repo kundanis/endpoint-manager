@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { Router, type Response } from "express";
+import { requestScan } from "../services/scanRequests";
 import {
   createEnrollmentTokenRequestSchema,
   createNoteRequestSchema,
@@ -365,6 +366,73 @@ adminRouter.post("/agents/:id/resume", async (req, res, next) => {
     res.status(204).send();
   } catch (err) {
     if (err instanceof PauseAgentNotFoundError) return res.status(404).json({ error: "Agent not found" });
+    next(err);
+  }
+});
+
+// Software tab -> Sync now: the endpoint reports its installed software at its next check-in
+// (about 30 seconds; agent 0.2.16+ - older agents report on their 10-minute schedule).
+adminRouter.post("/agents/:id/sync-inventory", async (req, res, next) => {
+  try {
+    const agent = await prisma.agent.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    requestScan("inventory", [agent.id]);
+    res.status(202).json({ requested: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// History tab: software installed / removed / updated on this endpoint (by anyone), and - for
+// super admins, like Admin logs - every admin action taken on it.
+adminRouter.get("/agents/:id/history", async (req, res, next) => {
+  try {
+    const agentId = req.params.id;
+    const isSuper = req.adminRole === "SUPER_ADMIN";
+    const [changes, audit] = await Promise.all([
+      prisma.agentSoftwareChange.findMany({ where: { agentId }, orderBy: { detectedAt: "desc" }, take: 500 }),
+      prisma.adminAuditLog.findMany({
+        where: { OR: [{ targetId: agentId }, { path: { contains: agentId } }] },
+        orderBy: { at: "desc" },
+        take: 500,
+      }),
+    ]);
+    // A removal that follows a console Uninstall of the same name is credited to it.
+    const uninstalls = audit
+      .filter((a) => a.action === "UNINSTALL_SOFTWARE" && a.success)
+      .map((a) => {
+        let name: string | null = null;
+        try {
+          const d = JSON.parse(a.detail) as { request?: { softwareName?: unknown } };
+          if (typeof d.request?.softwareName === "string") name = d.request.softwareName.toLowerCase();
+        } catch {
+          // unreadable detail - not matched
+        }
+        return { name, at: a.at, adminEmail: a.adminEmail };
+      });
+    res.json({
+      softwareChanges: changes.map((c) => {
+        const by =
+          c.change === "REMOVED"
+            ? uninstalls.find((u) => u.name === c.name.toLowerCase() && u.at <= c.detectedAt && c.detectedAt.getTime() - u.at.getTime() < 7 * 24 * 3600_000)
+            : undefined;
+        return {
+          id: c.id,
+          change: c.change,
+          name: c.name,
+          version: c.version,
+          oldVersion: c.oldVersion,
+          publisher: c.publisher,
+          detectedAt: c.detectedAt,
+          viaConsole: !!by,
+          byAdmin: by && isSuper ? by.adminEmail : null,
+        };
+      }),
+      adminActions: isSuper
+        ? audit.map((a) => ({ id: a.id, at: a.at, adminEmail: a.adminEmail, category: a.category, summary: a.summary, success: a.success }))
+        : null,
+    });
+  } catch (err) {
     next(err);
   }
 });

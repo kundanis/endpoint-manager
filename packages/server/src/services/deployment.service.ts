@@ -1,5 +1,6 @@
 import type { DeploymentStatusPayload } from "@em/shared";
 import { prisma } from "../db";
+import { requestScan } from "./scanRequests";
 
 export class DeploymentTaskNotOwnedError extends Error {}
 
@@ -102,4 +103,6 @@ export async function recordDeploymentStatus(
       completedAt: isTerminal ? new Date() : undefined,
     },
   });
+  // The software list changed: refresh it now (agent 0.2.16+).
+  if (isTerminal) requestScan("inventory", [agentId]);
 }

@@ -331,6 +331,11 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
         void sendZeroTrustScan();
       }
 
+      if (data.runInventoryNow) {
+        console.log("Check-in requested an inventory report now");
+        void sendInventory();
+      }
+
       if (data.runSecurityConfigScanNow) {
         console.log("Check-in requested an immediate security benchmark scan");
         void sendSecurityConfigScan();

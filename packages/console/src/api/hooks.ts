@@ -24,6 +24,7 @@ import type {
 import { NAV_MODULES } from "../navConfig";
 import { api } from "./client";
 import type {
+  AgentHistory,
   AgentAppControlEventView,
   AgentBuildInfo,
   AgentSecurityStatusView,
@@ -969,6 +970,23 @@ export function useUninstallSoftware() {
   return useMutation({
     mutationFn: ({ agentId, softwareName }: { agentId: string; softwareName: string }) =>
       api.post<{ jobId: string }>(`/admin/agents/${agentId}/uninstall-software`, { softwareName }),
+  });
+}
+
+// Software tab -> Sync now: the endpoint reports its installed software at its next check-in.
+export function useSyncInventory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api.post<{ requested: boolean }>(`/admin/agents/${agentId}/sync-inventory`, {}),
+    onSuccess: (_r, agentId) => qc.invalidateQueries({ queryKey: ["agentHistory", agentId] }),
+  });
+}
+
+export function useAgentHistory(agentId: string) {
+  return useQuery({
+    queryKey: ["agentHistory", agentId],
+    queryFn: () => api.get<AgentHistory>(`/admin/agents/${agentId}/history`),
+    refetchInterval: 30_000,
   });
 }
 

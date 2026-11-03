@@ -7,6 +7,7 @@ import { registerCallback } from "./services/licenseActivation.service";
 import { promoteScheduledPatchTasks } from "./services/patch.service";
 import { runAutoPatchPolicies } from "./services/autoPatchPolicy.service";
 import { reconcileStaleAgentUpdateTasks } from "./services/agentUpdate.service";
+import { removeRemotelyUninstalledAgents } from "./services/agent.service";
 import { failInterruptedSyncRuns } from "./services/vulnerability.service";
 import { startFleetCache } from "./cache/fleetCache";
 import { startPresenceFlush } from "./presence/presence";
@@ -58,6 +59,7 @@ failInterruptedSyncRuns()
 scheduleLicenseCallbackRegistration();
 schedulePatchAutomation();
 scheduleStaleAgentUpdateReconciliation();
+scheduleUninstalledAgentCleanup();
 scheduleUserRisk();
 scheduleAuditRetention();
 startFleetCache();
@@ -102,6 +104,20 @@ function schedulePatchAutomation() {
 
   tick();
   setInterval(tick, INTERVAL_MS);
+}
+
+// Endpoints remotely uninstalled whose "uninstalled" confirmation was lost - see
+// removeRemotelyUninstalledAgents. Every 10 minutes.
+function scheduleUninstalledAgentCleanup() {
+  async function tick() {
+    try {
+      await removeRemotelyUninstalledAgents();
+    } catch (err) {
+      logger.error({ err }, "Uninstalled endpoint clean-up failed");
+    }
+  }
+  tick();
+  setInterval(tick, 10 * 60 * 1000);
 }
 
 // See reconcileStaleAgentUpdateTasks's own comment for why this exists at all. A 5-minute

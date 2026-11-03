@@ -18,13 +18,38 @@ function query(f: AdminAuditFilters, page: number, pageSize: number) {
   return p.toString();
 }
 
+// The values worth showing: the submitted request (or a view's filters), without browser
+// strings, empty values or older entries' user agent. null when nothing is left.
+function usefulDetail(e: AdminAuditEntry): unknown {
+  const prune = (v: unknown): unknown => {
+    if (v === null || v === undefined || v === "") return undefined;
+    if (Array.isArray(v)) return v.length ? v : undefined;
+    if (typeof v !== "object") return v;
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (k === "userAgent") continue;
+      const p = prune(val);
+      if (p !== undefined) out[k] = p;
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
+  const d = prune(e.detail) as Record<string, unknown> | undefined;
+  if (!d) return null;
+  // Unwrap the single "request" / "query" wrapper the server stores.
+  const keys = Object.keys(d);
+  return keys.length === 1 && (keys[0] === "request" || keys[0] === "query") ? d[keys[0]] : d;
+}
+
 function Detail({ e }: { e: AdminAuditEntry }) {
+  const detail = usefulDetail(e);
   return (
     <div className="app-stack-sm">
       {e.targetId && <span className="app-muted ep-mono">Target {e.targetId}</span>}
-      <pre className="ep-mono" style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflowY: "auto", fontSize: 12 }}>
-        {JSON.stringify(e.detail, null, 2)}
-      </pre>
+      {detail !== null && (
+        <pre className="ep-mono" style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflowY: "auto", fontSize: 12 }}>
+          {JSON.stringify(detail, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
@@ -113,7 +138,7 @@ export default function AdminLogsPage() {
       downloadCsv(
         "admin-logs.csv",
         ["When", "Admin", "IP address", "Category", "Module", "What happened", "Result", "Details"],
-        all.items.map((e) => [csvDate(e.at), e.adminEmail, e.ipAddress ?? "", e.category, e.module ?? "", e.summary, e.success ? "Success" : "Failed", JSON.stringify(e.detail)]),
+        all.items.map((e) => [csvDate(e.at), e.adminEmail, e.ipAddress ?? "", e.category, e.module ?? "", e.summary, e.success ? "Success" : "Failed", (() => { const d = usefulDetail(e); return d === null ? "" : JSON.stringify(d); })()]),
       );
     } finally {
       setExporting(false);
@@ -189,12 +214,13 @@ export default function AdminLogsPage() {
                 </thead>
                 <tbody>
                   {data.items.map((e) => {
-                    const open = expanded === e.id;
+                    const hasDetail = !!e.targetId || usefulDetail(e) !== null;
+                    const open = hasDetail && expanded === e.id;
                     return (
                       <Fragment key={e.id}>
                         <tr>
                           <td className="ep-cb">
-                            <IconButton icon={open ? ChevronDown : ChevronRight} label={open ? "Hide details" : "Show details"} onClick={() => setExpanded(open ? null : e.id)} />
+                            {hasDetail && <IconButton icon={open ? ChevronDown : ChevronRight} label={open ? "Hide details" : "Show details"} onClick={() => setExpanded(open ? null : e.id)} />}
                           </td>
                           <td className="ep-num" style={{ whiteSpace: "nowrap" }}>
                             {formatDateTime(e.at)}

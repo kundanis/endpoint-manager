@@ -1748,3 +1748,30 @@ export interface AdminAuditSettings {
   oldestEntryAt: string | null;
   totalEntries: number;
 }
+
+// Endpoint -> History tab.
+export interface AgentSoftwareChange {
+  id: string;
+  change: "INSTALLED" | "REMOVED" | "UPDATED";
+  name: string;
+  version: string | null;
+  oldVersion: string | null;
+  publisher: string | null;
+  detectedAt: string;
+  viaConsole: boolean; // a removal that followed an Uninstall from the console
+  byAdmin: string | null; // who ran that Uninstall (super admins only)
+}
+
+export interface AgentAdminAction {
+  id: string;
+  at: string;
+  adminEmail: string;
+  category: string;
+  summary: string;
+  success: boolean;
+}
+
+export interface AgentHistory {
+  softwareChanges: AgentSoftwareChange[];
+  adminActions: AgentAdminAction[] | null; // null for admins who aren't super admins
+}

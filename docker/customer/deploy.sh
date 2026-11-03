@@ -289,8 +289,15 @@ if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEAS
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     bak="pre-upgrade-${PREVIOUS}-${stamp}.bak"
     echo "Backing up database [$db_name] before upgrading (this can take several minutes on a large database)..."
-    compose exec -T db sh -c "mkdir -p /var/opt/mssql/backup && (/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\" || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -b -Q \"BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT\")" >/dev/null \
-      || die "Pre-upgrade database backup failed - upgrade aborted, nothing was changed."
+    # sqlcmd prints its errors on stdout: keep the output and show it if the backup fails. The
+    # older tools path is only used when tools18 isn't in the image.
+    backup_sql="BACKUP DATABASE [$db_name] TO DISK='/var/opt/mssql/backup/$bak' WITH INIT"
+    if ! backup_out="$(compose exec -T db sh -c "mkdir -p /var/opt/mssql/backup && if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -b -Q \"$backup_sql\"; else /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -b -Q \"$backup_sql\"; fi" 2>&1)"; then
+      printf '%s\n' "$backup_out" >&2
+      echo "Free space in the database volume:" >&2
+      compose exec -T db df -h /var/opt/mssql >&2 || true
+      die "Pre-upgrade database backup failed (reason above) - upgrade aborted, nothing was changed."
+    fi
     if [ "$BACKUP_MODE" = "in-place" ]; then
       echo "Backup kept inside the database volume: /var/opt/mssql/backup/$bak (db container)"
       echo "  Copy it off the server later with: cd $INSTALL_DIR && sudo docker compose cp db:/var/opt/mssql/backup/$bak backups/"

@@ -173,6 +173,7 @@ export async function handleCheckin(
     runDataDiscoveryScanNow: pendingDataDiscoveryScan != null,
     runZeroTrustScanNow: takeScanRequest("zeroTrust", agentId),
     runSecurityConfigScanNow: takeScanRequest("securityConfig", agentId),
+    runInventoryNow: takeScanRequest("inventory", agentId),
     serverUrls: await getServerUrlsForCheckin(),
   };
 }
@@ -204,6 +205,12 @@ export async function recordInventory(agentId: string, report: InventoryReport):
     batteryAcConnected: report.batteryAcConnected,
   };
 
+  const previous = await prisma.inventorySnapshot.findUnique({ where: { agentId }, select: { installedSoftware: true } });
+  // History only - never let it fail the inventory report itself.
+  await recordSoftwareChanges(agentId, previous?.installedSoftware ?? null, report.installedSoftware).catch((err) =>
+    logger.error({ err, agentId }, "Recording software changes failed"),
+  );
+
   await prisma.inventorySnapshot.upsert({
     where: { agentId },
     create: { agentId, ...shared },
@@ -226,4 +233,55 @@ export async function recordInventory(agentId: string, report: InventoryReport):
   // Fire-and-forget — matching against the local CVE cache is cheap, but must never
   // block or fail the inventory checkin itself.
   void matchAgentInventory(agentId).catch((err) => logger.error({ err, agentId }, "Vulnerability matching failed"));
+}
+
+// Compares an inventory report's software list with the previous one and records what was
+// installed, removed or changed version. Nothing is recorded for the first report (no baseline)
+// or when the new list comes back empty while the old one wasn't - that's a failed software
+// query on the endpoint, not everything being uninstalled.
+type SoftwareEntry = InventoryReport["installedSoftware"][number];
+
+export function diffSoftware(before: SoftwareEntry[], after: SoftwareEntry[]) {
+  const byName = (list: SoftwareEntry[]) => {
+    const m = new Map<string, SoftwareEntry>();
+    for (const s of list) if (s.name.trim()) m.set(s.name.trim().toLowerCase(), s);
+    return m;
+  };
+  const old = byName(before);
+  const now = byName(after);
+  const changes: { change: "INSTALLED" | "REMOVED" | "UPDATED"; name: string; version: string | null; oldVersion: string | null; publisher: string | null }[] = [];
+  for (const [key, s] of now) {
+    const o = old.get(key);
+    if (!o) changes.push({ change: "INSTALLED", name: s.name, version: s.version, oldVersion: null, publisher: s.publisher });
+    else if ((o.version ?? "") !== (s.version ?? "")) changes.push({ change: "UPDATED", name: s.name, version: s.version, oldVersion: o.version, publisher: s.publisher });
+  }
+  for (const [key, o] of old) {
+    if (!now.has(key)) changes.push({ change: "REMOVED", name: o.name, version: o.version, oldVersion: null, publisher: o.publisher });
+  }
+  return changes;
+}
+
+async function recordSoftwareChanges(agentId: string, previousJson: string | null, current: SoftwareEntry[]): Promise<void> {
+  if (previousJson === null) return;
+  let before: SoftwareEntry[];
+  try {
+    before = JSON.parse(previousJson) as SoftwareEntry[];
+  } catch {
+    return;
+  }
+  if (!Array.isArray(before) || before.length === 0) return; // no baseline yet
+  if (current.length === 0) return;
+  const changes = diffSoftware(before, current);
+  if (changes.length === 0) return;
+  const cut = (v: string | null, n: number) => (v ? v.slice(0, n) : null);
+  await prisma.agentSoftwareChange.createMany({
+    data: changes.map((c) => ({
+      agentId,
+      change: c.change,
+      name: c.name.slice(0, 500),
+      version: cut(c.version, 200),
+      oldVersion: cut(c.oldVersion, 200),
+      publisher: cut(c.publisher, 300),
+    })),
+  });
 }

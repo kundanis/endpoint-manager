@@ -21,7 +21,6 @@ function auditSignIn(req: import("express").Request, email: string, action: "LOG
     path: "/api/auth/login",
     statusCode: action === "LOGIN" ? 200 : action === "LOGIN_BLOCKED" ? 429 : 401,
     success: action === "LOGIN",
-    detail: { userAgent: req.get("user-agent") ?? null },
   });
 }
 

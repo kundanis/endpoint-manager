@@ -121,6 +121,10 @@ export async function recordCommandResult(
 
   // A successful benchmark fix: have the endpoint re-check its benchmarks right away (agent
   // 0.2.10+) instead of at the next scheduled scan, so the rule shows Pass promptly.
+  // Any finished command may have installed or removed software (an Uninstall from the
+  // Software tab is one): refresh the endpoint's software list now (agent 0.2.16+).
+  requestScan("inventory", [agentId]);
+
   if (payload.status === "SUCCESS") {
     const isBenchmarkFix = await prisma.securityBenchmarkFinding.count({ where: { agentId, remediationJobId: task.jobId } });
     if (isBenchmarkFix > 0) requestScan("securityConfig", [agentId]);

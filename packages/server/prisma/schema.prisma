@@ -155,6 +155,7 @@ model Agent {
   dataMovementAssignments DataMovementPolicyAssignment[]
   screenCaptureEvents      ScreenCaptureEvent[]
   userActivityEvents       UserActivityEvent[]
+  softwareChanges          AgentSoftwareChange[]
   screenCaptureAssignments ScreenCapturePolicyAssignment[]
   appControlEvents      AppControlEvent[]
   appControlAssignments AppControlPolicyAssignment[]
@@ -1119,6 +1120,23 @@ model ScreenCaptureEvent {
 // stream by a server job, attributed to whoever was signed in to the endpoint at the time.
 // Built-in rules (services/userRisk/rules.ts) turn that stream into alerts; a user's risk score
 // is computed from their recent alerts on read, so it is never stored.
+// Installed-software changes per endpoint, found by comparing each inventory report with the
+// previous one (installs, removals - by anyone, from the console or on the device - and version
+// changes). Shown on the endpoint's History tab.
+model AgentSoftwareChange {
+  id         String   @id @default(uuid())
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  change     String   @db.NVarChar(20) // INSTALLED | REMOVED | UPDATED
+  name       String   @db.NVarChar(500)
+  version    String?  @db.NVarChar(200) // the new version (the removed one for REMOVED)
+  oldVersion String?  @db.NVarChar(200) // UPDATED only
+  publisher  String?  @db.NVarChar(300)
+  detectedAt DateTime @default(now())
+
+  @@index([agentId, detectedAt])
+}
+
 model UserActivityEvent {
   id          String   @id @default(uuid())
   userKey     String   @db.NVarChar(200) // normalised: lower-case, no DOMAIN\ prefix

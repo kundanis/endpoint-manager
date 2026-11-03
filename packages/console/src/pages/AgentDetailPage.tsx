@@ -7,8 +7,10 @@ import {
   Database,
   FileSearch,
   HardDrive,
+  History,
   Monitor,
   Package,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   StickyNote,
@@ -54,6 +56,7 @@ import {
   useAgentDataDiscoveryFindings,
   useAgentDataMovementEvents,
   useAgentDlpEvents,
+  useAgentHistory,
   useAgentLatestBuild,
   useAgentNotes,
   useAgentSecurityFindings,
@@ -76,6 +79,7 @@ import {
   useSetAssetDetails,
   useUninstallAgent,
   useUninstallSoftware,
+  useSyncInventory,
 } from "../api/hooks";
 
 const LIFECYCLE_OPTIONS: LifecycleStatus[] = ["ACTIVE", "IN_REPAIR", "RETIRED", "IN_STORAGE"];
@@ -1041,8 +1045,10 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
 
 type LicenseFilter = "ALL" | "LICENSED" | "UNLICENSED";
 
-function InstalledSoftwareSection({ agentId, software }: { agentId: string; software: InstalledSoftwareEntry[] }) {
+function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId: string; software: InstalledSoftwareEntry[]; collectedAt: string | null }) {
   const uninstall = useUninstallSoftware();
+  const sync = useSyncInventory();
+  const toast = useToast();
   const confirm = useConfirm();
   const [pendingName, setPendingName] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState("");
@@ -1073,7 +1079,8 @@ function InstalledSoftwareSection({ agentId, software }: { agentId: string; soft
       body:
         "This runs the software's own uninstaller unattended. MSI-based installs run fully silently; " +
         "other installers run whatever uninstall command is registered, which may not support a silent flag " +
-        "and could hang waiting for input nobody is there to give. Check the Commands page to confirm it completed.",
+        "and could hang waiting for input nobody is there to give. The list refreshes by itself once the uninstall finishes; " +
+        "removed software is listed on the History tab.",
       confirmLabel: "Uninstall software",
       tone: "danger",
     });
@@ -1083,7 +1090,25 @@ function InstalledSoftwareSection({ agentId, software }: { agentId: string; soft
   }
 
   return (
-    <Card flush title="Installed software" hint={`${software.length} ${plural(software.length, "application")}`}>
+    <Card
+      flush
+      title="Installed software"
+      hint={`${software.length} ${plural(software.length, "application")}${collectedAt ? ` · reported ${formatRelative(collectedAt)}` : ""}`}
+      actions={
+        <Button
+          size="sm"
+          icon={RefreshCw}
+          disabled={sync.isPending}
+          onClick={() =>
+            sync.mutate(agentId, {
+              onSuccess: () => toast("Asked the endpoint for its current software. The list updates within about a minute if it's online."),
+            })
+          }
+        >
+          Sync now
+        </Button>
+      }
+    >
       <Toolbar
         right={
           filtersActive && (
@@ -1909,10 +1934,132 @@ function UserSessionsSection({ agentId }: { agentId: string }) {
 }
 
 /* ------------------------------------------------------------------------------------------
+ * History: software changes (by anyone) and admin actions on this endpoint (super admins)
+ * ---------------------------------------------------------------------------------------- */
+
+const CHANGE_LABEL = { INSTALLED: "Installed", REMOVED: "Removed", UPDATED: "Updated" } as const;
+const CHANGE_TONE: Record<"INSTALLED" | "REMOVED" | "UPDATED", BadgeTone> = { INSTALLED: "ok", REMOVED: "high", UPDATED: "neu" };
+
+function HistorySection({ agentId }: { agentId: string }) {
+  const { data, isLoading, error } = useAgentHistory(agentId);
+  const [changeFilter, setChangeFilter] = useState<"" | "INSTALLED" | "REMOVED" | "UPDATED">("");
+  const changes = (data?.softwareChanges ?? []).filter((c) => !changeFilter || c.change === changeFilter);
+  const pagedChanges = usePagedList(changes);
+  const pagedActions = usePagedList(data?.adminActions ?? []);
+
+  if (!data) return <SectionState title="Software changes" isLoading={isLoading} error={error} empty={null} />;
+
+  return (
+    <div className="app-stack">
+      <Card flush title="Software changes" hint={`${data.softwareChanges.length} ${plural(data.softwareChanges.length, "change")}`}>
+        <Toolbar>
+          <select className="ep-select" aria-label="Change" style={{ width: "auto" }} value={changeFilter} onChange={(e) => setChangeFilter(e.target.value as typeof changeFilter)}>
+            <option value="">All changes</option>
+            <option value="REMOVED">Removed</option>
+            <option value="INSTALLED">Installed</option>
+            <option value="UPDATED">Updated</option>
+          </select>
+        </Toolbar>
+        {changes.length === 0 ? (
+          <EmptyState icon={Package} title={data.softwareChanges.length === 0 ? "No software changes yet" : "No changes of this kind"}>
+            Installs, removals and version changes are recorded each time the endpoint reports its software, from this release onward.
+          </EmptyState>
+        ) : (
+          <>
+            <div className="app-table-scroll">
+              <table className="ep-tbl">
+                <thead>
+                  <tr>
+                    <th scope="col">Detected</th>
+                    <th scope="col">Change</th>
+                    <th scope="col">Application</th>
+                    <th scope="col">Version</th>
+                    <th scope="col">Publisher</th>
+                    <th scope="col">How</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedChanges.pageItems.map((c) => (
+                    <tr key={c.id}>
+                      <td className="app-muted" style={{ whiteSpace: "nowrap" }}>
+                        {formatDateTime(c.detectedAt)}
+                      </td>
+                      <td>
+                        <Badge tone={CHANGE_TONE[c.change]}>{CHANGE_LABEL[c.change]}</Badge>
+                      </td>
+                      <td>{c.name}</td>
+                      <td>
+                        {c.change === "UPDATED" ? (
+                          <span className="ep-mono">
+                            {c.oldVersion ?? "—"} → {c.version ?? "—"}
+                          </span>
+                        ) : c.version ? (
+                          <span className="ep-mono">{c.version}</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>{c.publisher ?? "—"}</td>
+                      <td className="app-muted">
+                        {c.change !== "REMOVED" ? "—" : c.viaConsole ? `Uninstalled from the console${c.byAdmin ? ` by ${c.byAdmin}` : ""}` : "On the device"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ListPager paged={pagedChanges} noun="changes" />
+          </>
+        )}
+      </Card>
+
+      {data.adminActions && (
+        <Card flush title="Admin actions on this endpoint" hint={`${data.adminActions.length} ${plural(data.adminActions.length, "action")} · super admins only`}>
+          {data.adminActions.length === 0 ? (
+            <EmptyState icon={History} title="No admin actions recorded">
+              Changes made to this endpoint from the console (pause, uninstall, commands, groups, remote access) appear here.
+            </EmptyState>
+          ) : (
+            <>
+              <div className="app-table-scroll">
+                <table className="ep-tbl">
+                  <thead>
+                    <tr>
+                      <th scope="col">When</th>
+                      <th scope="col">Admin</th>
+                      <th scope="col">What happened</th>
+                      <th scope="col">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedActions.pageItems.map((a) => (
+                      <tr key={a.id}>
+                        <td className="app-muted" style={{ whiteSpace: "nowrap" }}>
+                          {formatDateTime(a.at)}
+                        </td>
+                        <td>{a.adminEmail}</td>
+                        <td style={{ overflowWrap: "anywhere" }}>{a.summary}</td>
+                        <td>{a.success ? <Badge tone="ok">Succeeded</Badge> : <Badge tone="crit">Failed</Badge>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ListPager paged={pagedActions} noun="actions" />
+            </>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------
  * Page
  * ---------------------------------------------------------------------------------------- */
 
-type TabKey = "overview" | "software" | "security" | "data" | "activity" | "manage";
+
+type TabKey = "overview" | "software" | "security" | "data" | "activity" | "manage" | "history";
 
 const backLink = (
   <Link to="/endpoints" className="ep-btn">
@@ -1986,8 +2133,9 @@ export default function AgentDetailPage() {
     { value: "software", label: "Software" },
     ...(securityTabVisible ? [{ value: "security", label: "Security" }] : []),
     ...(dataTabVisible ? [{ value: "data", label: "Data protection" }] : []),
-    ...(activityTabVisible ? [{ value: "activity", label: "Activity" }] : []),
     { value: "manage", label: "Manage" },
+    { value: "history", label: "History" },
+    ...(activityTabVisible ? [{ value: "activity", label: "User Productivity" }] : []),
   ];
   // If module visibility hides the open tab (it loads after first paint), fall back to Overview.
   const activeTab: TabKey = tabs.some((t) => t.value === tab) ? tab : "overview";
@@ -2032,7 +2180,7 @@ export default function AgentDetailPage() {
         </Row>
       )}
 
-      {activeTab === "software" && <InstalledSoftwareSection agentId={agent.id} software={inv?.installedSoftware ?? []} />}
+      {activeTab === "software" && <InstalledSoftwareSection agentId={agent.id} software={inv?.installedSoftware ?? []} collectedAt={inv?.collectedAt ?? null} />}
 
       {activeTab === "security" && (
         <div className="app-stack">
@@ -2057,6 +2205,8 @@ export default function AgentDetailPage() {
       )}
 
       {activeTab === "activity" && !userProductivityHidden && <UserSessionsSection agentId={agent.id} />}
+
+      {activeTab === "history" && <HistorySection agentId={agent.id} />}
 
       {activeTab === "manage" && (
         <div className="app-stack">

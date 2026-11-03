@@ -96,18 +96,19 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     module: "Endpoint Hub",
     title: "Endpoint detail",
     path: "/endpoints/",
-    summary: "Everything about one device, in six tabs, plus remote actions.",
-    keywords: ["remote desktop", "rdp", "uninstall", "pause", "notes", "asset", "warranty"],
+    summary: "Everything about one device, in seven tabs, plus remote actions.",
+    keywords: ["remote desktop", "rdp", "uninstall", "pause", "notes", "asset", "warranty", "history", "sync", "uninstalled apps"],
     sections: [
       {
         title: "Tabs",
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
-          "Software: installed applications with licence status; uninstall any of them remotely.",
+          "Software: installed applications with licence status; uninstall any of them remotely. Sync now fetches the current list from the device.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
           "Data protection: personal data found, DLP events, file movements, blocked apps, commands and USB devices.",
-          "Activity: sign-in sessions with active and idle time.",
           "Manage: asset details, custom fields, groups, Remote Desktop, pause and remote agent uninstall.",
+          "History: applications installed, removed or updated on the device (and whether a removal came from the console), plus every admin action on it for super admins.",
+          "User Productivity: sign-in sessions with active and idle time.",
         ],
       },
     ],
@@ -128,6 +129,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         steps: [
           { text: "Open the endpoint and go to the Software tab.", target: { kind: "tab", label: "Software" } },
           { text: "Find the application and select Uninstall on its row. MSI installs are removed silently." },
+          { text: "The list refreshes once the uninstall finishes; select Sync now to fetch it straight away. The removal is listed on the History tab.", target: { kind: "button", label: "Sync now" } },
         ],
       },
       {
