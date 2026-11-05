@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.22
+- Installs the Endpoint IQ Mail Guard browser extension in Chrome and Edge from their stores while an
+  Email attachment blocking policy is in use (users can't remove or disable it), and removes it
+  when none is. Starts once the store IDs are added on the server.
+
 ## 0.2.21
 - Sets the server address for the Endpoint IQ Mail Guard browser extension (Chrome and Edge) through
   browser policy, so the extension always reports to this agent's server and the user can't change it.

@@ -368,7 +368,7 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   startScreenCaptureMonitor(client);
   startSecuritySignals(client);
   startShellHealthGuard(client);
-  startMailGuardPolicy();
+  startMailGuardPolicy(client);
   void syncDlp();
   setInterval(syncDlp, agentConfig.dlpPolicySyncIntervalMs);
   void flushDlp();

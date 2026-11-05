@@ -37,6 +37,7 @@ import { CommandTaskNotOwnedError, recordCommandResult } from "../services/comma
 import { DeploymentTaskNotOwnedError, recordDeploymentStatus } from "../services/deployment.service";
 import { NetworkScanTaskNotOwnedError, recordNetworkScanTaskResult } from "../services/networkScan.service";
 import { getPackageRecord } from "../services/package.service";
+import { mailGuardAgentSettings } from "../services/piiEmailBlockPolicy.service";
 import { PatchTaskNotOwnedError, recordPatchScan, recordPatchTaskResult } from "../services/patch.service";
 import { recordScanResult, resolveAssignedBenchmarksForAgent } from "../services/securityConfigScan.service";
 import {
@@ -406,6 +407,14 @@ agentRouter.post("/web-block/sync-result", async (req, res, next) => {
     const payload = webBlockSyncResultPayloadSchema.parse(req.body);
     await recordWebBlockSyncResult(req.agentId!, payload);
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.get("/mail-guard", async (_req, res, next) => {
+  try {
+    res.json(await mailGuardAgentSettings());
   } catch (err) {
     next(err);
   }

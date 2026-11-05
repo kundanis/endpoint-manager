@@ -2,11 +2,13 @@ import type {
   AssignPiiEmailBlockRequest,
   CreatePiiEmailBlockPolicyRequest,
   CreatePiiEmailBlockRuleRequest,
+  MailGuardAgentSettings,
   PiiEmailBlockEventReport,
   PiiEmailBlockRuleType,
   PiiPatternKey,
   UpdatePiiEmailBlockPolicyRequest,
 } from "@em/shared";
+import { MAIL_GUARD_CHROME_STORE_ID, MAIL_GUARD_EDGE_STORE_ID } from "@em/shared";
 import { prisma } from "../db";
 
 export async function createPolicy(params: CreatePiiEmailBlockPolicyRequest, createdByAdminId: string) {
@@ -140,6 +142,15 @@ export async function getPatternKeysForEmail(emailAddress: string): Promise<PiiP
   });
 
   return [...new Set(policies.flatMap((p) => p.rules.map((r) => r.value as PiiPatternKey)))];
+}
+
+// Whether agents should install the Mail Guard browser extension: only while some enabled
+// policy with at least one rule has a mailbox assigned. The extension then checks per mailbox.
+export async function mailGuardAgentSettings(): Promise<MailGuardAgentSettings> {
+  const active = await prisma.piiEmailBlockPolicy.count({
+    where: { enabled: true, assignments: { some: {} }, rules: { some: {} } },
+  });
+  return { install: active > 0, chromeExtensionId: MAIL_GUARD_CHROME_STORE_ID, edgeExtensionId: MAIL_GUARD_EDGE_STORE_ID };
 }
 
 // Best-effort append from the add-in after every send it evaluated. Deliberately tolerant

@@ -100,9 +100,25 @@ if (Test-Path $hostsPath) {
 }
 Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
-# Mail Guard browser extension's server address (mailGuardPolicy.ts)
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\lkmoggokfmdgjjjbmfachhmjdpbebebc' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\lkmoggokfmdgjjjbmfachhmjdpbebebc' -Recurse -Force -ErrorAction SilentlyContinue
+# Mail Guard browser extension (mailGuardPolicy.ts): its server address and its force-install
+# entry, for every ID it can have - keep in step with packages/shared/src/data/mailGuard.ts.
+# Only force-install values naming one of these IDs are removed; other tools' entries stay.
+$mailGuardIds = @('lkmoggokfmdgjjjbmfachhmjdpbebebc', 'ncghjfmanemplpcikadapjgdmedgncob')
+foreach ($browserRoot in @('HKLM:\SOFTWARE\Policies\Google\Chrome', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge')) {
+    foreach ($id in $mailGuardIds) {
+        Remove-Item -Path "$browserRoot\3rdparty\extensions\$id" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $forceList = "$browserRoot\ExtensionInstallForcelist"
+    if (Test-Path $forceList) {
+        $props = Get-ItemProperty -Path $forceList
+        foreach ($p in $props.PSObject.Properties) {
+            if ($p.Name -like 'PS*') { continue }
+            foreach ($id in $mailGuardIds) {
+                if ("$($p.Value)".StartsWith("$id;")) { Remove-ItemProperty -Path $forceList -Name $p.Name -ErrorAction SilentlyContinue }
+            }
+        }
+    }
+}
 
 $srpDisallowedPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths'
 if (Test-Path $srpDisallowedPath) {
