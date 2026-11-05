@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.2
+- New: Command blocking. Harmful commands chosen in the console (deleting Time Machine backups,
+  turning off Gatekeeper or the firewall, erasing disks, creating admin accounts and more) are
+  stopped as soon as they start and reported to the policy's Events tab.
+
 ## 0.1.1
 - The product is now called Endpoint IQ: install and uninstall messages use the new name.
 

@@ -1,3 +1,4 @@
+import { SectionHeader } from "../components/policy";
 import { useEffect, useState } from "react";
 import { ArrowRightLeft, Cloud, Monitor, Network, Pencil, Plus, SearchX, Trash2, Usb } from "lucide-react";
 import {
@@ -24,7 +25,6 @@ import {
   Field,
   Kpi,
   KpiStrip,
-  PageHeader,
   Pagination,
   RowMenu,
   Skeleton,
@@ -316,9 +316,9 @@ export default function DataMovementPage() {
 
   return (
     <>
-      <PageHeader
-        title="Data movement"
-        description="Track files leaving an endpoint via USB or removable drives, cloud-sync folders and mapped network drives"
+      <SectionHeader
+        title="File movement"
+        description="Files copied to USB or removable drives, cloud-sync folders and mapped network drives."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
             New policy

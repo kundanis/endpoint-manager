@@ -1344,6 +1344,9 @@ model AppControlPolicyAssignment {
   groupId   String?
   group     AssetGroup?      @relation(fields: [groupId], references: [id], onDelete: Cascade)
   createdAt DateTime         @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?  @db.NVarChar(20)
+  lastSyncError  String?  @db.NVarChar(1000)
 
   @@index([agentId])
   @@index([groupId])
@@ -1592,6 +1595,9 @@ model CommandBlockPolicyAssignment {
   groupId   String?
   group     AssetGroup?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
   createdAt DateTime           @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?  @db.NVarChar(20)
+  lastSyncError  String?  @db.NVarChar(1000)
 
   @@index([agentId])
   @@index([groupId])

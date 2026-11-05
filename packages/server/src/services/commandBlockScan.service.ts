@@ -3,7 +3,9 @@ import type {
   CommandBlockEnforcementMode,
   CommandBlockEventBatchPayload,
   CommandBlockRuleType,
+  CommandBlockSyncResultPayload,
 } from "@em/shared";
+import { commandProtection, type CommandProtectionOs } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
 import { isAgentPaused } from "./pause.service";
@@ -11,51 +13,65 @@ import { isAgentPaused } from "./pause.service";
 // Flat, deduped across every enabled, non-excepted policy assigned to this agent (directly
 // or via a group) — each match is independently attributable to the rule that fired, so
 // unlike webBlock's merged domain list, no per-policy nesting is needed here either.
-export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedCommandBlockResponse> {
-  if (await isAgentPaused(agentId)) return { rules: [] };
-
+// The policies this agent enforces: assigned directly or via a group, enabled, not excepted for
+// it, and none while the agent is paused.
+async function activePolicyIdsForAgent(agentId: string): Promise<{ policyIds: string[]; groupIds: string[] }> {
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
   const groupIds = memberships.map((m) => m.groupId);
+  if (await isAgentPaused(agentId)) return { policyIds: [], groupIds };
 
   const assignments = await prisma.commandBlockPolicyAssignment.findMany({
     where: { OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] },
     select: { policyId: true },
   });
   const candidatePolicyIds = [...new Set(assignments.map((a) => a.policyId))];
-  if (candidatePolicyIds.length === 0) return { rules: [] };
-
   const excepted = await Promise.all(candidatePolicyIds.map((id) => isPolicyExcepted("COMMAND_BLOCK", id, agentId)));
-  const policyIds = candidatePolicyIds.filter((_, i) => !excepted[i]);
+  const notExcepted = candidatePolicyIds.filter((_, i) => !excepted[i]);
+  if (notExcepted.length === 0) return { policyIds: [], groupIds };
+
+  const enabled = await prisma.commandBlockPolicy.findMany({ where: { id: { in: notExcepted }, enabled: true }, select: { id: true } });
+  return { policyIds: enabled.map((p) => p.id), groupIds };
+}
+
+// Stamps the endpoint's latest sync on its assignment rows (direct or via a group) for every
+// policy it enforces - the Sync status tab.
+export async function recordSyncResult(agentId: string, payload: CommandBlockSyncResultPayload): Promise<void> {
+  const { policyIds, groupIds } = await activePolicyIdsForAgent(agentId);
+  if (policyIds.length === 0) return;
+  await prisma.commandBlockPolicyAssignment.updateMany({
+    where: { policyId: { in: policyIds }, OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] },
+    data: { lastSyncedAt: new Date(), lastSyncStatus: payload.status, lastSyncError: payload.errorMessage },
+  });
+}
+
+export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedCommandBlockResponse> {
+  const { policyIds } = await activePolicyIdsForAgent(agentId);
   if (policyIds.length === 0) return { rules: [] };
 
   const policies = await prisma.commandBlockPolicy.findMany({
-    where: { id: { in: policyIds }, enabled: true },
+    where: { id: { in: policyIds } },
     include: { rules: true },
   });
 
-  // Dedup by (ruleType, value) rather than value alone — an EXACT_COMMAND_LINE rule and a
-  // COMMAND_PATTERN rule can legitimately share the same string with different match
-  // semantics. If the same key appears in two assigned policies with different
-  // enforcementMode, BLOCK always wins — a stricter policy's intent must never be silently
-  // downgraded to alert-only just because a laxer policy happens to define the same pattern.
-  const byKey = new Map<
+  // Only protections from the catalogue are enforced, always in Block mode: each becomes the
+  // command patterns for this endpoint's OS, carrying the protection rule's id so events point
+  // back to it. Custom rules stored before the catalogue existed are no longer sent.
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { osPlatform: true } });
+  const os = agent?.osPlatform as CommandProtectionOs | undefined;
+  const byPattern = new Map<
     string,
     { ruleId: string; ruleType: CommandBlockRuleType; pattern: string; enforcementMode: CommandBlockEnforcementMode }
   >();
   for (const policy of policies) {
-    const mode = policy.enforcementMode as CommandBlockEnforcementMode;
     for (const rule of policy.rules) {
-      const key = `${rule.ruleType}:${rule.value.toLowerCase()}`;
-      const existing = byKey.get(key);
-      if (!existing) {
-        byKey.set(key, { ruleId: rule.id, ruleType: rule.ruleType as CommandBlockRuleType, pattern: rule.value, enforcementMode: mode });
-      } else if (mode === "BLOCK") {
-        existing.enforcementMode = "BLOCK";
+      if (rule.ruleType !== "PROTECTION" || !os) continue;
+      for (const pattern of commandProtection(rule.value)?.patterns[os] ?? []) {
+        if (!byPattern.has(pattern)) byPattern.set(pattern, { ruleId: rule.id, ruleType: "COMMAND_PATTERN", pattern, enforcementMode: "BLOCK" });
       }
     }
   }
 
-  return { rules: [...byKey.values()] };
+  return { rules: [...byPattern.values()] };
 }
 
 // Plain inserts, not upserts — each event is a distinct real-time occurrence (a process was

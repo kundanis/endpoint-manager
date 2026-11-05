@@ -12,10 +12,10 @@ export const DATA_TYPE_KIND_LABELS: Record<DataTypeKind, string> = {
 
 export const DATA_TYPE_TARGET_LABELS: Record<DataTypeTarget, string> = {
   dlp: "DLP content & file",
-  piiEmailBlock: "DLP email attachments",
+  piiEmailBlock: "EPM email attachments",
   appControl: "EPM application control",
   webBlock: "EPM web & email",
-  piiBlock: "EPM PII blocking",
+  piiBlock: "DLP PII blocking",
   commandBlock: "EPM command blocking",
 };
 
@@ -30,9 +30,9 @@ export const CUSTOM_KIND_OPTIONS: { value: Exclude<DataTypeKind, "PII_PATTERN">;
 // Where each policy area lives in the console.
 export const DATA_TYPE_TARGET_PATHS: Record<DataTypeTarget, string> = {
   dlp: "/dlp/content-policies",
-  piiEmailBlock: "/dlp/email-attachment-block",
+  piiEmailBlock: "/epm/email-attachment-block",
   appControl: "/epm/app-control",
   webBlock: "/epm/web-block",
-  piiBlock: "/epm/pii-block",
+  piiBlock: "/dlp/pii-block",
   commandBlock: "/epm/command-block",
 };

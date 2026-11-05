@@ -163,7 +163,21 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   if (!policy) return null;
 
   const assignedAgentIds = await resolveAssignedAgentIdsForPolicy(policyId);
-  const agents = assignedAgentIds.length > 0 ? await prisma.agent.findMany({ where: { id: { in: assignedAgentIds } } }) : [];
+  const agents =
+    assignedAgentIds.length > 0
+      ? await prisma.agent.findMany({ where: { id: { in: assignedAgentIds } }, include: { inventory: { select: { lastLoggedOnUser: true } } } })
+      : [];
+  // Each endpoint's own assignment row (a direct one wins over one via a group) holds its sync status.
+  const assignments = await prisma.appControlPolicyAssignment.findMany({ where: { policyId }, include: { group: true } });
+  const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
+  const memberships =
+    groupIds.length > 0 && assignedAgentIds.length > 0
+      ? await prisma.agentGroupMembership.findMany({ where: { groupId: { in: groupIds }, agentId: { in: assignedAgentIds } }, select: { agentId: true, groupId: true } })
+      : [];
+  const assignmentForAgent = (agentId: string) =>
+    assignments.find((a) => a.agentId === agentId) ??
+    assignments.find((a) => a.groupId && memberships.some((m) => m.agentId === agentId && m.groupId === a.groupId)) ??
+    null;
   const events = await prisma.appControlEvent.findMany({ where: { policyId }, orderBy: { occurredAt: "desc" } });
 
   const eventsByAgent = new Map<string, typeof events>();
@@ -178,9 +192,15 @@ export async function getPolicyAgentBreakdown(policyId: string) {
     name: policy.name,
     agents: agents.map((a) => {
       const agentEvents = eventsByAgent.get(a.id) ?? [];
+      const assignment = assignmentForAgent(a.id);
       return {
         agentId: a.id,
         hostname: a.hostname,
+        groupName: assignment?.group?.name ?? null,
+        lastLoggedOnUser: a.inventory?.lastLoggedOnUser ?? null,
+        lastSyncedAt: assignment?.lastSyncedAt?.toISOString() ?? null,
+        lastSyncStatus: assignment?.lastSyncStatus ?? null,
+        lastSyncError: assignment?.lastSyncError ?? null,
         eventCount: agentEvents.length,
         lastEventAt: agentEvents[0]?.occurredAt.toISOString() ?? null,
       };
@@ -209,6 +229,28 @@ export async function getEventsForAgent(agentId: string) {
       matchedPath: e.matchedPath,
       processName: e.processName,
       occurredAt: e.occurredAt.toISOString(),
+    };
+  });
+}
+
+// Events tab: one endpoint's blocked programs under this policy, newest first, with the rule
+// that matched (described by its last-known value if it has since been deleted).
+export async function getPolicyEventsForAgent(policyId: string, agentId: string) {
+  const events = await prisma.appControlEvent.findMany({ where: { policyId, agentId }, orderBy: { occurredAt: "desc" }, take: 500 });
+  const ruleIds = [...new Set(events.map((e) => e.ruleId).filter((id): id is string => Boolean(id)))];
+  const rules = ruleIds.length > 0 ? await prisma.appControlRule.findMany({ where: { id: { in: ruleIds } } }) : [];
+  const ruleById = new Map(rules.map((r) => [r.id, r]));
+  return events.map((e) => {
+    const rule = e.ruleId ? ruleById.get(e.ruleId) : undefined;
+    return {
+      id: e.id,
+      occurredAt: e.occurredAt.toISOString(),
+      ruleType: rule?.ruleType ?? null,
+      ruleValue: rule?.value ?? null,
+      ruleLabel: rule?.label ?? null,
+      ruleDeleted: Boolean(e.ruleId) && !rule,
+      matchedPath: e.matchedPath,
+      processName: e.processName,
     };
   });
 }

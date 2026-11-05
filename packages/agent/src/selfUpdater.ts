@@ -74,6 +74,8 @@ function buildHelperTaskXml(helperScriptPath: string, startBoundary: string): st
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <StartWhenAvailable>true</StartWhenAvailable>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
   </Settings>
   <Actions Context="Author">
     <Exec>

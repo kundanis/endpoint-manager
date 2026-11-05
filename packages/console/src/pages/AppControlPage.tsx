@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from "react";
-import { AppWindow, ListChecks, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Fragment, useState, type FormEvent } from "react";
+import { AppWindow, ChevronDown, ChevronRight, ListChecks, Pencil, Plus, Trash2, Users } from "lucide-react";
 import type { AppControlRuleType } from "@em/shared";
 import BulkPolicyAssignPanel from "../components/BulkPolicyAssignPanel";
 import {
   useAddAppControlRule,
   useAppControlAgentBreakdown,
+  useAppControlPolicyAgentEvents,
   useAppControlAssignments,
   useAppControlPolicies,
   useAppControlPolicy,
@@ -26,6 +27,7 @@ import {
   PolicyDetail,
   PolicySettingsForm,
   SectionHeader,
+  SyncStatusTable,
 } from "../components/policy";
 import {
   Alert,
@@ -47,25 +49,36 @@ import { formatDateTime, pluralize } from "../format";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
-const RULE_TYPES: AppControlRuleType[] = ["EXTENSION", "EXECUTABLE"];
+const RULE_TYPES: AppControlRuleType[] = ["EXECUTABLE", "PRODUCT", "PUBLISHER", "EXTENSION"];
 
 const RULE_TYPE_LABEL: Record<AppControlRuleType, string> = {
-  EXTENSION: "File extension",
-  EXECUTABLE: "Executable / path",
+  EXECUTABLE: "Program name / path",
+  PRODUCT: "Product name",
+  PUBLISHER: "Publisher",
+  EXTENSION: "Script type",
 };
 
 const RULE_TYPE_HINT: Record<AppControlRuleType, string> = {
-  EXTENSION: 'Extension including the dot, e.g. ".vbs" — blocks any file with that extension from running',
-  EXECUTABLE: 'A filename, e.g. "utorrent.exe", or a full path, e.g. "C:\\Tools\\nc.exe"',
+  EXECUTABLE: 'A program name, e.g. "AnyDesk.exe" (stopped before it opens, and caught when renamed), or a full path, e.g. "C:\\Tools\\nc.exe". * wildcards allowed.',
+  PRODUCT: 'The product name stored in the program, e.g. "AnyDesk" or "Telegram Desktop" — catches renamed copies and new versions. * wildcards allowed.',
+  PUBLISHER: 'The company that signs the program, e.g. "AnyDesk Software GmbH" — blocks every program from that publisher, whatever its name or version.',
+  EXTENSION: 'A script type including the dot, e.g. ".vbs", ".hta" or ".jar" — stops Windows script hosts and Java from running files of that type.',
 };
 
-const BLANK_RULE_FORM: AppControlRuleInput = { ruleType: "EXTENSION", value: "", label: "" };
+const RULE_TYPE_PLACEHOLDER: Record<AppControlRuleType, string> = {
+  EXECUTABLE: 'e.g. "AnyDesk.exe, rustdesk.exe"',
+  PRODUCT: 'e.g. "Telegram Desktop; AnyDesk"',
+  PUBLISHER: 'e.g. "AnyDesk Software GmbH"',
+  EXTENSION: 'e.g. ".vbs, .js, .hta"',
+};
 
-// Splits on comma or semicolon so a whole list can be pasted into the same field at once —
-// safe here because a value is always a plain extension/filename/path, never an expression
-// that could legitimately contain one of those characters (unlike Command Block's regex).
-function splitBulkValues(raw: string): string[] {
-  return [...new Set(raw.split(/[;,]/).map((v) => v.trim()).filter(Boolean))];
+const BLANK_RULE_FORM: AppControlRuleInput = { ruleType: "EXECUTABLE", value: "", label: "" };
+
+// Splits so a whole list can be pasted into the same field at once. Product and publisher names
+// can contain commas ("Example, Inc."), so those split on semicolons only.
+const SEMICOLON_ONLY = new Set<AppControlRuleType>(["PRODUCT", "PUBLISHER"]);
+function splitBulkValues(raw: string, ruleType: AppControlRuleType): string[] {
+  return [...new Set(raw.split(SEMICOLON_ONLY.has(ruleType) ? /;/ : /[;,]/).map((v) => v.trim()).filter(Boolean))];
 }
 
 function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
@@ -103,7 +116,7 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
       return;
     }
 
-    const values = splitBulkValues(form.value);
+    const values = splitBulkValues(form.value, form.ruleType);
     if (values.length === 0) return;
 
     setIsSubmitting(true);
@@ -196,7 +209,7 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
             label="Value"
             htmlFor="appctl-rule-value"
             required
-            help={isEditing ? undefined : "Separate several with commas or semicolons."}
+            help={isEditing ? undefined : SEMICOLON_ONLY.has(form.ruleType) ? "Separate several with semicolons." : "Separate several with commas or semicolons."}
           >
             <input
               id="appctl-rule-value"
@@ -204,7 +217,7 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
               className="ep-input ep-mono"
               value={form.value}
               onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))}
-              placeholder={isEditing ? undefined : 'e.g. ".vbs, .js, .ps1"'}
+              placeholder={isEditing ? undefined : RULE_TYPE_PLACEHOLDER[form.ruleType]}
               required
             />
           </Field>
@@ -264,8 +277,69 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   );
 }
 
-function ActivityPanel({ policyId }: { policyId: string }) {
+function SyncStatusPanel({ policyId }: { policyId: string }) {
+  const { data: breakdown } = useAppControlAgentBreakdown(policyId);
+  return <SyncStatusTable rows={breakdown?.agents ?? []} explanation="Whether each endpoint last applied this policy's rules. Endpoints report every 20 seconds while they are online; blocked programs are listed on the Events tab. Needs Windows agent 0.2.18 or later." />;
+}
+
+// Events tab: one row per assigned endpoint; select a row to list that endpoint's blocked
+// programs under this policy, newest first, with the rule that matched.
+function AgentEvents({ policyId, agentId }: { policyId: string; agentId: string }) {
+  const { data, isLoading, error } = useAppControlPolicyAgentEvents(policyId, agentId);
+  const paged = usePagedList(data ?? [], 25);
+  if (isLoading) return <Skeleton lines={2} />;
+  if (error) return <Alert tone="critical">{(error as Error).message}</Alert>;
+  if (!data || data.length === 0) return <span className="app-muted">No events on this endpoint.</span>;
+  return (
+    <div className="app-table-scroll">
+      <table className="ep-tbl">
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Program</th>
+            <th scope="col">File</th>
+            <th scope="col">Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paged.pageItems.map((e) => (
+            <tr key={e.id}>
+              <td className="app-muted" style={{ whiteSpace: "nowrap" }}>
+                {formatDateTime(e.occurredAt)}
+              </td>
+              <td>{e.processName ?? "—"}</td>
+              <td className="ep-mono" style={{ overflowWrap: "anywhere" }}>
+                {e.matchedPath ?? "—"}
+              </td>
+              <td>
+                {e.ruleValue ? (
+                  <>
+                    <span className="ep-mono">{e.ruleValue}</span>
+                    <span className="app-row-sub">
+                      {e.ruleType ? RULE_TYPE_LABEL[e.ruleType] : "Rule"}
+                      {e.ruleLabel ? ` · ${e.ruleLabel}` : ""}
+                    </span>
+                  </>
+                ) : e.ruleDeleted ? (
+                  <span className="app-muted">Deleted rule</span>
+                ) : (
+                  "—"
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {paged.total > paged.pageSize && (
+        <Pagination page={paged.page} pageSize={paged.pageSize} total={paged.total} noun="events" onPageChange={paged.setPage} />
+      )}
+    </div>
+  );
+}
+
+function EventsPanel({ policyId }: { policyId: string }) {
   const { data: breakdown, isLoading, isError, error, refetch } = useAppControlAgentBreakdown(policyId);
+  const [openAgentId, setOpenAgentId] = useState<string | null>(null);
   const agents = breakdown?.agents ?? [];
   const totalEvents = agents.reduce((sum, a) => sum + a.eventCount, 0);
   const paged = usePagedList(agents, 25);
@@ -275,7 +349,7 @@ function ActivityPanel({ policyId }: { policyId: string }) {
     return (
       <Alert
         tone="critical"
-        title="Couldn't load activity"
+        title="Couldn't load events"
         action={
           <Button size="sm" onClick={() => refetch()}>
             Retry
@@ -302,27 +376,51 @@ function ActivityPanel({ policyId }: { policyId: string }) {
           <table className="ep-tbl">
             <thead>
               <tr>
+                <th scope="col">
+                  <span className="app-vh">Show events</span>
+                </th>
                 <th scope="col">Endpoint</th>
                 <th scope="col">Events</th>
                 <th scope="col">Last event</th>
               </tr>
             </thead>
             <tbody>
-              {paged.pageItems.map((a) => (
-                <tr key={a.agentId}>
-                  <td>
-                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-                  </td>
-                  <td>
-                    {a.eventCount > 0 ? (
-                      <Badge tone="med">{pluralize(a.eventCount, "event")}</Badge>
-                    ) : (
-                      <Badge tone="ok">No activity</Badge>
+              {paged.pageItems.map((a) => {
+                const open = openAgentId === a.agentId;
+                return (
+                  <Fragment key={a.agentId}>
+                    <tr>
+                      <td className="ep-cb">
+                        {a.eventCount > 0 && (
+                          <IconButton
+                            icon={open ? ChevronDown : ChevronRight}
+                            label={open ? `Hide events on ${a.hostname}` : `Show events on ${a.hostname}`}
+                            onClick={() => setOpenAgentId(open ? null : a.agentId)}
+                          />
+                        )}
+                      </td>
+                      <td>
+                        <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                      </td>
+                      <td>
+                        {a.eventCount > 0 ? (
+                          <Badge tone="med">{pluralize(a.eventCount, "event")}</Badge>
+                        ) : (
+                          <Badge tone="ok">No events</Badge>
+                        )}
+                      </td>
+                      <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={4} style={{ background: "var(--ep-surface-2)" }}>
+                          <AgentEvents policyId={policyId} agentId={a.agentId} />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
           {paged.total > paged.pageSize && (
@@ -383,11 +481,11 @@ export default function AppControlPage() {
         title="Application control"
         description={
           <>
-            Restrict which software, utilities, and file extensions are allowed to execute on assigned endpoints. Each
-            rule blocks either a file extension (e.g. blocking script types like <span className="ep-mono">.vbs</span>)
-            or a specific executable by filename or path. Enforcement uses Windows Software Restriction Policy in
-            additive-deny mode — everything stays allowed by default except what a rule explicitly blocks, so a
-            misconfigured policy can never accidentally lock out an entire endpoint.
+            Block programs on assigned endpoints by name, product, publisher or script type. A program named in a rule
+            (e.g. <span className="ep-mono">AnyDesk.exe</span>) is stopped before it opens; renamed copies, other
+            versions and product or publisher matches are closed the moment they start. Everything else stays
+            allowed, and Windows itself and the Endpoint IQ agent can never be blocked. Needs Windows agent 0.2.18 or
+            later.
           </>
         }
         actions={
@@ -523,7 +621,8 @@ export default function AppControlPage() {
           tabs={[
             { value: "rules", label: "Rules", content: <RulesPanel policy={policy} /> },
             { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
-            { value: "activity", label: "Activity", content: <ActivityPanel policyId={policy.id} /> },
+            { value: "events", label: "Events", content: <EventsPanel policyId={policy.id} /> },
+            { value: "sync", label: "Sync status", content: <SyncStatusPanel policyId={policy.id} /> },
             { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
           ]}
         />

@@ -6,6 +6,34 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.21
+- Sets the server address for the Endpoint IQ Mail Guard browser extension (Chrome and Edge) through
+  browser policy, so the extension always reports to this agent's server and the user can't change it.
+
+## 0.2.20
+- Command blocking: protections from the console's list are enforced the moment a command starts
+  (by the same process watcher as Application control); the 20-second check stays as a backstop.
+  The desktop safety net no longer weakens them; Emergency release still turns them off.
+- Command blocking never touches anything the agent itself started (deployments, scripts).
+
+## 0.2.19
+- Application control: a program-name rule such as AnyDesk.exe also catches renamed copies of
+  programs that store no original file name, by their product name or description ("AnyDesk").
+- If the process watcher can't run, every sync closes matching programs instead, and the policy's
+  Sync status shows Failed with the reason (also logged to app-control-watcher.log on the device).
+
+## 0.2.18
+- Application control now really blocks on Windows 11 (Windows ignores the Software Restriction
+  Policy rules earlier agents wrote; they are removed). A program named in a rule is stopped before
+  it opens and the user sees a message; renamed copies, other versions and the new Product name /
+  Publisher rules are closed the moment they start. Every block is reported to the policy's Activity.
+- Self-update also runs on laptops on battery (the update used to wait at "applying").
+- Application control and Command blocking report after every sync, for the policies' new Sync status tab.
+
+## 0.2.17
+- Application control now reports each blocked program (from the Windows event log) to the policy's
+  Activity tab and the endpoint page, instead of always showing no activity.
+
 ## 0.2.16
 - Reports installed software straight away when an admin selects Sync now on the endpoint's Software tab,
   and after every command or deployment finishes (an uninstall no longer shows the app for up to 10 minutes).

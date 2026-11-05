@@ -1,3 +1,4 @@
+import { commandProtection } from "@em/shared";
 import type {
   AssignCommandBlockPolicyRequest,
   CommandBlockRuleType,
@@ -24,7 +25,7 @@ export async function createPolicy(params: CreateCommandBlockPolicyRequest, crea
       name: params.name,
       description: params.description ?? null,
       enabled: params.enabled,
-      enforcementMode: params.enforcementMode,
+      enforcementMode: "BLOCK", // protections are always enforced
       createdByAdminId,
     },
   });
@@ -89,7 +90,6 @@ export async function updatePolicy(id: string, params: UpdateCommandBlockPolicyR
       name: params.name,
       description: params.description,
       enabled: params.enabled,
-      enforcementMode: params.enforcementMode,
     },
   });
   return getPolicy(id);
@@ -106,14 +106,18 @@ export async function deletePolicy(id: string): Promise<boolean> {
 
 export class UnsafeRuleError extends Error {}
 
-// Refuses rules that would stop Windows itself (see @em/shared endpointSafety).
+// Only protections from the catalogue can be added (no custom commands); see @em/shared
+// commandProtections.ts and endpointSafety.
 function assertSafe(ruleType: string, value: string) {
+  if (ruleType !== "PROTECTION") throw new UnsafeRuleError("Custom commands can't be added. Choose protections from the list.");
   const problem = commandBlockRuleProblem(ruleType, value);
   if (problem) throw new UnsafeRuleError(problem);
 }
 
 export async function addRule(policyId: string, params: CreateCommandBlockRuleRequest) {
   assertSafe(params.ruleType, params.value);
+  const existing = await prisma.commandBlockRule.findFirst({ where: { policyId, ruleType: params.ruleType, value: params.value } });
+  if (existing) return getPolicy(policyId); // already ticked
   await prisma.commandBlockRule.create({
     data: { policyId, ruleType: params.ruleType, value: params.value, label: params.label ?? null },
   });
@@ -176,7 +180,21 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   if (!policy) return null;
 
   const assignedAgentIds = await resolveAssignedAgentIdsForPolicy(policyId);
-  const agents = assignedAgentIds.length > 0 ? await prisma.agent.findMany({ where: { id: { in: assignedAgentIds } } }) : [];
+  const agents =
+    assignedAgentIds.length > 0
+      ? await prisma.agent.findMany({ where: { id: { in: assignedAgentIds } }, include: { inventory: { select: { lastLoggedOnUser: true } } } })
+      : [];
+  // Each endpoint's own assignment row (a direct one wins over one via a group) holds its sync status.
+  const assignments = await prisma.commandBlockPolicyAssignment.findMany({ where: { policyId }, include: { group: true } });
+  const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
+  const memberships =
+    groupIds.length > 0 && assignedAgentIds.length > 0
+      ? await prisma.agentGroupMembership.findMany({ where: { groupId: { in: groupIds }, agentId: { in: assignedAgentIds } }, select: { agentId: true, groupId: true } })
+      : [];
+  const assignmentForAgent = (agentId: string) =>
+    assignments.find((a) => a.agentId === agentId) ??
+    assignments.find((a) => a.groupId && memberships.some((m) => m.agentId === agentId && m.groupId === a.groupId)) ??
+    null;
   const events = await prisma.commandBlockEvent.findMany({ where: { policyId }, orderBy: { occurredAt: "desc" } });
 
   const eventsByAgent = new Map<string, typeof events>();
@@ -191,9 +209,15 @@ export async function getPolicyAgentBreakdown(policyId: string) {
     name: policy.name,
     agents: agents.map((a) => {
       const agentEvents = eventsByAgent.get(a.id) ?? [];
+      const assignment = assignmentForAgent(a.id);
       return {
         agentId: a.id,
         hostname: a.hostname,
+        groupName: assignment?.group?.name ?? null,
+        lastLoggedOnUser: a.inventory?.lastLoggedOnUser ?? null,
+        lastSyncedAt: assignment?.lastSyncedAt?.toISOString() ?? null,
+        lastSyncStatus: assignment?.lastSyncStatus ?? null,
+        lastSyncError: assignment?.lastSyncError ?? null,
         eventCount: agentEvents.length,
         lastEventAt: agentEvents[0]?.occurredAt.toISOString() ?? null,
       };
@@ -218,11 +242,34 @@ export async function getEventsForAgent(agentId: string) {
       id: e.id,
       // A rule can be deleted after it produced past events — describe it by its
       // last-known value rather than dropping the match from history.
-      ruleLabel: rule?.label || rule?.value || "(deleted rule)",
+      ruleLabel: rule?.label || (rule?.ruleType === "PROTECTION" ? commandProtection(rule.value)?.title : rule?.value) || "(deleted rule)",
       matchedCommandLine: e.matchedCommandLine,
       processName: e.processName,
       action: e.action,
       occurredAt: e.occurredAt.toISOString(),
+    };
+  });
+}
+
+// Events tab: one endpoint's matched commands under this policy, newest first, with the rule
+// that matched (described by its last-known value if it has since been deleted).
+export async function getPolicyEventsForAgent(policyId: string, agentId: string) {
+  const events = await prisma.commandBlockEvent.findMany({ where: { policyId, agentId }, orderBy: { occurredAt: "desc" }, take: 500 });
+  const ruleIds = [...new Set(events.map((e) => e.ruleId))];
+  const rules = ruleIds.length > 0 ? await prisma.commandBlockRule.findMany({ where: { id: { in: ruleIds } } }) : [];
+  const ruleById = new Map(rules.map((r) => [r.id, r]));
+  return events.map((e) => {
+    const rule = ruleById.get(e.ruleId);
+    return {
+      id: e.id,
+      occurredAt: e.occurredAt.toISOString(),
+      ruleType: rule?.ruleType ?? null,
+      ruleValue: rule?.value ?? null,
+      ruleLabel: rule?.label ?? null,
+      ruleDeleted: !rule,
+      matchedCommandLine: e.matchedCommandLine,
+      processName: e.processName,
+      action: e.action,
     };
   });
 }

@@ -10,6 +10,7 @@ import {
   useIpBlockPolicies,
   usePolicyAccessExceptions,
   useRejectPolicyAccessException,
+  useEndPolicyAccessException,
   useUsbControlPolicies,
   useWebBlockPolicies,
 } from "../api/hooks";
@@ -55,12 +56,13 @@ const DURATION_OPTIONS = [
   { minutes: 10080, label: "7 days" },
 ];
 
-type DisplayStatus = "pending" | "active" | "expired" | "rejected";
+type DisplayStatus = "pending" | "active" | "expired" | "ended" | "rejected";
 
-// Approved requests are "Active" until they expire; the server sets isActive.
+// Approved requests are "Active" until they expire or an admin ends them; the server sets isActive.
 function displayStatus(r: PolicyAccessExceptionView): DisplayStatus {
   if (r.status === "PENDING") return "pending";
   if (r.status === "REJECTED") return "rejected";
+  if (r.status === "ENDED") return "ended";
   return r.isActive ? "active" : "expired";
 }
 
@@ -68,6 +70,7 @@ const STATUS_BADGE: Record<DisplayStatus, { tone: BadgeTone; label: string }> = 
   pending: { tone: "med", label: "Pending" },
   active: { tone: "ok", label: "Active" },
   expired: { tone: "crit", label: "Expired" },
+  ended: { tone: "neu", label: "Ended early" },
   rejected: { tone: "crit", label: "Rejected" },
 };
 
@@ -207,6 +210,7 @@ export default function AccessExceptionsPage() {
   const { data: requests, isLoading, error, refetch } = usePolicyAccessExceptions();
   const approve = useApprovePolicyAccessException();
   const reject = useRejectPolicyAccessException();
+  const end = useEndPolicyAccessException();
   const confirm = useConfirm();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -225,6 +229,17 @@ export default function AccessExceptionsPage() {
         POLICY_TYPE_LABELS[r.policyType].toLowerCase().includes(term)),
   );
   const paged = usePagedList(filtered, 25);
+
+  async function handleEnd(r: PolicyAccessExceptionView) {
+    const confirmed = await confirm({
+      title: `End the exception for ${r.hostname ?? "this endpoint"} now?`,
+      body: `"${r.policyName}" applies to it again within about 20 seconds, before the exception would have expired (${formatDateTime(r.expiresAt)}).`,
+      confirmLabel: "End exception",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    end.mutate({ id: r.id });
+  }
 
   async function handleReject(r: PolicyAccessExceptionView) {
     const confirmed = await confirm({
@@ -251,8 +266,9 @@ export default function AccessExceptionsPage() {
 
       <Alert tone="info" title="How exceptions take effect">
         The exception filter is applied server-side, so it takes effect the next time that endpoint syncs (within about
-        20 seconds), and expires automatically with no separate revert step. A request must be approved by a different
-        admin than the one who raised it.
+        20 seconds), and expires automatically with no separate revert step. Select End now on an active exception to
+        end it early; the policy applies again within about 20 seconds. A request must be approved by a different admin
+        than the one who raised it.
       </Alert>
 
       <Card flush>
@@ -267,6 +283,7 @@ export default function AccessExceptionsPage() {
                 { value: "pending", label: `Pending ${countOf("pending")}` },
                 { value: "active", label: `Active ${countOf("active")}` },
                 { value: "expired", label: `Expired ${countOf("expired")}` },
+                { value: "ended", label: `Ended early ${countOf("ended")}` },
                 { value: "rejected", label: `Rejected ${countOf("rejected")}` },
               ]}
             />
@@ -279,6 +296,7 @@ export default function AccessExceptionsPage() {
           <div className="ep-cb app-stack-sm">
             {approve.isError && <Alert tone="critical">{(approve.error as Error).message}</Alert>}
             {reject.isError && <Alert tone="critical">{(reject.error as Error).message}</Alert>}
+            {end.isError && <Alert tone="critical">{(end.error as Error).message}</Alert>}
           </div>
         )}
 
@@ -355,6 +373,13 @@ export default function AccessExceptionsPage() {
                               </Button>
                               <Button size="sm" variant="danger" icon={X} onClick={() => handleReject(r)} disabled={reject.isPending}>
                                 Reject
+                              </Button>
+                            </div>
+                          )}
+                          {displayStatus(r) === "active" && (
+                            <div className="app-cell-actions">
+                              <Button size="sm" variant="danger" icon={X} onClick={() => handleEnd(r)} disabled={end.isPending}>
+                                End now
                               </Button>
                             </div>
                           )}

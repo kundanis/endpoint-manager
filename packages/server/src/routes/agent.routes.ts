@@ -5,6 +5,7 @@ import {
   appControlScanResultPayloadSchema,
   checkinRequestSchema,
   commandBlockEventBatchPayloadSchema,
+  commandBlockSyncResultPayloadSchema,
   commandTaskResultPayloadSchema,
   dataDiscoveryScanResultPayloadSchema,
   dataMovementScanResultPayloadSchema,
@@ -71,6 +72,7 @@ import {
 } from "../services/piiBlockScan.service";
 import {
   recordEvents as recordCommandBlockEvents,
+  recordSyncResult as recordCommandBlockSyncResult,
   resolveAssignedRulesForAgent as resolveAssignedCommandBlockRulesForAgent,
 } from "../services/commandBlockScan.service";
 import {
@@ -512,6 +514,16 @@ agentRouter.post("/command-block/events", async (req, res, next) => {
   try {
     const payload = commandBlockEventBatchPayloadSchema.parse(req.body);
     await recordCommandBlockEvents(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/command-block/scan-result", async (req, res, next) => {
+  try {
+    const payload = commandBlockSyncResultPayloadSchema.parse(req.body);
+    await recordCommandBlockSyncResult(req.agentId!, payload);
     res.status(204).send();
   } catch (err) {
     next(err);

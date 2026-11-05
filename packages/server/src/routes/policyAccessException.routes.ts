@@ -4,12 +4,14 @@ import {
   AgentNotFoundError,
   PolicyNotFoundError,
   RequestAlreadyResolvedError,
+  RequestNotActiveError,
   RequestNotFoundError,
   SelfApprovalError,
   approveRequest,
   createRequest,
   listRequests,
   rejectRequest,
+  endRequest,
 } from "../services/policyAccessException.service";
 
 export const policyAccessExceptionRouter = Router();
@@ -54,6 +56,17 @@ policyAccessExceptionRouter.post("/:id/reject", async (req, res, next) => {
   } catch (err) {
     if (err instanceof RequestNotFoundError) return res.status(404).json({ error: "Request not found" });
     if (err instanceof RequestAlreadyResolvedError) return res.status(409).json({ error: "This request has already been resolved" });
+    next(err);
+  }
+});
+
+policyAccessExceptionRouter.post("/:id/end", async (req, res, next) => {
+  try {
+    const payload = resolvePolicyAccessExceptionRequestSchema.parse(req.body ?? {});
+    res.json(await endRequest(req.params.id, payload.resolutionNote));
+  } catch (err) {
+    if (err instanceof RequestNotFoundError) return res.status(404).json({ error: "Request not found" });
+    if (err instanceof RequestNotActiveError) return res.status(409).json({ error: "This exception isn't active any more" });
     next(err);
   }
 });

@@ -107,10 +107,10 @@ export const DATA_TOPICS: HelpTopic[] = [
     ],
   },
   {
-    id: "dlp-email",
+    id: "epm-email",
     module: "Data Governance",
-    title: "DLP: Email attachment blocking",
-    path: "/dlp/email-attachment-block",
+    title: "EPM: Email attachment blocking",
+    path: "/epm/email-attachment-block",
     summary: "An Outlook add-in that blocks or warns before an email leaves with personal data in an attachment.",
     keywords: ["outlook", "email", "attachment", "microsoft 365", "add-in"],
     sections: [
@@ -129,7 +129,7 @@ export const DATA_TOPICS: HelpTopic[] = [
         id: "dlp-email-set",
         title: "Stop emails with Aadhaar attachments",
         steps: [
-          { route: "/dlp/email-attachment-block", text: "Select New policy and create it.", target: { kind: "button", label: "New policy" } },
+          { route: "/epm/email-attachment-block", text: "Select New policy and create it.", target: { kind: "button", label: "New policy" } },
           { text: "On Blocked categories, add Aadhaar number (and others you need).", target: { kind: "tab", label: "Blocked categories" } },
           { text: "On Assignment, paste the mailboxes to protect.", target: { kind: "tab", label: "Assignment" } },
         ],
@@ -137,10 +137,10 @@ export const DATA_TOPICS: HelpTopic[] = [
     ],
   },
   {
-    id: "dlp-screen",
+    id: "dm-screen",
     module: "Data Governance",
-    title: "DLP: Screen capture",
-    path: "/dlp/screen-capture",
+    title: "Data movement: Screen capture",
+    path: "/data-movement/screen-capture",
     summary: "Flags users who take many screenshots, delete them soon after, or open them in a browser, WhatsApp or Outlook. Only details are collected, never the image.",
     keywords: ["screenshot", "snipping tool", "print screen", "screen capture"],
     sections: [
@@ -157,7 +157,7 @@ export const DATA_TOPICS: HelpTopic[] = [
       {
         id: "screen-set",
         title: "Report users taking more than 10 screenshots a day",
-        steps: policySteps("/dlp/screen-capture", "Settings", "Check the Daily threshold (10 by default) and the sources in Settings."),
+        steps: policySteps("/data-movement/screen-capture", "Settings", "Check the Daily threshold (10 by default) and the sources in Settings."),
       },
     ],
   },
@@ -185,9 +185,18 @@ export const DATA_TOPICS: HelpTopic[] = [
     module: "Data Governance",
     title: "EPM: Application control",
     path: "/epm/app-control",
-    summary: "Block applications by name or path, or whole file types such as scripts. Everything else stays allowed.",
-    keywords: ["block app", "whitelist", "blacklist", "executable", "software restriction", "black screen", "emergency"],
+    summary: "Block applications by name, path, product or publisher, or script types such as .vbs. Everything else stays allowed.",
+    keywords: ["block app", "whitelist", "blacklist", "executable", "renamed", "publisher", "product", "anydesk", "telegram", "black screen", "emergency"],
     sections: [
+      {
+        title: "How blocking works",
+        items: [
+          "A program named in a rule (for example AnyDesk.exe) is stopped before it opens, and the user sees a message.",
+          "Renamed copies (the original name is stored inside the program), other versions, and Product name or Publisher rules are closed the moment they start.",
+          "Each block is listed on the policy's Events tab within about 20 seconds; select an endpoint to see every blocked program, its file and the rule that matched. Needs Windows agent 0.2.18 or later.",
+          "Blocking the program doesn't block its website: add web.telegram.org (for example) under Web & email blocking too.",
+        ],
+      },
       {
         title: "Built-in safety",
         items: [
@@ -210,7 +219,7 @@ export const DATA_TOPICS: HelpTopic[] = [
       {
         id: "epm-app-block",
         title: "Block an application",
-        steps: policySteps("/epm/app-control", "Rules", "On the Rules tab, add the executable (for example AnyDesk.exe), or use Add from data type."),
+        steps: policySteps("/epm/app-control", "Rules", "On the Rules tab, add the program name (for example AnyDesk.exe); to catch renamed copies and new versions too, add its Product name or Publisher as well."),
       },
     ],
   },
@@ -230,17 +239,17 @@ export const DATA_TOPICS: HelpTopic[] = [
     ],
   },
   {
-    id: "epm-pii",
+    id: "dlp-pii",
     module: "Data Governance",
-    title: "EPM: PII data blocking",
-    path: "/epm/pii-block",
+    title: "DLP: PII data blocking",
+    path: "/dlp/pii-block",
     summary: "Policies for blocking file writes, clipboard copies and uploads containing chosen categories of personal data.",
     keywords: ["pii", "clipboard", "upload"],
     howTos: [
       {
-        id: "epm-pii-set",
+        id: "dlp-pii-set",
         title: "Set up a PII blocking policy",
-        steps: policySteps("/epm/pii-block", "Blocked categories", "On Blocked categories, add the personal data categories to block."),
+        steps: policySteps("/dlp/pii-block", "Blocked categories", "On Blocked categories, add the personal data categories to block."),
       },
     ],
   },
@@ -249,17 +258,24 @@ export const DATA_TOPICS: HelpTopic[] = [
     module: "Data Governance",
     title: "EPM: Command blocking",
     path: "/epm/command-block",
-    summary: "Stop specific commands or programs (or only alert on them). Browsers and core system processes are always protected.",
-    keywords: ["powershell", "cmd", "kill process"],
+    summary: "Stop harmful commands - deleting backups, turning off antivirus, wiping disks and more - on Windows, Linux and macOS. Pick from a fixed list; each endpoint gets the commands for its own system.",
+    keywords: ["powershell", "cmd", "kill process", "ransomware", "harmful commands", "linux", "mac"],
+    sections: [
+      {
+        title: "How it works",
+        items: [
+          "Each protection describes a harmful action in plain words. Custom commands can't be added.",
+          "An endpoint receives only the commands for its own operating system; a matching command is closed the moment it starts and listed on the Events tab.",
+          "Protections are always enforced. Emergency release (or pausing an endpoint) turns them off.",
+          "Windows' own processes, browsers and the Endpoint IQ agent are never touched.",
+        ],
+      },
+    ],
     howTos: [
       {
         id: "epm-cmd-block",
-        title: "Block a command",
-        steps: policySteps(
-          "/epm/command-block",
-          "Blocked commands",
-          "On Blocked commands, add a pattern, exact command line or process name. Start in Alert only mode to see what would be stopped.",
-        ),
+        title: "Stop harmful commands",
+        steps: policySteps("/epm/command-block", "Protections", "On Protections, turn on the harmful actions to stop, for example Stop deletion of backups and restore points."),
       },
     ],
   },

@@ -24,6 +24,8 @@ import type {
 import { NAV_MODULES } from "../navConfig";
 import { api } from "./client";
 import type {
+  AppControlPolicyEvent,
+  CommandBlockPolicyEvent,
   AgentHistory,
   AgentAppControlEventView,
   AgentBuildInfo,
@@ -2081,6 +2083,14 @@ export function useUnassignAppControlPolicy() {
   });
 }
 
+export function useAppControlPolicyAgentEvents(policyId: string, agentId: string) {
+  return useQuery({
+    queryKey: ["appControlPolicyAgentEvents", policyId, agentId],
+    queryFn: () => api.get<AppControlPolicyEvent[]>(`/admin/app-control/${policyId}/agents/${agentId}/events`),
+    refetchInterval: 10_000,
+  });
+}
+
 export function useAppControlAgentBreakdown(policyId: string | undefined) {
   return useQuery({
     queryKey: ["appControlAgentBreakdown", policyId],
@@ -2826,6 +2836,16 @@ export function useRejectPolicyAccessException() {
   });
 }
 
+// Ends an active exception before its time is up; the policy applies again within about 20 seconds.
+export function useEndPolicyAccessException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, resolutionNote }: { id: string; resolutionNote?: string | null }) =>
+      api.post<PolicyAccessExceptionView>(`/admin/policy-exceptions/${id}/end`, { resolutionNote }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policyAccessExceptions"] }),
+  });
+}
+
 export function useCommandBlockPolicies() {
   return useQuery({
     queryKey: ["commandBlockPolicies"],
@@ -2885,7 +2905,7 @@ export function useDeleteCommandBlockPolicy() {
 }
 
 export interface CommandBlockRuleInput {
-  ruleType?: "COMMAND_PATTERN" | "EXACT_COMMAND_LINE" | "PROCESS_NAME";
+  ruleType?: "COMMAND_PATTERN" | "EXACT_COMMAND_LINE" | "PROCESS_NAME" | "PROTECTION";
   value: string;
   label?: string | null;
 }
@@ -2961,6 +2981,14 @@ export function useUnassignCommandBlockPolicy() {
       qc.invalidateQueries({ queryKey: ["commandBlockPolicies", variables.policyId] });
       qc.invalidateQueries({ queryKey: ["commandBlockAssignments", variables.policyId] });
     },
+  });
+}
+
+export function useCommandBlockPolicyAgentEvents(policyId: string, agentId: string) {
+  return useQuery({
+    queryKey: ["commandBlockPolicyAgentEvents", policyId, agentId],
+    queryFn: () => api.get<CommandBlockPolicyEvent[]>(`/admin/command-block/${policyId}/agents/${agentId}/events`),
+    refetchInterval: 10_000,
   });
 }
 

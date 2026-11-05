@@ -23,6 +23,7 @@ import UserRiskUserPage from "./pages/UserRiskUserPage";
 import AdminLogsPage from "./pages/AdminLogsPage";
 import HelpCenterPage from "./pages/HelpCenterPage";
 import DataMovementPage from "./pages/DataMovementPage";
+import DataMovementLayout from "./pages/DataMovementLayout";
 import EpmPage from "./pages/EpmPage";
 import DataTypesPage from "./pages/DataTypesPage";
 import AppControlPage from "./pages/AppControlPage";
@@ -75,15 +76,23 @@ export default function App() {
         <Route path="/dlp" element={<RequireModule module="DATA_MANAGER"><DlpPage /></RequireModule>}>
           <Route index element={<Navigate to="content-policies" replace />} />
           <Route path="content-policies" element={<DlpContentPoliciesPage />} />
-          <Route path="email-attachment-block" element={<EmailAttachmentBlockPage />} />
+          <Route path="pii-block" element={<PiiBlockPage />} />
+          {/* Moved: email attachment blocking to EPM, screen capture to Data movement. Old links still work. */}
+          <Route path="email-attachment-block" element={<Navigate to="/epm/email-attachment-block" replace />} />
+          <Route path="screen-capture" element={<Navigate to="/data-movement/screen-capture" replace />} />
+        </Route>
+        <Route path="/data-movement" element={<RequireModule module="DATA_MANAGER"><DataMovementLayout /></RequireModule>}>
+          <Route index element={<Navigate to="files" replace />} />
+          <Route path="files" element={<DataMovementPage />} />
           <Route path="screen-capture" element={<ScreenCapturePage />} />
         </Route>
-        <Route path="/data-movement" element={<RequireModule module="DATA_MANAGER"><DataMovementPage /></RequireModule>} />
         <Route path="/epm" element={<RequireModule module="DATA_MANAGER"><EpmPage /></RequireModule>}>
           <Route index element={<Navigate to="app-control" replace />} />
           <Route path="app-control" element={<AppControlPage />} />
           <Route path="web-block" element={<WebBlockPage />} />
-          <Route path="pii-block" element={<PiiBlockPage />} />
+          <Route path="email-attachment-block" element={<EmailAttachmentBlockPage />} />
+          {/* PII data blocking moved to DLP; old links still work. */}
+          <Route path="pii-block" element={<Navigate to="/dlp/pii-block" replace />} />
           <Route path="command-block" element={<CommandBlockPage />} />
           <Route path="ip-block" element={<IpBlockPage />} />
           <Route path="usb-control" element={<UsbControlPage />} />

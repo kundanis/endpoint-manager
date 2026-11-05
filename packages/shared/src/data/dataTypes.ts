@@ -26,10 +26,10 @@ export type DataTypeTarget = (typeof DATA_TYPE_TARGETS)[number];
 
 export const DATA_TYPE_TARGET_LABELS: Record<DataTypeTarget, string> = {
   dlp: "DLP content & file policies",
-  piiEmailBlock: "DLP email attachment blocking",
+  piiEmailBlock: "EPM email attachment blocking",
   appControl: "EPM application control",
   webBlock: "EPM web & email blocking",
-  piiBlock: "EPM PII data blocking",
+  piiBlock: "DLP PII data blocking",
   commandBlock: "EPM command blocking",
 };
 
@@ -39,7 +39,9 @@ export const DATA_TYPE_RULE_TYPES: Record<DataTypeTarget, Partial<Record<DataTyp
   appControl: { FILE_EXTENSION: "EXTENSION", PROCESS_NAME: "EXECUTABLE" },
   webBlock: { DOMAIN: "DOMAIN" },
   piiBlock: { PII_PATTERN: "PII_PATTERN" },
-  commandBlock: { PROCESS_NAME: "PROCESS_NAME" },
+  // Command blocking only takes protections from its own list (commandProtections.ts), so no
+  // data type can be added to it.
+  commandBlock: {},
 };
 
 export function targetsForKind(kind: DataTypeKind): DataTypeTarget[] {

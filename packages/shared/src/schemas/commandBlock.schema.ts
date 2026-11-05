@@ -4,7 +4,10 @@ import { z } from "zod";
 // most powerful option, and the one with the most false-positive risk if written too
 // broadly. EXACT_COMMAND_LINE/PROCESS_NAME are lower-risk, precise alternatives for when an
 // admin knows exactly what they want to match and doesn't need (or want) regex power.
-export const COMMAND_BLOCK_RULE_TYPES = ["COMMAND_PATTERN", "EXACT_COMMAND_LINE", "PROCESS_NAME"] as const;
+// PROTECTION: value is a key from COMMAND_PROTECTIONS (data/commandProtections.ts) - the only
+// kind admins can add. The server expands it into the COMMAND_PATTERN rules for each endpoint's
+// OS. The other kinds remain for the wire format and older stored rules, which aren't enforced.
+export const COMMAND_BLOCK_RULE_TYPES = ["COMMAND_PATTERN", "EXACT_COMMAND_LINE", "PROCESS_NAME", "PROTECTION"] as const;
 export type CommandBlockRuleType = (typeof COMMAND_BLOCK_RULE_TYPES)[number];
 
 // Same two-mode shape as DLP's enforcementMode. New policies default to ALERT_ONLY - a
@@ -17,7 +20,7 @@ export const COMMAND_BLOCK_ENFORCEMENT_MODES = ["ALERT_ONLY", "BLOCK"] as const;
 export type CommandBlockEnforcementMode = (typeof COMMAND_BLOCK_ENFORCEMENT_MODES)[number];
 
 export const createCommandBlockRuleRequestSchema = z.object({
-  ruleType: z.enum(COMMAND_BLOCK_RULE_TYPES).default("COMMAND_PATTERN"),
+  ruleType: z.enum(COMMAND_BLOCK_RULE_TYPES).default("PROTECTION"),
   value: z.string().min(1).max(500),
   label: z.string().max(200).nullable().optional(),
 });
@@ -87,3 +90,11 @@ export const commandBlockEventBatchPayloadSchema = z.object({
   events: z.array(commandBlockEventPayloadSchema).max(200),
 });
 export type CommandBlockEventBatchPayload = z.infer<typeof commandBlockEventBatchPayloadSchema>;
+
+// Sent after every scan (whether or not anything matched) so the policy's Sync status tab can
+// show that each endpoint has the current rules.
+export const commandBlockSyncResultPayloadSchema = z.object({
+  status: z.enum(["SUCCESS", "FAILED"]),
+  errorMessage: z.string().max(1000).nullable(),
+});
+export type CommandBlockSyncResultPayload = z.infer<typeof commandBlockSyncResultPayloadSchema>;

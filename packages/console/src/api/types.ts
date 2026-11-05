@@ -1,5 +1,6 @@
 import type {
   AppControlRuleType,
+  CommandBlockRuleType,
   DataDiscoveryRegulation,
   DlpEnforcementMode,
   DlpRuleType,
@@ -1069,6 +1070,11 @@ export interface AppControlAssignmentView {
 export interface AppControlAgentRow {
   agentId: string;
   hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
   eventCount: number;
   lastEventAt: string | null;
 }
@@ -1334,7 +1340,7 @@ export interface UsbControlEventView {
   occurredAt: string;
 }
 
-export type PolicyAccessExceptionStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type PolicyAccessExceptionStatus = "PENDING" | "APPROVED" | "REJECTED" | "ENDED"; // ENDED: ended early by an admin
 
 export interface PolicyAccessExceptionView {
   id: string;
@@ -1369,7 +1375,7 @@ export interface CommandBlockPolicySummary {
 
 export interface CommandBlockRuleView {
   id: string;
-  ruleType: "COMMAND_PATTERN" | "EXACT_COMMAND_LINE" | "PROCESS_NAME";
+  ruleType: "COMMAND_PATTERN" | "EXACT_COMMAND_LINE" | "PROCESS_NAME" | "PROTECTION";
   value: string;
   label: string | null;
 }
@@ -1389,6 +1395,11 @@ export interface CommandBlockAssignmentView {
 export interface CommandBlockAgentRow {
   agentId: string;
   hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
   eventCount: number;
   lastEventAt: string | null;
 }
@@ -1774,4 +1785,28 @@ export interface AgentAdminAction {
 export interface AgentHistory {
   softwareChanges: AgentSoftwareChange[];
   adminActions: AgentAdminAction[] | null; // null for admins who aren't super admins
+}
+
+// EPM -> Application control / Command blocking -> Events tab: one endpoint's events under a policy.
+export interface AppControlPolicyEvent {
+  id: string;
+  occurredAt: string;
+  ruleType: AppControlRuleType | null;
+  ruleValue: string | null;
+  ruleLabel: string | null;
+  ruleDeleted: boolean;
+  matchedPath: string | null;
+  processName: string | null;
+}
+
+export interface CommandBlockPolicyEvent {
+  id: string;
+  occurredAt: string;
+  ruleType: CommandBlockRuleType | null;
+  ruleValue: string | null;
+  ruleLabel: string | null;
+  ruleDeleted: boolean;
+  matchedCommandLine: string;
+  processName: string | null;
+  action: "ALERTED" | "BLOCKED";
 }

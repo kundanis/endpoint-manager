@@ -1,12 +1,17 @@
 import { z } from "zod";
 
-export const APP_CONTROL_RULE_TYPES = ["EXTENSION", "EXECUTABLE"] as const;
+// EXECUTABLE also matches a renamed copy by the original file name stored inside the program;
+// PRODUCT and PUBLISHER match what is stored inside / signed onto the program, so they survive
+// renames and new versions.
+export const APP_CONTROL_RULE_TYPES = ["EXTENSION", "EXECUTABLE", "PRODUCT", "PUBLISHER"] as const;
 export type AppControlRuleType = (typeof APP_CONTROL_RULE_TYPES)[number];
 
 export const createAppControlRuleRequestSchema = z.object({
   ruleType: z.enum(APP_CONTROL_RULE_TYPES),
   // EXTENSION: e.g. ".vbs" (blocked as a Script-collection SRP path rule "*.vbs").
   // EXECUTABLE: a filename (e.g. "utorrent.exe") or full path.
+  // PRODUCT: the product name inside the program (e.g. "AnyDesk"); * wildcards allowed.
+  // PUBLISHER: the company the program is signed by or names (e.g. "AnyDesk Software GmbH").
   value: z.string().min(1).max(500),
   label: z.string().max(200).nullable().optional(),
 });
@@ -51,8 +56,7 @@ export const assignedAppControlResponseSchema = z.object({
 });
 export type AssignedAppControlResponse = z.infer<typeof assignedAppControlResponseSchema>;
 
-// ruleId is nullable — an SRP block detected via the Windows event log can't always be
-// correlated back to the specific rule that caused it.
+// ruleId is nullable - an event can't always be matched back to the rule that caused it.
 export const appControlEventPayloadSchema = z.object({
   ruleId: z.string().nullable(),
   matchedPath: z.string().max(1000).nullable(),

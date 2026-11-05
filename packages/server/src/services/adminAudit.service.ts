@@ -1,3 +1,4 @@
+import { commandProtection } from "@em/shared";
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db";
 import { logger } from "../logger";
@@ -141,6 +142,9 @@ const VERBS: Record<string, string> = {
   delete: "Deleted",
   "emergency-release": "Emergency release - paused every endpoint",
   "resume-all": "Resumed every paused endpoint",
+  approve: "Approved",
+  reject: "Rejected",
+  end: "Ended early",
 };
 
 // GET requests that read sensitive data - logged as views.
@@ -161,7 +165,9 @@ export function describe(method: string, path: string, body: unknown): { module:
   const targetId = parts.find((p) => ID.test(p)) ?? null;
   const last = [...parts].reverse().find((p) => !ID.test(p)) ?? "";
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const name = [b.name, b.title, b.email, b.hostname, b.label, b.softwareName].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+  // A Command blocking protection is named by its title, not its key.
+  const protection = b.ruleType === "PROTECTION" && typeof b.value === "string" ? commandProtection(b.value)?.title : undefined;
+  const name = [protection, b.name, b.title, b.email, b.hostname, b.label, b.softwareName].find((v) => typeof v === "string" && v.trim()) as string | undefined;
 
   let action: string;
   let verb: string;

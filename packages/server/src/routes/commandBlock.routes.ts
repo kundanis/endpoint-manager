@@ -15,6 +15,7 @@ import {
   getEventsForAgent,
   getPolicy,
   getPolicyAgentBreakdown,
+  getPolicyEventsForAgent,
   listAssignments,
   listPolicies,
   unassign,
@@ -151,6 +152,14 @@ commandBlockRouter.delete("/:id/assign/:assignmentId", async (req, res, next) =>
     const removed = await unassign(req.params.id, req.params.assignmentId);
     if (!removed) return res.status(404).json({ error: "Assignment not found" });
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+commandBlockRouter.get("/:id/agents/:agentId/events", async (req, res, next) => {
+  try {
+    res.json(await getPolicyEventsForAgent(req.params.id, req.params.agentId));
   } catch (err) {
     next(err);
   }

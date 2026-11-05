@@ -15,6 +15,15 @@ test("application control refuses rules that would stop Windows", () => {
   }
 });
 
+test("application control product and publisher rules refuse Microsoft, Windows and the agent", () => {
+  for (const [type, v] of [["PUBLISHER", "Microsoft Corporation"], ["PUBLISHER", "microsoft"], ["PRODUCT", "Microsoft® Windows® Operating System"], ["PRODUCT", "*Windows*"], ["PRODUCT", "Endpoint IQ"], ["PUBLISHER", "*"], ["PRODUCT", "ab"]]) {
+    assert.ok(appControlRuleProblem(type, v), `${type} ${v} should be refused`);
+  }
+  for (const [type, v] of [["PUBLISHER", "AnyDesk Software GmbH"], ["PUBLISHER", "Telegram FZ-LLC"], ["PRODUCT", "Telegram Desktop"], ["PRODUCT", "AnyDesk"], ["PRODUCT", "uTorrent*"]]) {
+    assert.equal(appControlRuleProblem(type, v), null, `${type} ${v} should be allowed`);
+  }
+});
+
 test("command blocking refuses patterns that match Windows, but allows real threats", () => {
   for (const p of [".*", "", "exe", "\\\\", "windows", "svchost", "explorer"]) {
     assert.ok(commandBlockRuleProblem("COMMAND_PATTERN", p), `pattern "${p}" should be refused`);

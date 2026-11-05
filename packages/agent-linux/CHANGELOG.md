@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.5
+- New: Command blocking. Harmful commands chosen in the console (deleting logs, turning off the
+  firewall, wiping disks, creating admin accounts and more) are stopped as soon as they start and
+  reported to the policy's Events tab.
+
 ## 0.1.4
 - Ships its own Node.js 22 runtime (x64 and arm64), so the agent no longer depends on the Linux
   machine's Node.js - an old distro Node (Ubuntu 22.04: v12) made it crash with MODULE_NOT_FOUND.

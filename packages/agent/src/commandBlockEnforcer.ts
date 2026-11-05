@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
+import fsp from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
-import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlockRuleWire } from "@em/shared";
+import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlockRuleWire, CommandBlockSyncResultPayload } from "@em/shared";
 import { COMMAND_BLOCK_KILLABLE_WINDOWS_TOOLS, COMMAND_BLOCK_MAX_KILLS_PER_SCAN, COMMAND_BLOCK_PROTECTED_PROCESS_NAMES, commandBlockRuleProblem } from "@em/shared";
-import { isEnforcementSuspended } from "./shellHealthGuard";
+import { commandRulesFile } from "./appControlPaths";
+import { drainCommandWatcherEvents, ensureProcessWatcher, processWatcherProblem } from "./appControlEnforcer";
 
 const execFileAsync = promisify(execFile);
 
@@ -60,8 +63,17 @@ ${rulesLiteral}
 )
 
 $matches = @()
-$processes = Get-CimInstance Win32_Process | Where-Object {
-  $_.ProcessId -ne $ownPid -and $_.ProcessId -ne $PID -and $_.ParentProcessId -ne $ownPid -and $_.ParentProcessId -ne $PID -and ($protectedNames -notcontains $_.Name.ToLowerInvariant()) -and -not ($_.ExecutablePath -and $_.ExecutablePath.ToLowerInvariant().StartsWith($windowsDir) -and ($killableTools -notcontains $_.Name.ToLowerInvariant()))
+$all = @(Get-CimInstance Win32_Process)
+# The agent, this scan and everything they started (deployments, scripts) are never matched.
+$agentTree = New-Object 'System.Collections.Generic.HashSet[int]'
+[void]$agentTree.Add($ownPid)
+[void]$agentTree.Add($PID)
+do {
+  $added = 0
+  foreach ($p in $all) { if (-not $agentTree.Contains([int]$p.ProcessId) -and $agentTree.Contains([int]$p.ParentProcessId)) { [void]$agentTree.Add([int]$p.ProcessId); $added++ } }
+} while ($added -gt 0)
+$processes = $all | Where-Object {
+  -not $agentTree.Contains([int]$_.ProcessId) -and ($protectedNames -notcontains $_.Name.ToLowerInvariant()) -and -not ($_.ExecutablePath -and $_.ExecutablePath.ToLowerInvariant().StartsWith($windowsDir) -and ($killableTools -notcontains $_.Name.ToLowerInvariant())) -and -not ($_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains('endpointpro'))
 }
 
 foreach ($proc in $processes) {
@@ -115,9 +127,28 @@ if ($matches.Count -eq 0) {
 `;
 }
 
-// Never throws — any failure is caught and logged; there is no sync-status to report back
-// for this module (unlike webBlock), since a scan producing zero matches is not itself
-// meaningful telemetry. Skips the WMI query entirely when no rules are assigned.
+// The policy's Sync status tab: whether this device scanned with the current rules.
+async function reportSync(client: AxiosInstance, status: "SUCCESS" | "FAILED", errorMessage: string | null): Promise<void> {
+  const payload: CommandBlockSyncResultPayload = { status, errorMessage: errorMessage?.slice(0, 1000) ?? null };
+  await client.post("/api/agent/command-block/scan-result", payload).catch((err) => console.error("Failed to report Command Block sync", err));
+}
+
+// Writes the rules the process watcher (appControlEnforcer.ts) enforces the moment a command
+// starts; "[]" stops it.
+async function writeWatcherCommandRules(rules: CommandBlockRuleWire[]): Promise<void> {
+  const file = commandRulesFile();
+  const next = JSON.stringify(rules.filter((r) => r.enforcementMode === "BLOCK"));
+  const current = await fsp.readFile(file, "utf8").catch(() => null);
+  if (current === next) return;
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  await fsp.writeFile(file, next, "utf8");
+}
+
+// Never throws — any failure is caught and logged. The process watcher closes a matching command
+// the moment it starts; this 20-second scan is the backstop (and closes anything already running).
+// Every scan reports its sync status; blocked commands are reported as events. Protections are
+// always enforced: the desktop safety net doesn't weaken them (they never touch the desktop), but
+// pausing an endpoint or Emergency release does - the server then sends no rules.
 export async function runCommandBlockScan(client: AxiosInstance): Promise<void> {
   let assigned: AssignedCommandBlockResponse;
   try {
@@ -128,20 +159,37 @@ export async function runCommandBlockScan(client: AxiosInstance): Promise<void> 
     return;
   }
 
-  // Rules that would match Windows itself are never used, even if the server sent them; while
-  // the desktop safety net has suspended enforcement, nothing is killed (alert only).
-  const suspended = isEnforcementSuspended();
+  if (assigned.rules.length === 0) {
+    await writeWatcherCommandRules([]).catch(() => undefined);
+    return; // nothing assigned: no sync status to report
+  }
+
+  // Rules that would match Windows itself are never used, even if the server sent them.
+  const assignedCount = assigned.rules.length;
   assigned = {
     ...assigned,
-    rules: assigned.rules
-      .filter((r) => {
-        const problem = commandBlockRuleProblem(r.ruleType, r.pattern);
-        if (problem) console.warn(`Command Block: not applying rule ${r.ruleId}: ${problem}`);
-        return !problem;
-      })
-      .map((r) => (suspended ? { ...r, enforcementMode: "ALERT_ONLY" as const } : r)),
+    rules: assigned.rules.filter((r) => {
+      const problem = commandBlockRuleProblem(r.ruleType, r.pattern);
+      if (problem) console.warn(`Command Block: not applying rule ${r.ruleId}: ${problem}`);
+      return !problem;
+    }),
   };
-  if (assigned.rules.length === 0) return;
+  await writeWatcherCommandRules(assigned.rules).catch((err) => console.error("Command Block: couldn't hand rules to the process watcher", err));
+  if (assigned.rules.length === 0) {
+    await reportSync(client, "FAILED", `All ${assignedCount} rule(s) were refused on this device because they would match Windows itself.`);
+    return;
+  }
+  ensureProcessWatcher();
+
+  const fromWatcher: CommandBlockEventPayload[] = drainCommandWatcherEvents()
+    .filter((e) => e.ruleId)
+    .map((e) => ({
+      ruleId: e.ruleId!,
+      matchedCommandLine: (e.commandLine ?? e.path).slice(0, 2000),
+      processName: path.win32.basename(e.path),
+      action: e.closed ? ("BLOCKED" as const) : ("ALERTED" as const),
+      occurredAt: e.at,
+    }));
 
   let events: CommandBlockEventPayload[];
   try {
@@ -166,13 +214,23 @@ export async function runCommandBlockScan(client: AxiosInstance): Promise<void> 
       }));
   } catch (err) {
     console.error("Command Block scan failed", err);
-    return;
+    await reportSync(client, "FAILED", err instanceof Error ? err.message : String(err));
+    events = [];
   }
 
-  if (events.length === 0) return;
+  const problem = processWatcherProblem();
+  await reportSync(
+    client,
+    problem ? "FAILED" : "SUCCESS",
+    problem ? `${problem}. Blocked commands are closed at each scan (about every 20 seconds) instead of the moment they start.` : null,
+  );
 
+  events = [...fromWatcher, ...events];
+  if (events.length === 0) return;
   try {
-    await client.post("/api/agent/command-block/events", { events });
+    for (let i = 0; i < events.length; i += 200) {
+      await client.post("/api/agent/command-block/events", { events: events.slice(i, i + 200) });
+    }
     console.log(`Reported ${events.length} Command Block event(s)`);
   } catch (err) {
     console.error("Failed to report Command Block events", err);

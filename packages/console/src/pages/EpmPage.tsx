@@ -6,7 +6,7 @@ import { Button, PageHeader, Tabs, useConfirm, useToast } from "../components/ui
 const EPM_TABS = [
   { to: "app-control", label: "Application control" },
   { to: "web-block", label: "Web & email blocking" },
-  { to: "pii-block", label: "PII data blocking" },
+  { to: "email-attachment-block", label: "Email attachment blocking" },
   { to: "command-block", label: "Command blocking" },
   { to: "ip-block", label: "IP blocking" },
   { to: "usb-control", label: "USB device control" },

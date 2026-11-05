@@ -33,7 +33,8 @@ test("file types go to DLP only - executables too (as app control rules they'd s
   assert.deepEqual(targetsForDataType(byId("builtin:office-documents")), ["dlp"]);
   assert.deepEqual(targetsForDataType(byId("builtin:executables-scripts")), ["dlp"]);
   assert.deepEqual(targetsForDataType(byId("builtin:india-pii")).sort(), ["dlp", "piiBlock", "piiEmailBlock"]);
-  assert.deepEqual(targetsForDataType(byId("builtin:remote-access-apps")).sort(), ["appControl", "commandBlock"]);
+  // Command blocking only takes protections from its own list, so no data type goes there.
+  assert.deepEqual(targetsForDataType(byId("builtin:remote-access-apps")), ["appControl"]);
   assert.equal(DATA_TYPE_RULE_TYPES.dlp.PII_PATTERN, "CONTENT_PATTERN");
   assert.equal(DATA_TYPE_RULE_TYPES.appControl.PROCESS_NAME, "EXECUTABLE");
 });

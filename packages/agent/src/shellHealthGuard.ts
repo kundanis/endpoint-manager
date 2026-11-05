@@ -5,15 +5,17 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { SafetyEventPayload } from "@em/shared";
+import { appControlRulesActive, IFEO_MARKER, IFEO_ROOTS, REMOVE_ALL_BLOCKS_PS, watcherRulesFile } from "./appControlPaths";
 import { agentConfig } from "./config";
 
 const execFileAsync = promisify(execFile);
 
 // Desktop safety net. If a signed-in user has had no desktop (no explorer.exe in their session)
 // for 2 minutes while this agent's blocking rules are in force, the agent assumes its own rules
-// broke sign-in: it removes every Application control rule it wrote, stops killing processes
-// (Command blocking drops to alert-only), tells the user to sign in again, and reports it. The
-// server then pauses the endpoint, so the rules stay off until an admin has fixed the policy.
+// broke sign-in: it removes every Application control rule it wrote, tells the user to sign in
+// again, and reports it. The server then pauses the endpoint, so the rules stay off until an
+// admin has fixed the policy. (Command blocking protections never touch the desktop and stay on
+// until that pause arrives.)
 // This catches mistakes no rule check foresaw.
 
 const CHECK_MS = 30_000;
@@ -42,12 +44,14 @@ export function isEnforcementSuspended(): boolean {
   return state.suspended;
 }
 
-// Signed-in desktop sessions, whether each has a desktop, and how many managed SRP rules exist.
+// Signed-in desktop sessions, whether each has a desktop, and how many launch blocks this agent wrote.
 // RemoteApp sessions (rdpinit/rdpshell) never have explorer.exe and are left out.
-const CHECK_PS = `
+export const CHECK_PS = `
 $ErrorActionPreference = 'SilentlyContinue'
-$paths = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers\\0\\Paths'
-$managed = @(Get-ChildItem -Path $paths | Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description).Description -like 'EM-managed:*' }).Count
+$managed = 0
+foreach ($root in @(${IFEO_ROOTS.map((r) => `'${r}'`).join(", ")})) {
+  $managed += @(Get-ChildItem -LiteralPath $root | Where-Object { (Get-ItemProperty -LiteralPath $_.PSPath).${IFEO_MARKER} }).Count
+}
 $procs = Get-CimInstance Win32_Process -Property Name, SessionId
 $sessions = @()
 # quser is a fixed-width table and user names can contain spaces, so the user name is cut by
@@ -70,12 +74,6 @@ if ($lines.Count -gt 1) {
 ConvertTo-Json -InputObject ([PSCustomObject]@{ Managed = $managed; HasShell = (Test-Path "$env:SystemRoot\\explorer.exe"); Sessions = @($sessions) }) -Depth 3 -Compress
 `;
 
-const REMOVE_RULES_PS = `
-$ErrorActionPreference = 'SilentlyContinue'
-$paths = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers\\0\\Paths'
-Get-ChildItem -Path $paths | Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description).Description -like 'EM-managed:*' } | ForEach-Object { Remove-Item -Path $_.PSPath -Recurse -Force }
-gpupdate /target:computer /force | Out-Null
-`;
 
 const missingSince = new Map<number, number>(); // session id -> first time seen without a desktop
 
@@ -107,21 +105,23 @@ async function check(client: AxiosInstance) {
 
   // Only the agent's own blocking rules can be undone here; with none in force there is
   // nothing to recover from.
-  if (data.Managed === 0) return;
+  const managed = data.Managed + (appControlRulesActive() ? 1 : 0);
+  if (managed === 0) return;
   const stuck = (data.Sessions ?? []).find((s) => !s.HasDesktop && now - (missingSince.get(s.Id) ?? now) >= GRACE_MS);
   if (!stuck) return;
 
-  console.error(`Desktop safety net: ${stuck.User}'s desktop hasn't started for 2 minutes with ${data.Managed} App Control rule(s) in force - removing them.`);
+  console.error(`Desktop safety net: ${stuck.User}'s desktop hasn't started for 2 minutes with Application control blocking in force - removing it.`);
   state.suspended = true;
   state.reportPending = {
     kind: "DESKTOP_NOT_STARTED",
     username: stuck.User,
-    managedRules: data.Managed,
+    managedRules: managed,
     detectedAt: new Date().toISOString(),
   };
   await saveState();
+  await fsp.writeFile(watcherRulesFile(), "[]", "utf8").catch(() => undefined); // the process watcher stops closing programs
   try {
-    await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", REMOVE_RULES_PS], { timeout: 60_000 });
+    await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", REMOVE_ALL_BLOCKS_PS], { timeout: 60_000 });
   } catch (err) {
     console.error("Desktop safety net: removing rules failed", err);
   }

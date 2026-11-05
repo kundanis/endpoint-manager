@@ -100,6 +100,9 @@ if (Test-Path $hostsPath) {
 }
 Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
+# Mail Guard browser extension's server address (mailGuardPolicy.ts)
+Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\lkmoggokfmdgjjjbmfachhmjdpbebebc' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\lkmoggokfmdgjjjbmfachhmjdpbebebc' -Recurse -Force -ErrorAction SilentlyContinue
 
 $srpDisallowedPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths'
 if (Test-Path $srpDisallowedPath) {

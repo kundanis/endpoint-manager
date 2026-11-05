@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "serverUrl": {
+      "title": "Endpoint IQ server URL",
+      "description": "Base URL of the Endpoint IQ server, for example https://epp.example.com. Set by the Endpoint IQ agent through browser policy.",
+      "type": "string"
+    }
+  }
+}

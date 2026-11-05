@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { ListChecks, Pencil, Plus, Terminal, Trash2, Users } from "lucide-react";
+import { Fragment, useState } from "react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Terminal, Trash2, Users } from "lucide-react";
 import BulkPolicyAssignPanel from "../components/BulkPolicyAssignPanel";
 import {
   useAddCommandBlockRule,
   useAssignCommandBlockPolicy,
   useCommandBlockAgentBreakdown,
+  useCommandBlockPolicyAgentEvents,
   useCommandBlockAssignments,
   useCommandBlockPolicies,
   useCommandBlockPolicy,
@@ -13,11 +14,9 @@ import {
   useDeleteCommandBlockRule,
   useUnassignCommandBlockPolicy,
   useUpdateCommandBlockPolicy,
-  useUpdateCommandBlockRule,
-  type CommandBlockRuleInput,
 } from "../api/hooks";
-import AddFromDataTypes from "../components/AddFromDataTypes";
-import type { CommandBlockPolicyDetail, CommandBlockRuleView } from "../api/types";
+import { COMMAND_PROTECTION_LABELS, COMMAND_PROTECTION_OS_LABEL } from "../commandProtectionLabels";
+import type { CommandBlockPolicyDetail } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
 import {
   AssignmentEditor,
@@ -25,6 +24,7 @@ import {
   PolicyDetail,
   PolicySettingsForm,
   SectionHeader,
+  SyncStatusTable,
 } from "../components/policy";
 import {
   Alert,
@@ -32,8 +32,6 @@ import {
   Button,
   Card,
   EmptyState,
-  Field,
-  FormGrid,
   IconButton,
   Pagination,
   RowMenu,
@@ -46,213 +44,92 @@ import { formatDateTime, pluralize } from "../format";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
-type EnforcementMode = "ALERT_ONLY" | "BLOCK";
-
-const BLANK_RULE_FORM: CommandBlockRuleInput = { ruleType: "COMMAND_PATTERN", value: "", label: "" };
-
-const RULE_TYPE_LABELS: Record<NonNullable<CommandBlockRuleInput["ruleType"]>, string> = {
-  COMMAND_PATTERN: "Regex pattern",
-  EXACT_COMMAND_LINE: "Exact command line",
-  PROCESS_NAME: "Process (.exe) name",
-};
-
-const RULE_TYPE_HINTS: Record<NonNullable<CommandBlockRuleInput["ruleType"]>, string> = {
-  COMMAND_PATTERN:
-    "Matched as a regex (case-insensitive) against a running process's full command line — the most powerful option, but the easiest to write too broadly.",
-  EXACT_COMMAND_LINE:
-    "Matched only when the process's full command line is exactly this string (case-insensitive, no regex) — precise, no false-positive risk from partial matches.",
-  PROCESS_NAME:
-    'Matched only against the executable\'s bare name, e.g. "nc.exe" — matches regardless of arguments or path.',
-};
-
-const RULE_TYPE_PLACEHOLDERS: Record<NonNullable<CommandBlockRuleInput["ruleType"]>, string> = {
-  COMMAND_PATTERN: "diskpart|format\\s+[a-z]:",
-  EXACT_COMMAND_LINE: "C:\\Windows\\System32\\diskpart.exe",
-  PROCESS_NAME: "nc.exe",
-};
-
-// Shared by the "New policy" dialog and the Settings tab.
-function EnforcementModeField({ id, value, onChange, help }: { id: string; value: EnforcementMode; onChange: (mode: EnforcementMode) => void; help?: string }) {
-  return (
-    <Field label="Enforcement mode" htmlFor={id} help={help}>
-      <select id={id} className="ep-select" value={value} onChange={(e) => onChange(e.target.value as EnforcementMode)}>
-        <option value="ALERT_ONLY">Alert only (log matches, never kill)</option>
-        <option value="BLOCK">Block (kill matched processes)</option>
-      </select>
-    </Field>
-  );
+// What an event's rule was: the protection's plain-words title, or an older custom rule's value.
+function ruleTitle(ruleType: string | null, value: string | null): string | null {
+  if (!value) return null;
+  return ruleType === "PROTECTION" ? (COMMAND_PROTECTION_LABELS.find((p) => p.key === value)?.title ?? value) : value;
 }
 
-function RulesPanel({ policy }: { policy: CommandBlockPolicyDetail }) {
+// The policy's protections: a fixed list of harmful actions (no custom commands). Each endpoint
+// receives only the commands for its own OS, and every protection is always enforced (Block).
+function ProtectionsPanel({ policy }: { policy: CommandBlockPolicyDetail }) {
   const addRule = useAddCommandBlockRule();
-  const updateRule = useUpdateCommandBlockRule();
   const deleteRule = useDeleteCommandBlockRule();
-  const confirmDelete = useConfirm();
+  const ruleByKey = new Map(policy.rules.filter((r) => r.ruleType === "PROTECTION").map((r) => [r.value, r]));
+  const olderRules = policy.rules.filter((r) => r.ruleType !== "PROTECTION");
+  const pending = addRule.isPending || deleteRule.isPending;
 
-  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
-  const [form, setForm] = useState<CommandBlockRuleInput>(BLANK_RULE_FORM);
-
-  const isEditing = editingRuleId !== null;
-  const pending = isEditing ? updateRule.isPending : addRule.isPending;
-  const mutationError = isEditing ? updateRule.error : addRule.error;
-  const ruleType = form.ruleType ?? "COMMAND_PATTERN";
-
-  function startEdit(rule: CommandBlockRuleView) {
-    setEditingRuleId(rule.id);
-    setForm({ ruleType: rule.ruleType, value: rule.value, label: rule.label ?? "" });
-  }
-
-  function cancelEdit() {
-    setEditingRuleId(null);
-    setForm(BLANK_RULE_FORM);
-  }
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const body: CommandBlockRuleInput = { ruleType, value: form.value, label: (form.label ?? "").trim() || null };
-    if (editingRuleId) {
-      updateRule.mutate({ policyId: policy.id, ruleId: editingRuleId, ...body }, { onSuccess: cancelEdit });
-    } else {
-      addRule.mutate({ policyId: policy.id, ...body }, { onSuccess: () => setForm(BLANK_RULE_FORM) });
-    }
+  function toggle(key: string, on: boolean) {
+    const existing = ruleByKey.get(key);
+    if (on && !existing) addRule.mutate({ policyId: policy.id, ruleType: "PROTECTION", value: key, label: null });
+    if (!on && existing) deleteRule.mutate({ policyId: policy.id, ruleId: existing.id });
   }
 
   return (
     <div className="app-stack">
-      <AddFromDataTypes target="commandBlock" policyId={policy.id} />
       <Alert tone="info">
-        A short, hardcoded safety net (browsers, explorer.exe, and other core OS/desktop processes) can never be
-        matched or killed by any rule here, regardless of type or content.
+        Turn on the harmful actions this policy should stop. Each endpoint gets the commands for its own operating system, and a matching
+        command is closed the moment it starts (Windows agent 0.2.20, Linux 0.1.5, macOS 0.1.2 or later). Windows' own processes and the
+        Endpoint IQ agent are never touched. Emergency release turns all blocking off.
       </Alert>
-
-      {policy.rules.length === 0 ? (
-        <EmptyState icon={ListChecks} title="No rules yet">
-          Add one below. A policy with no rules never blocks anything.
-        </EmptyState>
-      ) : (
-        <div className="app-table-wrap">
-          <table className="ep-tbl">
-            <thead>
-              <tr>
-                <th scope="col">Type</th>
-                <th scope="col">Value</th>
-                <th scope="col">Label</th>
-                <th scope="col">
-                  <span className="app-vh">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {policy.rules.map((r) => (
-                <tr key={r.id} className={r.id === editingRuleId ? "ep-sel" : undefined}>
-                  <td>{RULE_TYPE_LABELS[r.ruleType]}</td>
-                  <td className="ep-mono">{r.value}</td>
-                  <td>{r.label ?? <span className="app-muted">—</span>}</td>
-                  <td>
-                    <div className="app-cell-actions">
-                      <IconButton icon={Pencil} label={`Edit ${r.value}`} onClick={() => startEdit(r)} />
-                      <IconButton
-                        icon={Trash2}
-                        label={`Delete ${r.value}`}
-                        onClick={async () => {
-                          const ok = await confirmDelete({
-                            title: `Remove ${r.value}?`,
-                            body: "Endpoints assigned to this policy stop enforcing it at their next sync.",
-                            confirmLabel: "Remove rule",
-                            tone: "danger",
-                          });
-                          if (ok) deleteRule.mutate({ policyId: policy.id, ruleId: r.id });
-                        }}
-                        disabled={deleteRule.isPending}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {olderRules.length > 0 && (
+        <Alert tone="warn">
+          This policy also has {pluralize(olderRules.length, "older custom rule")}, which no longer apply. Only the protections below are
+          enforced.
+        </Alert>
       )}
-
-      <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? "Edit rule" : "Add rule"}</span>
-        <FormGrid>
-          <Field label="Rule type" htmlFor="cmdblock-rule-type">
-            <select
-              id="cmdblock-rule-type"
-              className="ep-select"
-              value={ruleType}
-              onChange={(e) => setForm((prev) => ({ ...prev, ruleType: e.target.value as CommandBlockRuleInput["ruleType"] }))}
-            >
-              <option value="COMMAND_PATTERN">Regex pattern</option>
-              <option value="EXACT_COMMAND_LINE">Exact command line</option>
-              <option value="PROCESS_NAME">Process (.exe) name</option>
-            </select>
-          </Field>
-          <Field
-            label={RULE_TYPE_LABELS[ruleType]}
-            htmlFor="cmdblock-rule-value"
-            required
-            help={`${RULE_TYPE_HINTS[ruleType]} Checked every 20 seconds.`}
-          >
-            <input
-              id="cmdblock-rule-value"
-              type="text"
-              className="ep-input ep-mono"
-              value={form.value}
-              onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))}
-              placeholder={RULE_TYPE_PLACEHOLDERS[ruleType]}
-              required
-            />
-          </Field>
-          <Field label="Label" htmlFor="cmdblock-rule-label">
-            <input
-              id="cmdblock-rule-label"
-              type="text"
-              className="ep-input"
-              value={form.label ?? ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, label: e.target.value }))}
-              placeholder='Optional, e.g. "Disk formatting tools"'
-            />
-          </Field>
-        </FormGrid>
-        {!!mutationError && <Alert tone="critical">{(mutationError as Error).message}</Alert>}
-        <div className="app-actions-row app-end">
-          {isEditing && <Button onClick={cancelEdit}>Cancel</Button>}
-          <Button type="submit" variant="primary" disabled={pending || !form.value.trim()}>
-            {pending ? "Saving…" : isEditing ? "Save changes" : "Add rule"}
-          </Button>
-        </div>
-      </form>
+      <div className="app-table-wrap">
+        <table className="ep-tbl">
+          <thead>
+            <tr>
+              <th scope="col">Protection</th>
+              <th scope="col">Applies to</th>
+              <th scope="col">
+                <span className="app-vh">On or off</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {COMMAND_PROTECTION_LABELS.map((p) => (
+              <tr key={p.key}>
+                <td>
+                  <b>{p.title}</b>
+                  <span className="app-row-sub">{p.description}</span>
+                </td>
+                <td>
+                  <div className="app-badge-row">
+                    {p.oses.map((os) => (
+                      <Badge key={os} tone="neu">
+                        {COMMAND_PROTECTION_OS_LABEL[os]}
+                      </Badge>
+                    ))}
+                  </div>
+                </td>
+                <td>
+                  <Switch checked={ruleByKey.has(p.key)} onChange={(on) => toggle(p.key, on)} label={ruleByKey.has(p.key) ? "On" : "Off"} disabled={pending} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!!(addRule.error || deleteRule.error) && <Alert tone="critical">{((addRule.error || deleteRule.error) as Error).message}</Alert>}
     </div>
   );
 }
 
 function SettingsPanel({ policy }: { policy: CommandBlockPolicyDetail }) {
   const updatePolicy = useUpdateCommandBlockPolicy();
-  const [enforcementMode, setEnforcementMode] = useState<EnforcementMode>(policy.enforcementMode);
-
-  useEffect(() => {
-    setEnforcementMode(policy.enforcementMode);
-  }, [policy.id, policy.enforcementMode]);
-
   return (
     <PolicySettingsForm
       policyId={policy.id}
       name={policy.name}
       description={policy.description}
-      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values, enforcementMode })}
+      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values })}
       pending={updatePolicy.isPending}
       error={updatePolicy.error}
       saved={updatePolicy.isSuccess}
-    >
-      <EnforcementModeField
-        id={`cmdblock-mode-${policy.id}`}
-        value={enforcementMode}
-        onChange={setEnforcementMode}
-        help="Alert-only lets you test new rules against real traffic — matches are logged as events but nothing is killed — before switching to Block once you've confirmed there are no false positives."
-      />
-    </PolicySettingsForm>
+    />
   );
 }
 
@@ -273,8 +150,68 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   );
 }
 
-function ActivityPanel({ policyId }: { policyId: string }) {
+function SyncStatusPanel({ policyId }: { policyId: string }) {
+  const { data: breakdown } = useCommandBlockAgentBreakdown(policyId);
+  return <SyncStatusTable rows={breakdown?.agents ?? []} explanation="Whether each endpoint last scanned with this policy's rules. Endpoints report after every scan while they are online; matched commands are listed on the Events tab. Needs Windows agent 0.2.18 or later." />;
+}
+
+// Events tab: one row per assigned endpoint; select a row to list that endpoint's matched
+// commands under this policy, newest first, with the rule that matched and what was done.
+function AgentEvents({ policyId, agentId }: { policyId: string; agentId: string }) {
+  const { data, isLoading, error } = useCommandBlockPolicyAgentEvents(policyId, agentId);
+  const paged = usePagedList(data ?? [], 25);
+  if (isLoading) return <Skeleton lines={2} />;
+  if (error) return <Alert tone="critical">{(error as Error).message}</Alert>;
+  if (!data || data.length === 0) return <span className="app-muted">No events on this endpoint.</span>;
+  return (
+    <div className="app-table-scroll">
+      <table className="ep-tbl">
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Result</th>
+            <th scope="col">Process</th>
+            <th scope="col">Command line</th>
+            <th scope="col">Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paged.pageItems.map((e) => (
+            <tr key={e.id}>
+              <td className="app-muted" style={{ whiteSpace: "nowrap" }}>
+                {formatDateTime(e.occurredAt)}
+              </td>
+              <td>{e.action === "BLOCKED" ? <Badge tone="crit">Blocked</Badge> : <Badge tone="med">Alerted</Badge>}</td>
+              <td>{e.processName ?? "—"}</td>
+              <td className="ep-mono" style={{ overflowWrap: "anywhere" }}>
+                {e.matchedCommandLine}
+              </td>
+              <td>
+                {e.ruleValue ? (
+                  <>
+                    {ruleTitle(e.ruleType, e.ruleValue)}
+                    {e.ruleLabel && <span className="app-row-sub">{e.ruleLabel}</span>}
+                  </>
+                ) : e.ruleDeleted ? (
+                  <span className="app-muted">Deleted rule</span>
+                ) : (
+                  "—"
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {paged.total > paged.pageSize && (
+        <Pagination page={paged.page} pageSize={paged.pageSize} total={paged.total} noun="events" onPageChange={paged.setPage} />
+      )}
+    </div>
+  );
+}
+
+function EventsPanel({ policyId }: { policyId: string }) {
   const { data: breakdown, isLoading, isError, error, refetch } = useCommandBlockAgentBreakdown(policyId);
+  const [openAgentId, setOpenAgentId] = useState<string | null>(null);
   const agents = breakdown?.agents ?? [];
   const totalMatches = agents.reduce((sum, a) => sum + a.eventCount, 0);
   const paged = usePagedList(agents, 25);
@@ -284,7 +221,7 @@ function ActivityPanel({ policyId }: { policyId: string }) {
     return (
       <Alert
         tone="critical"
-        title="Couldn't load activity"
+        title="Couldn't load events"
         action={
           <Button size="sm" onClick={() => refetch()}>
             Retry
@@ -311,27 +248,51 @@ function ActivityPanel({ policyId }: { policyId: string }) {
           <table className="ep-tbl">
             <thead>
               <tr>
+                <th scope="col">
+                  <span className="app-vh">Show events</span>
+                </th>
                 <th scope="col">Endpoint</th>
                 <th scope="col">Events</th>
                 <th scope="col">Last event</th>
               </tr>
             </thead>
             <tbody>
-              {paged.pageItems.map((a) => (
-                <tr key={a.agentId}>
-                  <td>
-                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-                  </td>
-                  <td>
-                    {a.eventCount > 0 ? (
-                      <Badge tone="crit">{pluralize(a.eventCount, "event")}</Badge>
-                    ) : (
-                      <Badge tone="ok">No activity</Badge>
+              {paged.pageItems.map((a) => {
+                const open = openAgentId === a.agentId;
+                return (
+                  <Fragment key={a.agentId}>
+                    <tr>
+                      <td className="ep-cb">
+                        {a.eventCount > 0 && (
+                          <IconButton
+                            icon={open ? ChevronDown : ChevronRight}
+                            label={open ? `Hide events on ${a.hostname}` : `Show events on ${a.hostname}`}
+                            onClick={() => setOpenAgentId(open ? null : a.agentId)}
+                          />
+                        )}
+                      </td>
+                      <td>
+                        <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                      </td>
+                      <td>
+                        {a.eventCount > 0 ? (
+                          <Badge tone="crit">{pluralize(a.eventCount, "event")}</Badge>
+                        ) : (
+                          <Badge tone="ok">No events</Badge>
+                        )}
+                      </td>
+                      <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={4} style={{ background: "var(--ep-surface-2)" }}>
+                          <AgentEvents policyId={policyId} agentId={a.agentId} />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
           {paged.total > paged.pageSize && (
@@ -354,7 +315,6 @@ export default function CommandBlockPage() {
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignCommandBlockPolicy();
-  const [enforcementMode, setEnforcementMode] = useState<EnforcementMode>("ALERT_ONLY");
 
   const { data: policy } = useCommandBlockPolicy(selectedId);
 
@@ -367,7 +327,6 @@ export default function CommandBlockPage() {
   }
 
   function openCreate() {
-    setEnforcementMode("ALERT_ONLY");
     setCreating(true);
   }
 
@@ -450,9 +409,8 @@ export default function CommandBlockPage() {
                   </th>
                   <th scope="col">Policy</th>
                   <th scope="col">Status</th>
-                  <th scope="col">Mode</th>
                   <th scope="col" style={{ textAlign: "right" }}>
-                    Rules
+                    Protections
                   </th>
                   <th scope="col" style={{ textAlign: "right" }}>
                     Assigned endpoints
@@ -492,7 +450,6 @@ export default function CommandBlockPage() {
                         label={p.enabled ? "Enabled" : "Paused"}
                       />
                     </td>
-                    <td>{p.enforcementMode === "BLOCK" ? <Badge tone="crit">Block</Badge> : <Badge tone="neu">Alert only</Badge>}</td>
                     <td className="ep-num" style={{ textAlign: "right" }}>
                       {p.ruleCount}
                     </td>
@@ -532,12 +489,13 @@ export default function CommandBlockPage() {
           policyId={policy.id}
           name={policy.name}
           enabled={policy.enabled}
-          meta={`${policy.enforcementMode === "BLOCK" ? "Block" : "Alert only"} · ${pluralize(policy.rules.length, "rule")}`}
+          meta={pluralize(policy.rules.filter((r) => r.ruleType === "PROTECTION").length, "protection")}
           onClose={() => setSelectedId(undefined)}
           tabs={[
-            { value: "rules", label: "Blocked commands", content: <RulesPanel policy={policy} /> },
+            { value: "rules", label: "Protections", content: <ProtectionsPanel policy={policy} /> },
             { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
-            { value: "activity", label: "Activity", content: <ActivityPanel policyId={policy.id} /> },
+            { value: "events", label: "Events", content: <EventsPanel policyId={policy.id} /> },
+            { value: "sync", label: "Sync status", content: <SyncStatusPanel policyId={policy.id} /> },
             { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
           ]}
         />
@@ -549,14 +507,11 @@ export default function CommandBlockPage() {
           pending={createPolicy.isPending}
           error={createPolicy.error}
           onCreate={(values) =>
-            createPolicy.mutateAsync({ ...values, enforcementMode }).then((result) => {
+            createPolicy.mutateAsync(values).then((result) => {
               setSelectedId(result.id);
-              setEnforcementMode("ALERT_ONLY");
             })
           }
-        >
-          <EnforcementModeField id="new-cmdblock-mode" value={enforcementMode} onChange={setEnforcementMode} />
-        </NewPolicyDialog>
+        />
       )}
     </>
   );

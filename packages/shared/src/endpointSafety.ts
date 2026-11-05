@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { commandProtection } from "./data/commandProtections";
 
 // Guard rails that keep a blocking policy from taking a Windows device down - checked by the
 // server (when a rule is saved), the console (as the admin types) and the agent (before it
@@ -28,6 +29,9 @@ export const COMMAND_BLOCK_KILLABLE_WINDOWS_TOOLS: readonly string[] = [
   "powershell.exe", "powershell_ise.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe", "certutil.exe",
   "bitsadmin.exe", "regsvr32.exe", "wmic.exe", "net.exe", "net1.exe", "reg.exe", "sc.exe", "vssadmin.exe",
   "schtasks.exe", "ftp.exe", "curl.exe", "msbuild.exe", "installutil.exe", "cmstp.exe", "forfiles.exe",
+  // Used by the command protections (commandProtections.ts) - matched only by their harmful command lines.
+  "diskpart.exe", "format.com", "cipher.exe", "wbadmin.exe", "bcdedit.exe", "wevtutil.exe", "reagentc.exe",
+  "netsh.exe", "rundll32.exe", "icacls.exe", "vaultcmd.exe", "ntdsutil.exe",
 ];
 
 // Extensions every program or the desktop depends on - blocking them blocks everything.
@@ -47,6 +51,14 @@ export function appControlRuleProblem(ruleType: string, rawValue: string): strin
     if (ext.includes("*") || ext.includes("?") || ext === ".") return "Wildcards would block every program on the device.";
     if (UNBLOCKABLE_EXTENSIONS.includes(ext)) {
       return `Blocking ${ext} files would stop Windows itself (the desktop and sign-in) from running. Block specific applications by name instead.`;
+    }
+    return null;
+  }
+  if (ruleType === "PRODUCT" || ruleType === "PUBLISHER") {
+    const bare = value.replace(/[*?]/g, "").trim();
+    if (bare.length < 3) return "Enter at least 3 letters - a shorter name would match many programs.";
+    if (/microsoft|windows|endpoint ?(iq|pro|one)/.test(value)) {
+      return "Microsoft and Windows programs (and the Endpoint IQ agent) can't be blocked this way: Windows or the agent would stop working.";
     }
     return null;
   }
@@ -87,6 +99,7 @@ export const CANARY_COMMAND_LINES: readonly string[] = [
 export function commandBlockRuleProblem(ruleType: string, rawValue: string): string | null {
   const value = rawValue.trim();
   if (!value) return "Enter a value.";
+  if (ruleType === "PROTECTION") return commandProtection(value) ? null : "Choose a protection from the list.";
   if (ruleType === "PROCESS_NAME") {
     const name = baseName(norm(value));
     if (CRITICAL_WINDOWS_PROCESSES.includes(name) && !COMMAND_BLOCK_KILLABLE_WINDOWS_TOOLS.includes(name)) {

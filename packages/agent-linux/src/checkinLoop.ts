@@ -19,6 +19,7 @@ import { scanForMissingPatches } from "./patchScanner";
 import { installPatches } from "./patchInstaller";
 import { processAgentUpdate } from "./selfUpdater";
 import { agentConfig } from "./config";
+import { startCommandGuard } from "./commandGuard";
 import type { AxiosInstance } from "axios";
 
 // Computed fresh on every check-in - DHCP leases, VPN connects/disconnects and NIC changes
@@ -153,5 +154,6 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   setInterval(sendInventory, agentConfig.inventoryRefreshMs);
   void sendPatchScan();
   setInterval(sendPatchScan, agentConfig.patchScanIntervalMs);
+  startCommandGuard(client);
   void checkin();
 }

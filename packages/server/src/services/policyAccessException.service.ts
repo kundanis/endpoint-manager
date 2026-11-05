@@ -104,6 +104,26 @@ export async function rejectRequest(id: string, approvedByAdminId: string, resol
   return serialize(request, await getPolicyName(request.policyType as PolicyAccessExceptionType, request.policyId));
 }
 
+export class RequestNotActiveError extends Error {}
+
+// Ends an active exception before its time is up: the policy applies again at the endpoint's next
+// sync (about 20 seconds). Any admin can end one - it only tightens security again.
+export async function endRequest(id: string, resolutionNote?: string | null) {
+  const existing = await prisma.policyAccessException.findUnique({ where: { id } });
+  if (!existing) throw new RequestNotFoundError();
+  if (existing.status !== "APPROVED" || !existing.expiresAt || existing.expiresAt.getTime() <= Date.now()) throw new RequestNotActiveError();
+
+  const request = await prisma.policyAccessException.update({
+    where: { id },
+    data: {
+      status: "ENDED",
+      expiresAt: new Date(),
+      resolutionNote: [existing.resolutionNote, resolutionNote ? `Ended early: ${resolutionNote}` : "Ended early"].filter(Boolean).join(" · ").slice(0, 1000),
+    },
+  });
+  return serialize(request, await getPolicyName(request.policyType as PolicyAccessExceptionType, request.policyId));
+}
+
 function serialize(
   r: {
     id: string;
