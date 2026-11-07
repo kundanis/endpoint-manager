@@ -1,14 +1,35 @@
 import { z } from "zod";
 import { PII_PATTERN_KEYS } from "../data/piiPatterns";
 
-export const PII_EMAIL_BLOCK_RULE_TYPES = ["PII_PATTERN"] as const;
+// PII_PATTERN: a personal-data category to check for (value is a PiiPatternKey).
+// TRUSTED_DOMAIN: a recipient email domain (e.g. "company.com", subdomains included). When every
+// recipient of an email is on a trusted domain, nothing in it is checked - mail within the
+// organization is never stopped. One recipient outside is enough for the normal checks to run.
+export const PII_EMAIL_BLOCK_RULE_TYPES = ["PII_PATTERN", "TRUSTED_DOMAIN"] as const;
 export type PiiEmailBlockRuleType = (typeof PII_EMAIL_BLOCK_RULE_TYPES)[number];
 
-export const createPiiEmailBlockRuleRequestSchema = z.object({
-  ruleType: z.enum(PII_EMAIL_BLOCK_RULE_TYPES).default("PII_PATTERN"),
-  value: z.enum(PII_PATTERN_KEYS),
-  label: z.string().max(200).nullable().optional(),
-});
+const DOMAIN_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+// "@Company.com", "*.company.com" and "company.com" are all stored as "company.com".
+export function normalizeTrustedDomain(raw: string): string {
+  return raw.trim().toLowerCase().replace(/^\*\./, "").replace(/^@/, "").replace(/\.$/, "");
+}
+
+export const createPiiEmailBlockRuleRequestSchema = z
+  .object({
+    ruleType: z.enum(PII_EMAIL_BLOCK_RULE_TYPES).default("PII_PATTERN"),
+    value: z.string().trim().min(1).max(255),
+    label: z.string().max(200).nullable().optional(),
+  })
+  .transform((r) => (r.ruleType === "TRUSTED_DOMAIN" ? { ...r, value: normalizeTrustedDomain(r.value) } : r))
+  .superRefine((r, ctx) => {
+    if (r.ruleType === "PII_PATTERN" && !(PII_PATTERN_KEYS as readonly string[]).includes(r.value)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: "Unknown PII category." });
+    }
+    if (r.ruleType === "TRUSTED_DOMAIN" && !DOMAIN_RE.test(r.value)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: "Enter a domain such as company.com." });
+    }
+  });
 export type CreatePiiEmailBlockRuleRequest = z.infer<typeof createPiiEmailBlockRuleRequestSchema>;
 
 export const createPiiEmailBlockPolicyRequestSchema = z.object({
@@ -32,6 +53,8 @@ export type AssignPiiEmailBlockRequest = z.infer<typeof assignPiiEmailBlockReque
 // address, same "one combined declarative state" shape as Web Block/PII Data Blocking.
 export const piiEmailBlockPolicyForUserResponseSchema = z.object({
   patternKeys: z.array(z.enum(PII_PATTERN_KEYS)),
+  // Recipient domains that skip the checks (see TRUSTED_DOMAIN above).
+  trustedDomains: z.array(z.string()),
 });
 export type PiiEmailBlockPolicyForUserResponse = z.infer<typeof piiEmailBlockPolicyForUserResponseSchema>;
 

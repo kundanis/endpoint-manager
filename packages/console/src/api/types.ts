@@ -1198,7 +1198,8 @@ export interface PiiEmailBlockPolicySummary {
   name: string;
   description: string | null;
   enabled: boolean;
-  ruleCount: number;
+  ruleCount: number; // PII categories
+  trustedDomainCount: number;
   assignedEmailCount: number;
   createdAt: string;
 }
@@ -1206,7 +1207,7 @@ export interface PiiEmailBlockPolicySummary {
 export interface PiiEmailBlockRuleView {
   id: string;
   ruleType: PiiEmailBlockRuleType;
-  value: PiiPatternKey;
+  value: string; // a PiiPatternKey for PII_PATTERN, a domain for TRUSTED_DOMAIN
   label: string | null;
 }
 

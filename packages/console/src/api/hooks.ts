@@ -2432,7 +2432,7 @@ export function useDeletePiiEmailBlockPolicy() {
 
 export interface PiiEmailBlockRuleInput {
   ruleType: PiiEmailBlockRuleType;
-  value: PiiPatternKey;
+  value: string;
   label?: string | null;
 }
 

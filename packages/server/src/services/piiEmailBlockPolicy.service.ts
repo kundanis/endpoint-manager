@@ -4,6 +4,7 @@ import type {
   CreatePiiEmailBlockRuleRequest,
   MailGuardAgentSettings,
   PiiEmailBlockEventReport,
+  PiiEmailBlockPolicyForUserResponse,
   PiiEmailBlockRuleType,
   PiiPatternKey,
   UpdatePiiEmailBlockPolicyRequest,
@@ -21,7 +22,7 @@ export async function createPolicy(params: CreatePiiEmailBlockPolicyRequest, cre
 export async function listPolicies() {
   const policies = await prisma.piiEmailBlockPolicy.findMany({
     orderBy: { createdAt: "asc" },
-    include: { rules: { select: { id: true } }, assignments: { select: { id: true } } },
+    include: { rules: { select: { ruleType: true } }, assignments: { select: { id: true } } },
   });
 
   return policies.map((p) => ({
@@ -29,7 +30,8 @@ export async function listPolicies() {
     name: p.name,
     description: p.description,
     enabled: p.enabled,
-    ruleCount: p.rules.length,
+    ruleCount: p.rules.filter((r) => r.ruleType === "PII_PATTERN").length,
+    trustedDomainCount: p.rules.filter((r) => r.ruleType === "TRUSTED_DOMAIN").length,
     assignedEmailCount: p.assignments.length,
     createdAt: p.createdAt.toISOString(),
   }));
@@ -47,7 +49,8 @@ export async function getPolicy(id: string) {
     name: policy.name,
     description: policy.description,
     enabled: policy.enabled,
-    ruleCount: policy.rules.length,
+    ruleCount: policy.rules.filter((r) => r.ruleType === "PII_PATTERN").length,
+    trustedDomainCount: policy.rules.filter((r) => r.ruleType === "TRUSTED_DOMAIN").length,
     assignedEmailCount: policy.assignments.length,
     createdAt: policy.createdAt.toISOString(),
     rules: policy.rules.map((r) => ({
@@ -76,7 +79,10 @@ export async function deletePolicy(id: string): Promise<boolean> {
   }
 }
 
+// Adding a category or domain the policy already has is a no-op.
 export async function addRule(policyId: string, params: CreatePiiEmailBlockRuleRequest) {
+  const existing = await prisma.piiEmailBlockRule.findFirst({ where: { policyId, ruleType: params.ruleType, value: params.value } });
+  if (existing) return getPolicy(policyId);
   await prisma.piiEmailBlockRule.create({
     data: { policyId, ruleType: params.ruleType, value: params.value, label: params.label ?? null },
   });
@@ -124,31 +130,45 @@ export async function unassign(policyId: string, assignmentId: string): Promise<
 
 // Public, unauthenticated lookup called from inside the Outlook add-in's sandboxed JS
 // runtime — Office.js hands the add-in the signed-in user's own email address directly, so
-// this is trusted the same way the agent trusts its own hostname at enrollment time. Flat,
-// deduped across every ENABLED policy assigned to that address; a disabled policy's rules
-// never apply, matching every other policy module in this product.
-export async function getPatternKeysForEmail(emailAddress: string): Promise<PiiPatternKey[]> {
+// this is trusted the same way the agent trusts its own hostname at enrollment time. Pattern
+// keys are flat and deduped across every ENABLED policy assigned to that address; a disabled
+// policy's rules never apply, matching every other policy module in this product.
+//
+// Trusted domains are the ones every one of those policies trusts (only policies that check at
+// least one category count), so one policy's trusted domain can't switch off another policy's
+// checks. With a single policy per mailbox, the usual case, that is simply its own list.
+export async function getPolicyForEmail(emailAddress: string): Promise<PiiEmailBlockPolicyForUserResponse> {
   const normalized = emailAddress.trim().toLowerCase();
   const assignments = await prisma.piiEmailBlockAssignment.findMany({
     where: { emailAddress: normalized },
     select: { policyId: true },
   });
   const policyIds = [...new Set(assignments.map((a) => a.policyId))];
-  if (policyIds.length === 0) return [];
+  if (policyIds.length === 0) return { patternKeys: [], trustedDomains: [] };
 
   const policies = await prisma.piiEmailBlockPolicy.findMany({
     where: { id: { in: policyIds }, enabled: true },
     include: { rules: true },
   });
 
-  return [...new Set(policies.flatMap((p) => p.rules.map((r) => r.value as PiiPatternKey)))];
+  const checking = policies
+    .map((p) => ({
+      keys: p.rules.filter((r) => r.ruleType === "PII_PATTERN").map((r) => r.value as PiiPatternKey),
+      domains: p.rules.filter((r) => r.ruleType === "TRUSTED_DOMAIN").map((r) => r.value),
+    }))
+    .filter((p) => p.keys.length > 0);
+  if (checking.length === 0) return { patternKeys: [], trustedDomains: [] };
+
+  const patternKeys = [...new Set(checking.flatMap((p) => p.keys))];
+  const trustedDomains = [...new Set(checking[0].domains)].filter((d) => checking.every((p) => p.domains.includes(d)));
+  return { patternKeys, trustedDomains };
 }
 
 // Whether agents should install the Mail Guard browser extension: only while some enabled
-// policy with at least one rule has a mailbox assigned. The extension then checks per mailbox.
+// policy with at least one category has a mailbox assigned. The extension then checks per mailbox.
 export async function mailGuardAgentSettings(): Promise<MailGuardAgentSettings> {
   const active = await prisma.piiEmailBlockPolicy.count({
-    where: { enabled: true, assignments: { some: {} }, rules: { some: {} } },
+    where: { enabled: true, assignments: { some: {} }, rules: { some: { ruleType: "PII_PATTERN" } } },
   });
   return { install: active > 0, chromeExtensionId: MAIL_GUARD_CHROME_STORE_ID, edgeExtensionId: MAIL_GUARD_EDGE_STORE_ID };
 }

@@ -9,6 +9,12 @@
 // Every block tells the user why and is reported (file name or "Message text", plus categories
 // only - never the content).
 //
+// Trusted domains: when the policy lists the organization's own domains and every recipient
+// (To, Cc, Bcc) is on one of them, nothing is stopped. An attachment with personal data may be
+// added while there are no recipients yet, or only trusted ones; it is remembered, and Send is
+// stopped if it is still attached once anyone outside is a recipient. Pasted text is likewise
+// left to the check at Send, against the final recipients.
+//
 // Works only while an Email attachment blocking policy covers the signed-in Gmail address: with
 // no policy the extension does nothing. Fails open: if the server can't be reached or a scan
 // errors, mail goes through, so a fault never stops anyone's email.
@@ -20,9 +26,11 @@
   const POLICY_TTL_MS = 60_000;
   const ATTACHMENT_ONLY_KEYS = ["EMAIL", "PHONE_INDIA", "PHONE_GENERIC"];
   const BODY_SELECTOR = 'div[contenteditable="true"][role="textbox"], div[g_editable="true"]';
-  let policy = { email: null, patternKeys: [], fetchedAt: 0, pending: null };
+  let policy = { email: null, patternKeys: [], trustedDomains: [], fetchedAt: 0, pending: null };
   const passThrough = new WeakSet(); // events this script re-dispatched after a clean scan
   let lastTextReportAt = 0;
+  let lastComposeRoot = null; // the compose window last clicked or typed in (for the file picker)
+  const heldAttachments = new Map(); // file name -> categories, allowed only for trusted recipients
 
   function signedInEmail() {
     // Gmail's tab title is "Inbox (3) - someone@example.com - Gmail".
@@ -34,10 +42,10 @@
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ type: "policy", email }, (res) => {
-          resolve(res && res.ok ? res.patternKeys : []);
+          resolve(res && res.ok ? { keys: res.patternKeys, domains: res.trustedDomains || [] } : { keys: [], domains: [] });
         });
       } catch (e) {
-        resolve([]);
+        resolve({ keys: [], domains: [] });
       }
     });
   }
@@ -50,14 +58,14 @@
     if (!fresh) {
       if (!policy.pending || policy.email !== email) {
         policy.email = email;
-        policy.pending = fetchPolicy(email).then((keys) => {
-          policy = { email, patternKeys: keys, fetchedAt: Date.now(), pending: null };
+        policy.pending = fetchPolicy(email).then(({ keys, domains }) => {
+          policy = { email, patternKeys: keys, trustedDomains: domains, fetchedAt: Date.now(), pending: null };
           return keys;
         });
       }
       await policy.pending;
     }
-    return { email, keys: policy.patternKeys };
+    return { email, keys: policy.patternKeys, domains: policy.trustedDomains };
   }
 
   // Known with no waiting: true when a policy definitely doesn't apply (so events are left alone).
@@ -70,8 +78,52 @@
   // so they use the last policy fetched for this mailbox, which is refreshed every minute.
   function textKeysNow() {
     const email = signedInEmail();
-    if (!email || policy.email !== email || policy.fetchedAt === 0) return { email, keys: [] };
-    return { email, keys: policy.patternKeys.filter((k) => !ATTACHMENT_ONLY_KEYS.includes(k)) };
+    if (!email || policy.email !== email || policy.fetchedAt === 0) return { email, keys: [], domains: [] };
+    return { email, keys: policy.patternKeys.filter((k) => !ATTACHMENT_ONLY_KEYS.includes(k)), domains: policy.trustedDomains };
+  }
+
+  // ---- Recipients ----------------------------------------------------------------------------
+
+  const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+  // Recipient chips carry the address in an attribute; an address typed but not yet turned into
+  // a chip is still in the recipient input. Anything inside the message body is left out.
+  const RECIPIENT_SELECTOR = [
+    "[data-hovercard-id]",
+    "span[email]",
+    'input[name="to"]',
+    'input[name="cc"]',
+    'input[name="bcc"]',
+    'textarea[name="to"]',
+    'textarea[name="cc"]',
+    'textarea[name="bcc"]',
+    "input[peoplekit-id]",
+    'input[aria-label*="recipient" i]',
+  ].join(",");
+
+  // Every recipient address in a compose window, except the sender's own.
+  function recipientsOf(root) {
+    const found = new Set();
+    root.querySelectorAll(RECIPIENT_SELECTOR).forEach((el) => {
+      if (el.closest(BODY_SELECTOR) || el.closest(".gmail_quote")) return;
+      const text = [el.getAttribute("data-hovercard-id"), el.getAttribute("email"), "value" in el ? el.value : ""].join(" ");
+      for (const m of text.match(EMAIL_RE) || []) found.add(m.toLowerCase());
+    });
+    found.delete(signedInEmail());
+    return [...found];
+  }
+
+  function isTrusted(address, domains) {
+    const domain = address.slice(address.lastIndexOf("@") + 1);
+    return domains.some((d) => domain === d || domain.endsWith("." + d));
+  }
+
+  // "trusted": there are recipients and all are on a trusted domain. "none": no recipients yet.
+  // "outside": at least one recipient is elsewhere, or the policy trusts no domain.
+  function recipientState(root, domains) {
+    if (!root || domains.length === 0) return "outside";
+    const recipients = recipientsOf(root);
+    if (recipients.length === 0) return "none";
+    return recipients.every((r) => isTrusted(r, domains)) ? "trusted" : "outside";
   }
 
   function showBanner(text) {
@@ -113,17 +165,34 @@
     }
   }
 
-  // Scans the files; resolves true when they may go through.
-  async function allowFiles(files) {
-    const { email, keys } = await currentKeys();
+  // Scans the files; resolves true when they may go through. root is the compose window they're
+  // being added to, when known.
+  async function allowFiles(files, root) {
+    const { email, keys, domains } = await currentKeys();
     if (!email || keys.length === 0) return true;
     const hits = await EmailGuardScanner.scanFiles(files, keys);
     if (hits.length === 0) return true;
     const labels = [...new Set(hits.flatMap((h) => h.labels))];
     const names = hits.map((h) => h.name).join(", ");
-    showBanner(`Attachment blocked: ${names} appears to contain ${labels.join(", ")}. Your organization's policy doesn't allow this to be emailed. Remove or redact it, then attach it again.`);
+    const state = recipientState(root, domains);
+    if (state !== "outside") {
+      // Allowed for now; checked again at Send against the final recipients.
+      hits.forEach((h) => heldAttachments.set(h.name, h.labels));
+      if (state === "none") {
+        showBanner(`${names} appears to contain ${labels.join(", ")}. It can be emailed only to ${domains.join(", ")}; sending it to anyone else will be stopped.`);
+      }
+      return true;
+    }
+    const within = domains.length > 0 ? ` It can be emailed only to ${domains.join(", ")}.` : "";
+    showBanner(`Attachment blocked: ${names} appears to contain ${labels.join(", ")}. Your organization's policy doesn't allow this to be emailed.${within} Remove or redact it, then attach it again.`);
     report(email, names, labels);
     return false;
+  }
+
+  // Attachments allowed only for trusted recipients that are still in this compose window.
+  function heldAttachmentsIn(root) {
+    const text = root.textContent || "";
+    return [...heldAttachments.entries()].filter(([name]) => text.includes(name));
   }
 
   // Files from a file list, falling back to the item list (some sources, e.g. a file copied in
@@ -175,10 +244,13 @@
     return parts.join("\n");
   }
 
-  // Returns the categories found (so the caller blocks), or [] to let it through.
-  function checkText(text, what) {
-    const { email, keys } = textKeysNow();
+  // Returns the categories found (so the caller blocks), or [] to let it through. With trusted
+  // domains, a paste is only stopped once someone outside is already a recipient; Send decides.
+  function checkText(text, what, root) {
+    const { email, keys, domains } = textKeysNow();
     if (!email || keys.length === 0 || !text) return [];
+    const state = recipientState(root, domains);
+    if (state === "trusted" || (what === "paste" && state === "none")) return [];
     let labels = [];
     try {
       labels = EmailGuardScanner.scanText(text, keys);
@@ -189,7 +261,7 @@
     showBanner(
       what === "paste"
         ? `Paste blocked: the text appears to contain ${labels.join(", ")}. Your organization's policy doesn't allow this to be emailed.`
-        : `Email not sent: the message appears to contain ${labels.join(", ")}. Your organization's policy doesn't allow this to be emailed. Remove it, then send again.`,
+        : `Email not sent: the message appears to contain ${labels.join(", ")}. Your organization's policy doesn't allow this to be emailed.${domains.length > 0 ? ` It can be sent only to ${domains.join(", ")}.` : ""} Remove it, then send again.`,
     );
     if (Date.now() - lastTextReportAt > 2000) {
       lastTextReportAt = Date.now();
@@ -212,6 +284,39 @@
     event.preventDefault();
   }
 
+  // Everything checked at Send; true when the send must be stopped.
+  function stopSend(root) {
+    if (!root) return false;
+    const { email, domains } = textKeysNow();
+    if (email && heldAttachments.size > 0 && recipientState(root, domains) !== "trusted") {
+      const held = heldAttachmentsIn(root);
+      if (held.length > 0) {
+        const names = held.map(([name]) => name).join(", ");
+        const labels = [...new Set(held.flatMap(([, l]) => l))];
+        showBanner(`Email not sent: ${names} appears to contain ${labels.join(", ")}. It can be emailed only to ${domains.join(", ")}. Remove the attachment, or the recipients outside the organization, then send again.`);
+        if (Date.now() - lastTextReportAt > 2000) {
+          lastTextReportAt = Date.now();
+          report(email, names, labels);
+        }
+        return true;
+      }
+    }
+    return checkText(composeText(root), "send", root).length > 0;
+  }
+
+  // Remembers the compose window in use, for files picked with the paperclip (the file picker's
+  // input isn't inside the compose window).
+  for (const type of ["mousedown", "focusin"]) {
+    window.addEventListener(
+      type,
+      (event) => {
+        const root = composeRootOf(event.target);
+        if (root) lastComposeRoot = root;
+      },
+      true,
+    );
+  }
+
   // Send button: Gmail may act on any of these, so all three are checked.
   for (const type of ["mousedown", "mouseup", "click"]) {
     window.addEventListener(
@@ -219,8 +324,7 @@
       (event) => {
         const btn = isSendButton(event.target);
         if (!btn) return;
-        const root = composeRootOf(btn);
-        if (root && checkText(composeText(root), "send").length > 0) blockEvent(event);
+        if (stopSend(composeRootOf(btn))) blockEvent(event);
       },
       true,
     );
@@ -234,8 +338,7 @@
       const shortcut = event.key === "Enter" && (event.ctrlKey || event.metaKey);
       const onButton = (event.key === "Enter" || event.key === " ") && isSendButton(event.target);
       if (!shortcut && !onButton) return;
-      const root = composeRootOf(event.target);
-      if (root && checkText(composeText(root), "send").length > 0) blockEvent(event);
+      if (stopSend(composeRootOf(event.target))) blockEvent(event);
     },
     true,
   );
@@ -251,7 +354,7 @@
       const files = filesOf(input.files);
       if (files.length === 0 || knownNoPolicy()) return;
       event.stopImmediatePropagation();
-      allowFiles(files)
+      allowFiles(files, lastComposeRoot && lastComposeRoot.isConnected ? lastComposeRoot : null)
         .catch(() => true)
         .then((ok) => {
           if (ok) {
@@ -276,7 +379,7 @@
       blockEvent(event);
       const target = event.target;
       const init = { bubbles: true, cancelable: true, clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY };
-      allowFiles(files)
+      allowFiles(files, composeRootOf(target))
         .catch(() => true)
         .then((ok) => {
           const dt = new DataTransfer();
@@ -299,13 +402,13 @@
       if (files.length === 0) {
         if (!isComposeField(event.target)) return;
         const text = event.clipboardData.getData("text/plain") || event.clipboardData.getData("text/html").replace(/<[^>]+>/g, " ");
-        if (checkText(text, "paste").length > 0) blockEvent(event);
+        if (checkText(text, "paste", composeRootOf(event.target)).length > 0) blockEvent(event);
         return;
       }
       if (knownNoPolicy()) return;
       blockEvent(event);
       const target = event.target;
-      allowFiles(files)
+      allowFiles(files, composeRootOf(target))
         .catch(() => true)
         .then((ok) => {
           if (!ok) return;

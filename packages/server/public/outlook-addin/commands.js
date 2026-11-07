@@ -248,9 +248,49 @@
     return requestJson("GET", BASE_URL + "/api/email-addin/policy?email=" + encodeURIComponent(email)).then(
       function (res) {
         var keys = res.ok && res.body && res.body.patternKeys;
-        return { email: email, patternKeys: keys || [] };
+        var domains = res.ok && res.body && res.body.trustedDomains;
+        return { email: email, patternKeys: keys || [], trustedDomains: domains || [] };
       },
     );
+  }
+
+  // Every To/Cc/Bcc address. A field that can't be read makes the result null, so the email is
+  // checked as usual rather than treated as internal.
+  function getRecipientsAsync() {
+    var item = Office.context.mailbox.item;
+    var fields = [item.to, item.cc, item.bcc];
+    return Promise.all(
+      fields.map(function (field) {
+        return new Promise(function (resolve) {
+          if (!field || !field.getAsync) return resolve([]);
+          field.getAsync(function (result) {
+            resolve(result.status === Office.AsyncResultStatus.Succeeded ? result.value : null);
+          });
+        });
+      }),
+    ).then(function (lists) {
+      if (lists.some(function (l) { return l === null; })) return null;
+      return [].concat.apply([], lists).map(function (r) { return String(r.emailAddress || "").toLowerCase(); });
+    });
+  }
+
+  // True when there are recipients and every one is on a trusted domain (subdomains included):
+  // mail within the organization isn't checked.
+  function allRecipientsTrusted(trustedDomains) {
+    if (trustedDomains.length === 0) return Promise.resolve(false);
+    return getRecipientsAsync()
+      .then(function (recipients) {
+        if (!recipients || recipients.length === 0) return false;
+        return recipients.every(function (address) {
+          var domain = address.slice(address.lastIndexOf("@") + 1);
+          return trustedDomains.some(function (d) {
+            return domain === d || domain.slice(-(d.length + 1)) === "." + d;
+          });
+        });
+      })
+      .catch(function () {
+        return false;
+      });
   }
 
   // Fire-and-forget — a logging failure must never affect the send decision, which has
@@ -277,47 +317,13 @@
           return;
         }
 
-        getAttachmentsAsync()
-          .then(function (attachments) {
-            var real = attachments.filter(function (a) {
-              // "cloud" attachments (OneDrive/SharePoint links) have no inline content to
-              // read here — Outlook only shares a link, not the file — so they're skipped
-              // (fail-open, same as any other unscannable attachment type).
-              return a.attachmentType !== "cloud";
-            });
-            if (real.length === 0) {
+        allRecipientsTrusted(ctx.trustedDomains)
+          .then(function (internal) {
+            if (internal) {
               event.completed({ allowEvent: true });
               return;
             }
-
-            Promise.all(
-              real.map(function (a) {
-                return getAttachmentContentAsync(a.id).then(function (content) {
-                  if (!content || content.format !== Office.MailboxEnums.AttachmentContentFormat.Base64) return "";
-                  return extractText(a.name, content.content);
-                });
-              }),
-            )
-              .then(function (texts) {
-                var matched = findMatches(texts.join(" \n "), ctx.patternKeys);
-                if (matched.length > 0) {
-                  var names = real.map(function (a) { return a.name; }).join(", ");
-                  reportEvent(ctx.email, names, "BLOCKED", matched);
-                  event.completed({
-                    allowEvent: false,
-                    errorMessage:
-                      "This email was blocked: an attachment appears to contain " +
-                      matched.join(", ") +
-                      ". Remove or redact it, then resend.",
-                  });
-                } else {
-                  event.completed({ allowEvent: true });
-                }
-              })
-              .catch(function () {
-                // Scanning failed partway through (e.g. a malformed attachment) — fail open.
-                event.completed({ allowEvent: true });
-              });
+            return checkAttachments(ctx, event);
           })
           .catch(function () {
             event.completed({ allowEvent: true });
@@ -326,6 +332,58 @@
       .catch(function () {
         // Couldn't even reach the policy endpoint (server down, network issue) — fail open
         // rather than block every send in the organization on an infrastructure hiccup.
+        event.completed({ allowEvent: true });
+      });
+  }
+
+  function checkAttachments(ctx, event) {
+    var trustedNote =
+      ctx.trustedDomains.length > 0 ? " It can be sent only to " + ctx.trustedDomains.join(", ") + "." : "";
+    return getAttachmentsAsync()
+      .then(function (attachments) {
+        var real = attachments.filter(function (a) {
+          // "cloud" attachments (OneDrive/SharePoint links) have no inline content to
+          // read here — Outlook only shares a link, not the file — so they're skipped
+          // (fail-open, same as any other unscannable attachment type).
+          return a.attachmentType !== "cloud";
+        });
+        if (real.length === 0) {
+          event.completed({ allowEvent: true });
+          return;
+        }
+
+        Promise.all(
+          real.map(function (a) {
+            return getAttachmentContentAsync(a.id).then(function (content) {
+              if (!content || content.format !== Office.MailboxEnums.AttachmentContentFormat.Base64) return "";
+              return extractText(a.name, content.content);
+            });
+          }),
+        )
+          .then(function (texts) {
+            var matched = findMatches(texts.join(" \n "), ctx.patternKeys);
+            if (matched.length > 0) {
+              var names = real.map(function (a) { return a.name; }).join(", ");
+              reportEvent(ctx.email, names, "BLOCKED", matched);
+              event.completed({
+                allowEvent: false,
+                errorMessage:
+                  "This email was blocked: an attachment appears to contain " +
+                  matched.join(", ") +
+                  "." +
+                  trustedNote +
+                  " Remove or redact it, then resend.",
+              });
+            } else {
+              event.completed({ allowEvent: true });
+            }
+          })
+          .catch(function () {
+            // Scanning failed partway through (e.g. a malformed attachment) — fail open.
+            event.completed({ allowEvent: true });
+          });
+      })
+      .catch(function () {
         event.completed({ allowEvent: true });
       });
   }

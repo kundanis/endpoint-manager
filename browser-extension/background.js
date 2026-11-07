@@ -1,7 +1,8 @@
 // Endpoint IQ Mail Guard - service worker. The content script (gmail.js) can't call the server
 // itself (Gmail's page rules and mixed-content blocking apply to it), so every server call goes
 // through here. Only two calls exist, the same as the Outlook add-in's:
-//   GET  /api/email-addin/policy?email=...  -> which personal-data categories to check for this mailbox
+//   GET  /api/email-addin/policy?email=...  -> which personal-data categories to check for this mailbox,
+//                                              and the trusted recipient domains that skip the checks
 //   POST /api/email-addin/event             -> after a block: file name and category labels only,
 //                                              never the file or the matched text
 // The server URL comes only from browser policy, which the Endpoint IQ agent writes (HKLM, so the
@@ -19,11 +20,15 @@ async function serverUrl() {
 
 async function getPolicy(email) {
   const base = await serverUrl();
-  if (!base) return { ok: false, reason: "no-server", patternKeys: [] };
+  if (!base) return { ok: false, reason: "no-server", patternKeys: [], trustedDomains: [] };
   const res = await fetch(`${base}/api/email-addin/policy?email=${encodeURIComponent(email)}`, { cache: "no-store" });
-  if (!res.ok) return { ok: false, reason: `http-${res.status}`, patternKeys: [] };
+  if (!res.ok) return { ok: false, reason: `http-${res.status}`, patternKeys: [], trustedDomains: [] };
   const body = await res.json();
-  return { ok: true, patternKeys: Array.isArray(body.patternKeys) ? body.patternKeys : [] };
+  return {
+    ok: true,
+    patternKeys: Array.isArray(body.patternKeys) ? body.patternKeys : [],
+    trustedDomains: Array.isArray(body.trustedDomains) ? body.trustedDomains : [],
+  };
 }
 
 async function reportEvent(payload) {
@@ -51,7 +56,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "policy") {
     getPolicy(msg.email)
       .then(sendResponse)
-      .catch((e) => sendResponse({ ok: false, reason: String(e), patternKeys: [] }));
+      .catch((e) => sendResponse({ ok: false, reason: String(e), patternKeys: [], trustedDomains: [] }));
     return true; // async response
   }
   if (msg && msg.type === "event") {

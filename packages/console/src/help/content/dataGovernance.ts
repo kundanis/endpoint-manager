@@ -112,12 +112,13 @@ export const DATA_TOPICS: HelpTopic[] = [
     title: "EPM: Email attachment blocking",
     path: "/epm/email-attachment-block",
     summary: "An Outlook add-in that blocks or warns before an email leaves with personal data in an attachment.",
-    keywords: ["outlook", "email", "attachment", "microsoft 365", "add-in"],
+    keywords: ["outlook", "email", "attachment", "microsoft 365", "add-in", "trusted domain", "internal", "whitelist"],
     sections: [
       {
         title: "Policy tabs",
         items: [
           "Blocked categories: the personal data categories to stop.",
+          "Trusted domains: your organization's email domains. Email sent only to people on them isn't checked; one recipient elsewhere and it is.",
           "Assignment: the mailboxes (email addresses) it applies to.",
           "Recent activity: sends checked and blocked, with sender, attachment and categories.",
         ],

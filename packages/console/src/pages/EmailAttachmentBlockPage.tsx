@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Inbox, ListChecks, MailX, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Building2, Inbox, ListChecks, MailX, Pencil, Plus, Trash2, X } from "lucide-react";
 import type { PiiPatternKey } from "@em/shared";
 import {
   useAddPiiEmailBlockRule,
@@ -64,7 +64,8 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
   const deleteRule = useDeletePiiEmailBlockRule();
   const confirm = useConfirm();
 
-  const usedKeys = new Set(policy.rules.map((r) => r.value));
+  const rules = policy.rules.filter((r) => r.ruleType === "PII_PATTERN");
+  const usedKeys = new Set(rules.map((r) => r.value));
   const availablePatterns = PII_PATTERN_OPTIONS.filter((p) => !usedKeys.has(p.key));
   const [selectedKey, setSelectedKey] = useState<PiiPatternKey | "">(availablePatterns[0]?.key ?? "");
 
@@ -73,7 +74,7 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
       setSelectedKey(availablePatterns[0]?.key ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [policy.rules.length]);
+  }, [rules.length]);
 
   function handleAdd(e: FormEvent) {
     e.preventDefault();
@@ -95,7 +96,7 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
   return (
     <div className="app-stack">
       <AddFromDataTypes target="piiEmailBlock" policyId={policy.id} />
-      {policy.rules.length === 0 ? (
+      {rules.length === 0 ? (
         <EmptyState icon={ListChecks} title="No PII categories yet">
           Add one below. A policy with no categories never blocks anything.
         </EmptyState>
@@ -112,7 +113,7 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
               </tr>
             </thead>
             <tbody>
-              {policy.rules.map((r) => {
+              {rules.map((r) => {
                 const def = PII_PATTERN_OPTIONS.find((p) => p.key === r.value);
                 const label = def?.label ?? r.value;
                 return (
@@ -180,6 +181,123 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
           <p className="app-muted">Every PII category is already covered by this policy.</p>
         )}
       </div>
+    </div>
+  );
+}
+
+// Same splitting as the mailbox list below: one per line, or comma/semicolon-separated.
+function splitDomains(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(/[;,\s]+/)
+        .map((v) => v.trim().toLowerCase().replace(/^\*\./, "").replace(/^@/, "").replace(/\.$/, ""))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+const DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+function TrustedDomainsPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
+  const addRule = useAddPiiEmailBlockRule();
+  const deleteRule = useDeletePiiEmailBlockRule();
+  const [domainsText, setDomainsText] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const domains = policy.rules.filter((r) => r.ruleType === "TRUSTED_DOMAIN");
+  const existing = new Set(domains.map((d) => d.value));
+  const typed = splitDomains(domainsText);
+  const invalid = typed.filter((d) => !DOMAIN_PATTERN.test(d));
+  const newDomains = typed.filter((d) => DOMAIN_PATTERN.test(d) && !existing.has(d));
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (newDomains.length === 0 || invalid.length > 0) return;
+    setAdding(true);
+    try {
+      for (const value of newDomains) {
+        await addRule.mutateAsync({ policyId: policy.id, ruleType: "TRUSTED_DOMAIN", value });
+      }
+      setDomainsText("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  return (
+    <div className="app-stack">
+      <p className="app-text">
+        Email sent only to people on these domains is never checked, so attachments and text can be shared freely
+        inside the organization. If even one recipient (To, Cc or Bcc) is on another domain, the email is checked as
+        usual. Subdomains are included: <span className="ep-mono">company.com</span> also covers{" "}
+        <span className="ep-mono">mail.company.com</span>.
+      </p>
+
+      {domains.length === 0 ? (
+        <EmptyState icon={Building2} title="No trusted domains">
+          Add your organization's email domains below to stop checking email sent within the organization.
+        </EmptyState>
+      ) : (
+        <div className="app-table-wrap">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Domain</th>
+                <th scope="col">
+                  <span className="app-vh">Remove</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {domains.map((d) => (
+                <tr key={d.id}>
+                  <td className="ep-mono">{d.value}</td>
+                  <td>
+                    <div className="app-cell-actions">
+                      <IconButton
+                        icon={X}
+                        label={`Remove ${d.value}`}
+                        onClick={() => deleteRule.mutate({ policyId: policy.id, ruleId: d.id })}
+                        disabled={deleteRule.isPending}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <form onSubmit={handleAdd} className="app-inset-form app-stack-sm">
+        <span className="app-subhead">Add trusted domains</span>
+        <Field label="Domains" htmlFor={`email-trusted-${policy.id}`} help="One per line, or comma/semicolon-separated.">
+          <textarea
+            id={`email-trusted-${policy.id}`}
+            className="ep-textarea ep-mono"
+            rows={3}
+            value={domainsText}
+            onChange={(e) => setDomainsText(e.target.value)}
+            placeholder={"company.com\ncompany.in"}
+          />
+        </Field>
+        {invalid.length > 0 && (
+          <Alert tone="critical">
+            Not a valid domain: <span className="ep-mono">{invalid.join(", ")}</span>
+          </Alert>
+        )}
+        {error && <Alert tone="critical">{error}</Alert>}
+        <div className="app-actions-row app-end">
+          <Button type="submit" variant="primary" disabled={adding || newDomains.length === 0 || invalid.length > 0}>
+            {adding ? "Adding…" : "Add domains"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -527,10 +645,11 @@ export default function EmailAttachmentBlockPage() {
           policyId={policy.id}
           name={policy.name}
           enabled={policy.enabled}
-          meta={`${policy.rules.length} ${policy.rules.length === 1 ? "category" : "categories"}`}
+          meta={`${policy.ruleCount} ${policy.ruleCount === 1 ? "category" : "categories"}`}
           onClose={() => setSelectedId(undefined)}
           tabs={[
             { value: "rules", label: "Blocked categories", content: <RulesPanel policy={policy} /> },
+            { value: "trusted", label: "Trusted domains", content: <TrustedDomainsPanel policy={policy} /> },
             { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
             { value: "activity", label: "Recent activity", content: <EventsPanel policyId={policy.id} /> },
             { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
