@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronRight, Download, FileUp, RefreshCw, ListChecks, Pencil, Plus, ShieldCheck, Trash2, Users, Wrench, X } from "lucide-react";
 import type { GpoImportPreview, SecurityBenchmarkTargetType, SecurityRuleOperator, SecurityRuleSeverity } from "@em/shared";
 import type { SecurityBenchmarkDetail } from "../api/types";
@@ -641,11 +641,19 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
   );
 }
 
-function CompliancePanel({ benchmarkId, onOpenAssignment }: { benchmarkId: string; onOpenAssignment: () => void }) {
+function CompliancePanel({
+  benchmarkId,
+  onOpenAssignment,
+  initialExpandedAgentId,
+}: {
+  benchmarkId: string;
+  onOpenAssignment: () => void;
+  initialExpandedAgentId?: string;
+}) {
   const { data: breakdown } = useSecurityBenchmarkAgentBreakdown(benchmarkId);
   const remediateAll = useRemediateAllForAgentInBenchmark();
   const confirm = useConfirm();
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(initialExpandedAgentId ?? null);
   const [remediatingAgentId, setRemediatingAgentId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{
     agentId: string;
@@ -806,7 +814,19 @@ function CompliancePanel({ benchmarkId, onOpenAssignment }: { benchmarkId: strin
 
 // The selected benchmark: name, target/source, and its sub-views as tabs. Scrolls itself
 // into view when a different benchmark is opened, since it renders below the list.
-function BenchmarkDetail({ benchmark, onClose }: { benchmark: SecurityBenchmarkDetail; onClose: () => void }) {
+// Rendered with key={benchmark.id}, so opening another benchmark starts it fresh.
+// initialTab / focusAgentId come from a deep link (an endpoint's Security posture).
+function BenchmarkDetail({
+  benchmark,
+  onClose,
+  initialTab = "rules",
+  focusAgentId,
+}: {
+  benchmark: SecurityBenchmarkDetail;
+  onClose: () => void;
+  initialTab?: string;
+  focusAgentId?: string;
+}) {
   const scanNow = useBenchmarkScanNow();
   const toast = useToast();
 
@@ -822,13 +842,12 @@ function BenchmarkDetail({ benchmark, onClose }: { benchmark: SecurityBenchmarkD
     });
   }
 
-  const [tab, setTab] = useState("rules");
+  const [tab, setTab] = useState(initialTab);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setTab("rules");
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [benchmark.id]);
+  }, []);
 
   return (
     <div ref={ref} className="app-policy-detail" role="region" aria-label={`Benchmark ${benchmark.name}`}>
@@ -868,7 +887,9 @@ function BenchmarkDetail({ benchmark, onClose }: { benchmark: SecurityBenchmarkD
       <div className="ep-cb">
         {tab === "rules" && <RulesPanel benchmark={benchmark} />}
         {tab === "assignment" && <AssignmentPanel benchmarkId={benchmark.id} />}
-        {tab === "compliance" && <CompliancePanel benchmarkId={benchmark.id} onOpenAssignment={() => setTab("assignment")} />}
+        {tab === "compliance" && (
+          <CompliancePanel benchmarkId={benchmark.id} onOpenAssignment={() => setTab("assignment")} initialExpandedAgentId={focusAgentId} />
+        )}
       </div>
     </Card>
     </div>
@@ -883,7 +904,14 @@ export default function SecurityConfigPage() {
   const confirm = useConfirm();
   const toast = useToast();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  // Deep link: /security-config?benchmark=<id>&tab=compliance&endpoint=<agentId>
+  const [searchParams] = useSearchParams();
+  const [deepLink] = useState(() => ({
+    benchmarkId: searchParams.get("benchmark") ?? undefined,
+    tab: searchParams.get("tab") ?? undefined,
+    agentId: searchParams.get("endpoint") ?? undefined,
+  }));
+  const [selectedId, setSelectedId] = useState<string | undefined>(deepLink.benchmarkId);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -1054,7 +1082,15 @@ export default function SecurityConfigPage() {
         )}
       </Card>
 
-      {benchmark && <BenchmarkDetail benchmark={benchmark} onClose={() => setSelectedId(undefined)} />}
+      {benchmark && (
+        <BenchmarkDetail
+          key={benchmark.id}
+          benchmark={benchmark}
+          onClose={() => setSelectedId(undefined)}
+          initialTab={benchmark.id === deepLink.benchmarkId ? deepLink.tab : undefined}
+          focusAgentId={benchmark.id === deepLink.benchmarkId ? deepLink.agentId : undefined}
+        />
+      )}
 
       {creating && (
         <Modal

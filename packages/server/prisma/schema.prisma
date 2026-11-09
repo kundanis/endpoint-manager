@@ -500,6 +500,34 @@ model VulnerabilityFinding {
   @@index([status, vulnerabilityDefinitionId, agentId])
 }
 
+// Microsoft's Security Update Guide (MSRC CVRF API), one row per monthly document we've read.
+// A document is read again when Microsoft revises it (currentReleaseDate changes) or when our
+// product mapping changes (mappingVersion).
+model MsrcDocument {
+  id                 String   @id @db.NVarChar(20) // e.g. "2026-Oct"
+  currentReleaseDate DateTime
+  mappingVersion     Int
+  fixCount           Int      @default(0)
+  syncedAt           DateTime @default(now())
+}
+
+// "<CVE> is fixed in <product> at build <fixedBuild>", from MSRC, kept only for products we can
+// recognise on an endpoint (familyKey from data/softwareProductMap.ts). Matching compares the
+// endpoint's installed build with fixedBuild instead of guessing from names.
+model MsrcProductFix {
+  id                        String   @id @default(uuid())
+  documentId                String   @db.NVarChar(20)
+  cveId                     String   @db.NVarChar(32)
+  vulnerabilityDefinitionId String   @db.NVarChar(36)
+  familyKey                 String   @db.NVarChar(100)
+  productName               String   @db.NVarChar(300)
+  fixedBuild                String   @db.NVarChar(100)
+  kbArticle                 String?  @db.NVarChar(50)
+
+  @@index([familyKey])
+  @@index([documentId])
+}
+
 model VulnerabilitySyncRun {
   id                 String    @id @default(uuid())
   triggeredByAdminId String

@@ -447,6 +447,15 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
   const passed = assessed.filter((f) => f.status === "PASS").length;
   const compliance = assessed.length > 0 ? Math.round((passed / assessed.length) * 100) : null;
 
+  // Open the benchmark with the most failing rules on this endpoint, on its Compliance by endpoint
+  // tab with this endpoint expanded.
+  const failsByBenchmark = new Map<string, number>();
+  for (const f of assessed) failsByBenchmark.set(f.benchmarkId, (failsByBenchmark.get(f.benchmarkId) ?? 0) + (f.status === "PASS" ? 0 : 1));
+  const focusBenchmarkId = [...failsByBenchmark.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const securityConfigLink = focusBenchmarkId
+    ? `/security-config?benchmark=${encodeURIComponent(focusBenchmarkId)}&tab=compliance&endpoint=${encodeURIComponent(agent.id)}`
+    : "/security-config";
+
   const items: { label: ReactNode; value: ReactNode }[] = [];
   if (!vulnerabilitiesHidden) {
     items.push({
@@ -500,7 +509,7 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
     items.push({
       label: "Security configuration",
       value: (
-        <Link className="ep-link" to="/security-config">
+        <Link className="ep-link" to={securityConfigLink}>
           {findingsLoading ? (
             "…"
           ) : compliance === null ? (
@@ -1094,7 +1103,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
  * Software
  * ---------------------------------------------------------------------------------------- */
 
-type LicenseFilter = "ALL" | "LICENSED" | "UNLICENSED";
+type LicenseFilter = "ALL" | InstalledSoftwareEntry["licenseStatus"];
 
 function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId: string; software: InstalledSoftwareEntry[]; collectedAt: string | null }) {
   const uninstall = useUninstallSoftware();
@@ -1111,8 +1120,7 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
   const filtered = software.filter((s) => {
     if (nameFilter && !s.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
     if (publisherFilter && s.publisher !== publisherFilter) return false;
-    if (licenseFilter === "LICENSED" && !s.licensed) return false;
-    if (licenseFilter === "UNLICENSED" && s.licensed) return false;
+    if (licenseFilter !== "ALL" && s.licenseStatus !== licenseFilter) return false;
     return true;
   });
   const paged = usePagedList(filtered);
@@ -1193,7 +1201,8 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
         >
           <option value="ALL">All license statuses</option>
           <option value="LICENSED">Licensed</option>
-          <option value="UNLICENSED">Not licensed</option>
+          <option value="SYSTEM">System / free component</option>
+          <option value="NONE">No licence recorded</option>
         </select>
       </Toolbar>
       <div className="ep-cb">
@@ -1242,7 +1251,15 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
                     <td>{s.name}</td>
                     <td>{s.version ? <span className="ep-mono">{s.version}</span> : "—"}</td>
                     <td>{s.publisher ?? "—"}</td>
-                    <td>{s.licensed ? <Badge tone="ok">Licensed</Badge> : <Badge tone="med">Not licensed</Badge>}</td>
+                    <td>
+                      {s.licenseStatus === "LICENSED" ? (
+                        <Badge tone="ok">Licensed</Badge>
+                      ) : s.licenseStatus === "SYSTEM" ? (
+                        <Badge tone="neu">System / free</Badge>
+                      ) : (
+                        <Badge tone="neu">No licence recorded</Badge>
+                      )}
+                    </td>
                     <td>
                       <div className="app-cell-actions">
                         <Button variant="danger" size="sm" onClick={() => handleUninstall(s.name)} disabled={pendingName === s.name}>

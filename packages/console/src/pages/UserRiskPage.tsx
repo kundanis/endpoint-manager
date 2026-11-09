@@ -185,8 +185,8 @@ export function UserRiskUsersTab() {
             onClick={() =>
               downloadCsv(
                 "user-risk-users.csv",
-                ["User", "Risk score", "Risk level", "Alerts", "Open alerts", "Main signals", "Endpoints", "Last activity"],
-                rows.map((u) => [u.username, u.score, SEVERITY_LABEL[u.level], u.alertCount, u.openAlertCount, u.topRules.map((r) => r.title).join("; "), u.endpoints.join("; "), csvDate(u.lastActivityAt)]),
+                ["User", "Endpoints", "Risk score", "Risk level", "Alerts", "Open alerts", "Main signals", "Last activity"],
+                rows.map((u) => [u.username, u.endpoints.join("; "), u.score, SEVERITY_LABEL[u.level], u.alertCount, u.openAlertCount, u.topRules.map((r) => r.title).join("; "), csvDate(u.lastActivityAt)]),
               )
             }
           >
@@ -215,6 +215,7 @@ export function UserRiskUsersTab() {
               <thead>
                 <tr>
                   <th scope="col">User</th>
+                  <th scope="col">Endpoints</th>
                   <th scope="col">Risk</th>
                   <th scope="col" style={{ textAlign: "right" }}>
                     Alerts
@@ -223,7 +224,6 @@ export function UserRiskUsersTab() {
                     Open
                   </th>
                   <th scope="col">Main signals</th>
-                  <th scope="col">Endpoints</th>
                   <th scope="col">Last activity</th>
                 </tr>
               </thead>
@@ -235,6 +235,7 @@ export function UserRiskUsersTab() {
                         <b>{u.username}</b>
                       </Link>
                     </td>
+                    <td className="ep-mono">{u.endpoints.join(", ") || "—"}</td>
                     <td>
                       <RiskBadge score={u.score} level={u.level} />
                     </td>
@@ -258,7 +259,6 @@ export function UserRiskUsersTab() {
                         <span className="app-muted">—</span>
                       )}
                     </td>
-                    <td className="ep-mono">{u.endpoints.join(", ") || "—"}</td>
                     <td className="app-muted">{formatDateTime(u.lastActivityAt)}</td>
                   </tr>
                 ))}

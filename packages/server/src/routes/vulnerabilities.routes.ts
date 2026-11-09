@@ -12,6 +12,7 @@ import {
   listVulnerabilitySyncRuns,
   triggerVulnerabilitySync,
 } from "../services/vulnerability.service";
+import { triggerMsrcSync } from "../services/msrc.service";
 import { rescanAllAgents } from "../services/vulnerabilityMatch.service";
 import { remediateBySeverity, remediateVulnerability } from "../services/vulnerabilityRemediation.service";
 
@@ -21,7 +22,10 @@ vulnerabilitiesRouter.post("/sync", async (req, res, next) => {
   try {
     const payload = triggerVulnerabilitySyncRequestSchema.parse(req.body);
     const result = await triggerVulnerabilitySync({ ...payload, triggeredByAdminId: req.adminId! });
-    res.status(202).json(result);
+    // Sync now also reads Microsoft's Security Update Guide (only new or revised monthly
+    // documents after the first run), as its own run in the sync history.
+    const msrc = await triggerMsrcSync(req.adminId!);
+    res.status(202).json({ ...result, msrcSyncRunId: msrc.syncRunId });
   } catch (err) {
     next(err);
   }

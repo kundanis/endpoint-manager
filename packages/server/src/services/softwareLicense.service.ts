@@ -9,36 +9,56 @@ import type {
 import { SOFTWARE_LICENSE_CYCLES_PER_YEAR } from "@em/shared";
 import { prisma } from "../db";
 import { decryptFieldOrNull, encryptFieldOrNull } from "../utils/fieldEncryption";
-import { compact, normalizeName, tokenize } from "./softwareNameMatch.util";
+import { isSystemOrFreeSoftware } from "./softwareClassify.util";
+import { GENERIC_MATCH_TOKENS, compact, normalizeName, tokenize } from "./softwareNameMatch.util";
+
+// Licence name -> matcher. A licence matches an installed program when the compacted names are
+// equal, or when every meaningful word of one name appears in the other: licence "Adobe Acrobat"
+// matches "Adobe Acrobat (64-bit)", and installed "Adobe Acrobat" (how Acrobat Pro installs)
+// matches licence "Adobe Acrobat Pro" - that reverse direction needs at least two words, so a
+// bare "Adobe" entry doesn't match. Numbers and words like "microsoft", "windows", "server" or
+// "tools" are ignored. One shared word is no longer enough: before, a licence such as
+// "Microsoft Office" marked every program sharing any word with it as licensed.
+interface LicenseMatcher {
+  compactName: string;
+  tokens: string[];
+}
+
+function toMatcher(softwareName: string): LicenseMatcher | null {
+  const normalized = normalizeName(softwareName);
+  const compactName = compact(normalized);
+  const tokens = tokenize(normalized).filter((t) => !GENERIC_MATCH_TOKENS.has(t));
+  if (!compactName && tokens.length === 0) return null;
+  return { compactName, tokens };
+}
+
+function matchesInstalled(m: LicenseMatcher, entryName: string): boolean {
+  const entryNormalized = normalizeName(entryName);
+  if (m.compactName && compact(entryNormalized) === m.compactName) return true;
+  if (m.tokens.length === 0) return false;
+  const entryTokens = tokenize(entryNormalized).filter((t) => !GENERIC_MATCH_TOKENS.has(t));
+  if (m.tokens.every((t) => entryTokens.includes(t))) return true;
+  return entryTokens.length >= 2 && entryTokens.every((t) => m.tokens.includes(t));
+}
 
 // Estimates seats-in-use by name-matching against every agent's installed-software
-// inventory — no manual per-device assignment step, so the count self-corrects as
-// software gets installed/removed. Same heuristic tolerance tradeoffs as the CVE
-// matcher: token-overlap can both over-count (generic name collisions) and under-count
-// (naming divergence from what the admin typed).
+// inventory - no manual per-device assignment step, so the count self-corrects as
+// software gets installed/removed.
 async function countAgentsWithMatchingSoftware(softwareName: string): Promise<number> {
-  const licenseNormalized = normalizeName(softwareName);
-  const licenseTokens = tokenize(licenseNormalized);
-  const licenseCompact = compact(licenseNormalized);
-  if (licenseTokens.length === 0 && !licenseCompact) return 0;
+  const matcher = toMatcher(softwareName);
+  if (!matcher) return 0;
 
   const snapshots = await prisma.inventorySnapshot.findMany({ select: { installedSoftware: true } });
 
   let count = 0;
   for (const snap of snapshots) {
     const installed: InstalledSoftwareEntry[] = JSON.parse(snap.installedSoftware);
-    const matched = installed.some((entry) => {
-      const entryNormalized = normalizeName(entry.name);
-      if (compact(entryNormalized) === licenseCompact) return true;
-      const entryTokens = tokenize(entryNormalized);
-      return entryTokens.some((t) => licenseTokens.includes(t));
-    });
-    if (matched) count++;
+    if (installed.some((entry) => matchesInstalled(matcher, entry.name))) count++;
   }
   return count;
 }
 
-// A manually-entered seatsInUseOverride always wins over the heuristic — and skips the
+// A manually-entered seatsInUseOverride always wins over the heuristic - and skips the
 // inventory scan entirely in that case, since the whole point of the override is "don't
 // trust/bother with automatic detection for this license".
 async function resolveSeatsInUse(softwareName: string, seatsInUseOverride: number | null): Promise<number> {
@@ -46,27 +66,25 @@ async function resolveSeatsInUse(softwareName: string, seatsInUseOverride: numbe
   return countAgentsWithMatchingSoftware(softwareName);
 }
 
-// Inverse of countAgentsWithMatchingSoftware — same heuristic (compact-name equality or
-// any shared token), applied per installed-software entry against every license record,
-// for AgentDetailPage's "Licensed" badge/filter. Fetches all licenses once regardless of
-// installed-software list size, not once per entry.
+export type InstalledSoftwareLicenseStatus = "LICENSED" | "SYSTEM" | "NONE";
+
+// For the endpoint Software tab: LICENSED when a recorded licence matches (same rule as the
+// seat count), SYSTEM for drivers / runtimes / OS components / OEM utilities / free apps that
+// need no licence, otherwise NONE ("no licence recorded"). Fetches all licences once.
 export async function annotateWithLicenseStatus(
   installed: InstalledSoftwareEntry[],
-): Promise<Array<InstalledSoftwareEntry & { licensed: boolean }>> {
+): Promise<Array<InstalledSoftwareEntry & { licensed: boolean; licenseStatus: InstalledSoftwareLicenseStatus }>> {
   const licenses = await prisma.softwareLicense.findMany({ select: { softwareName: true } });
-  const matchers = licenses.map((l) => {
-    const normalized = normalizeName(l.softwareName);
-    return { compactName: compact(normalized), tokens: tokenize(normalized) };
-  });
+  const matchers = licenses.map((l) => toMatcher(l.softwareName)).filter((m): m is LicenseMatcher => m !== null);
 
   return installed.map((entry) => {
-    const entryNormalized = normalizeName(entry.name);
-    const entryCompact = compact(entryNormalized);
-    const entryTokens = tokenize(entryNormalized);
-    const licensed = matchers.some(
-      (m) => m.compactName === entryCompact || m.tokens.some((t) => entryTokens.includes(t)),
-    );
-    return { ...entry, licensed };
+    const licensed = matchers.some((m) => matchesInstalled(m, entry.name));
+    const licenseStatus: InstalledSoftwareLicenseStatus = licensed
+      ? "LICENSED"
+      : isSystemOrFreeSoftware(entry.name, entry.publisher)
+        ? "SYSTEM"
+        : "NONE";
+    return { ...entry, licensed, licenseStatus };
   });
 }
 

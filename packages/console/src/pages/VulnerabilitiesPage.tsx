@@ -66,13 +66,14 @@ function remediationSummaryText(result: VulnerabilityRemediationResult): string 
   return (
     `Dispatched ${result.jobIds.length} job(s) across ${result.agentsTargeted} agent(s) for ${result.softwareGroups} software title(s)` +
     `${result.skippedLowConfidence > 0 ? ` — ${result.skippedLowConfidence} finding(s) skipped (low confidence, review individually)` : ""}` +
+    `${result.skippedNeedsUpdate > 0 ? ` — ${result.skippedNeedsUpdate} Microsoft finding(s) skipped: install the Microsoft update named in the finding (Patches) instead of uninstalling` : ""}` +
     `. Check the Commands page for status; findings clear automatically once each agent's next inventory check-in confirms the software is gone (up to ~10 minutes).`
   );
 }
 
 function RemediationResultAlert({ result }: { result: VulnerabilityRemediationResult }) {
   return (
-    <Alert tone={result.skippedLowConfidence > 0 ? "warn" : "success"} title="Uninstall dispatched">
+    <Alert tone={result.skippedLowConfidence > 0 || result.skippedNeedsUpdate > 0 ? "warn" : "success"} title="Remediation dispatched">
       {remediationSummaryText(result)}
     </Alert>
   );
@@ -96,7 +97,12 @@ export default function VulnerabilitiesPage() {
   const [showAllSyncRuns, setShowAllSyncRuns] = useState(false);
 
   // Runs arrive newest first (the server caps the list at the latest 50).
-  const visibleSyncRuns = showAllSyncRuns ? syncRuns : syncRuns?.slice(0, 1);
+  // By default the latest NVD run and the latest Microsoft run.
+  const visibleSyncRuns = showAllSyncRuns
+    ? syncRuns
+    : [syncRuns?.find((run) => run.mode !== "MSRC"), syncRuns?.find((run) => run.mode === "MSRC")].filter(
+        (run): run is VulnerabilitySyncRunView => run !== undefined,
+      );
 
   const filteredSummary = summary?.filter(
     (item) => findingsSeverityFilter === "ALL" || (item.cvssSeverity ?? "UNKNOWN").toUpperCase() === findingsSeverityFilter,
@@ -354,7 +360,14 @@ export default function VulnerabilitiesPage() {
                           {item.cveId}
                         </a>
                       </td>
-                      <td title={item.description}>{truncate(item.description, 100)}</td>
+                      <td title={item.description}>
+                        {item.confirmedAgentCount === 0 && (
+                          <>
+                            <Badge tone="neu">Name only</Badge>{" "}
+                          </>
+                        )}
+                        {truncate(item.description, 100)}
+                      </td>
                       <td className="ep-num" style={{ textAlign: "right" }}>
                         {item.cvssBaseScore ?? <span className="app-muted">—</span>}
                       </td>
@@ -497,7 +510,9 @@ export default function VulnerabilitiesPage() {
                             <Badge tone="med">Name only</Badge>
                           )}
                         </td>
-                        <td className="ep-mono">{f.matchedCpeCriteria}</td>
+                        <td className={f.matchedCpeCriteria.startsWith("msrc:") ? undefined : "ep-mono"}>
+                          {f.matchedCpeCriteria.startsWith("msrc:") ? `Microsoft: ${f.matchedCpeCriteria.slice(5)}` : f.matchedCpeCriteria}
+                        </td>
                         <td>
                           <RemediationStatus remediation={f.remediation} />
                         </td>
@@ -520,7 +535,7 @@ export default function VulnerabilitiesPage() {
         </div>
       )}
 
-      <Card title="CVE catalog" hint="synced from NVD">
+      <Card title="CVE catalog" hint="synced from NVD and Microsoft's Security Update Guide">
         <div className="app-stack">
           <form onSubmit={handleSync} className="app-actions-row" style={{ alignItems: "flex-end" }}>
             <div style={{ minWidth: 280 }}>
@@ -548,7 +563,7 @@ export default function VulnerabilitiesPage() {
               <Skeleton lines={2} />
             ) : !syncRuns || syncRuns.length === 0 ? (
               <EmptyState icon={History} title="No syncs run yet">
-                Choose a mode and select Sync now to pull the CVE catalog from NVD.
+                Choose a mode and select Sync now to pull the CVE catalog from NVD and Microsoft's fixed builds.
               </EmptyState>
             ) : (
               <div className="app-table-wrap">
@@ -560,14 +575,14 @@ export default function VulnerabilitiesPage() {
                       <th scope="col">Started</th>
                       <th scope="col">Status</th>
                       <th scope="col" style={{ textAlign: "right" }}>
-                        CVEs
+                        CVEs / fixes
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleSyncRuns?.map((run) => (
                       <tr key={run.id}>
-                        <td>{run.mode === "PUBLISHED" ? "Published" : "Last modified"}</td>
+                        <td>{run.mode === "MSRC" ? "Microsoft updates" : run.mode === "PUBLISHED" ? "Published" : "Last modified"}</td>
                         <td>
                           {formatDate(run.windowStartAt)} – {formatDate(run.windowEndAt)}
                         </td>

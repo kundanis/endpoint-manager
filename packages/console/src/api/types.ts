@@ -219,6 +219,9 @@ export interface InstalledSoftwareEntry {
   // Heuristic name-match against SoftwareLicense records, computed server-side — same
   // matching used for a license's own seatsInUse count, just inverted per-entry.
   licensed: boolean;
+  // LICENSED = a recorded licence matches; SYSTEM = driver / runtime / OS component / OEM
+  // utility / free app that needs no licence; NONE = no licence recorded.
+  licenseStatus: "LICENSED" | "SYSTEM" | "NONE";
 }
 
 export interface MemModuleView {
@@ -476,12 +479,15 @@ export interface VulnerabilitySummaryItem {
   cvssBaseScore: number | null;
   cvssSeverity: string | null;
   affectedAgentCount: number;
+  // Endpoints whose installed version is confirmed vulnerable; 0 = name-only matches.
+  confirmedAgentCount: number;
   lastModifiedAt: string;
 }
 
 export interface VulnerabilitySyncRunView {
   id: string;
-  mode: "PUBLISHED" | "LAST_MODIFIED";
+  // MSRC = Microsoft's Security Update Guide (cveUpsertedCount = fixes stored, pagesFetched = documents read).
+  mode: "PUBLISHED" | "LAST_MODIFIED" | "MSRC";
   status: "RUNNING" | "SUCCESS" | "FAILED";
   windowStartAt: string;
   windowEndAt: string;
@@ -528,6 +534,8 @@ export interface VulnerabilityRemediationResult {
   softwareGroups: number;
   agentsTargeted: number;
   skippedLowConfidence: number;
+  // Microsoft findings on software that can't update itself: fixed by a Microsoft update, not an uninstall.
+  skippedNeedsUpdate: number;
 }
 
 export interface AgentVulnerabilityFinding {
