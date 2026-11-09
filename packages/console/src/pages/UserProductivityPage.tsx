@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Clock, Coffee, History, Monitor, SearchX, UserCheck, X } from "lucide-react";
-import { useAgentUserProductivityDailyLog, useAgentUserSessions, useUserProductivitySummary } from "../api/hooks";
+import { AppWindow, Clock, Coffee, Globe, History, Monitor, SearchX, UserCheck, X } from "lucide-react";
+import type { AppUsageKind } from "@em/shared";
+import { useAgentUserProductivityDailyLog, useAgentUserSessions, useAppUsage, useUserProductivitySummary } from "../api/hooks";
 import EndpointLabel from "../components/EndpointLabel";
 import {
   Alert,
@@ -16,11 +17,12 @@ import {
   PageHeader,
   Pagination,
   SearchInput,
+  Segmented,
   Skeleton,
   Toolbar,
   usePagedList,
 } from "../components/ui";
-import { CHART_SEMANTIC } from "../chartTheme";
+import { CHART_SEMANTIC, CHART_SERIES } from "../chartTheme";
 import { formatDate, formatDateTime, formatTime } from "../format";
 
 function formatDuration(totalSeconds: number): string {
@@ -45,6 +47,110 @@ function percent(part: number, total: number): number {
 const CHART_ROWS = 8;
 
 const RIGHT = { textAlign: "right" } as const;
+
+// Rows shown before "Show all" in the applications/websites card.
+const USAGE_ROWS = 10;
+
+// Time per application or website - for every endpoint (no agentId) or one, today by default.
+// Collected by the Endpoint IQ icon on each PC (agent 0.2.23+): only the program's name and a
+// website's domain, never window titles or page addresses.
+function AppUsageCard({ agentId, hostname, from, to }: { agentId?: string; hostname?: string; from?: string; to?: string }) {
+  const [kind, setKind] = useState<AppUsageKind>("APP");
+  const [showAll, setShowAll] = useState(false);
+  const { data, isLoading, error, refetch } = useAppUsage(kind, agentId, from, to);
+  const rows = data ?? [];
+  const total = rows.reduce((sum, r) => sum + r.activeSeconds, 0);
+  const shown = showAll ? rows : rows.slice(0, USAGE_ROWS);
+  const period = from || to ? "in the chosen dates" : "today";
+  const noun = kind === "APP" ? "applications" : "websites";
+
+  return (
+    <Card
+      title={
+        hostname ? (
+          <>
+            Applications and websites — <span className="ep-mono">{hostname}</span>
+          </>
+        ) : (
+          "Applications and websites today"
+        )
+      }
+      hint={`active time ${period}, most used first`}
+      actions={
+        <Segmented
+          label="Show"
+          value={kind}
+          onChange={(k) => {
+            setKind(k);
+            setShowAll(false);
+          }}
+          options={[
+            { value: "APP", label: "Applications" },
+            { value: "WEB", label: "Websites" },
+          ]}
+        />
+      }
+    >
+      {isLoading ? (
+        <Skeleton />
+      ) : error ? (
+        <Alert tone="critical" title={`Couldn't load ${noun}`} action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
+          {(error as Error).message}
+        </Alert>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={kind === "APP" ? AppWindow : Globe} title={`No ${noun} recorded ${period}`}>
+          The Endpoint IQ icon on each PC (agent 0.2.23 or later) reports the active {kind === "APP" ? "application" : "browser tab's website"}{" "}
+          every 5 minutes while the user isn't idle.
+        </EmptyState>
+      ) : (
+        <>
+          <table className="ep-cov">
+            <thead>
+              <tr>
+                <th scope="col">{kind === "APP" ? "Application" : "Website"}</th>
+                <th scope="col">Share of time</th>
+                <th scope="col" style={RIGHT}>
+                  Active
+                </th>
+                <th scope="col" style={RIGHT}>
+                  Users
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <tr key={r.key}>
+                  <td className="ep-n" style={{ width: 240 }}>
+                    {r.label}
+                    {kind === "APP" && r.label.toLowerCase() !== r.key && <small className="ep-mono">{r.key}.exe</small>}
+                  </td>
+                  <td>
+                    <div className="ep-sbar" title={`${percent(r.activeSeconds, total)}% of the time recorded`}>
+                      <i style={{ width: `${(r.activeSeconds / total) * 100}%`, background: CHART_SERIES[0] }} />
+                    </div>
+                  </td>
+                  <td className="ep-t" style={{ width: 90 }}>
+                    {formatDuration(r.activeSeconds)}
+                  </td>
+                  <td className="ep-t" style={{ width: 70 }}>
+                    {r.users}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length > USAGE_ROWS && (
+            <div className="app-actions-row" style={{ marginTop: 12 }}>
+              <Button size="sm" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? `Show top ${USAGE_ROWS}` : `Show all ${rows.length}`}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
 
 export default function UserProductivityPage() {
   const { data: summary, isLoading, error, refetch } = useUserProductivitySummary();
@@ -90,7 +196,8 @@ export default function UserProductivityPage() {
   const description = (
     <>
       Logon/logoff activity and active vs idle time per endpoint, from Windows session enumeration (<span className="ep-mono">quser</span>) on a
-      5-minute cycle. Always-on, passive tracking — not a policy, so every enrolled endpoint reports this automatically. Today: {todayLabel}
+      5-minute cycle, plus the time spent in each application and on each website (application name and website domain only). Always-on,
+      passive tracking — not a policy, so every enrolled endpoint reports this automatically. Today: {todayLabel}
     </>
   );
 
@@ -199,6 +306,8 @@ export default function UserProductivityPage() {
           </table>
         )}
       </Card>
+
+      <AppUsageCard />
 
       <Card flush title="Endpoints today" hint="select an endpoint to see its session and daily history">
         <Toolbar>
@@ -350,6 +459,10 @@ export default function UserProductivityPage() {
             </>
           )}
         </Card>
+      )}
+
+      {selectedAgentId && (
+        <AppUsageCard key={selectedAgentId} agentId={selectedAgentId} hostname={selectedHostname} from={fromDate || undefined} to={toDate || undefined} />
       )}
 
       {selectedAgentId && (

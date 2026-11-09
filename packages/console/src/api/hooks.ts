@@ -1,5 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AppUsageKind,
+  AppUsageRow,
   AppControlRuleType,
   DlpEnforcementMode,
   DlpRuleType,
@@ -3170,6 +3172,20 @@ export function useAgentUserProductivityDailyLog(agentId: string | undefined, fr
     queryFn: () => api.get<UserProductivityDailyLogView[]>(`/admin/user-productivity/agents/${agentId}/daily-log${qs ? `?${qs}` : ""}`),
     enabled: !!agentId,
     refetchInterval: 30000,
+  });
+}
+
+// Time per application or website, for all endpoints or one; from/to are YYYY-MM-DD (default today).
+export function useAppUsage(kind: AppUsageKind, agentId?: string, from?: string, to?: string) {
+  const params = new URLSearchParams({ kind });
+  if (agentId) params.set("agentId", agentId);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+
+  return useQuery({
+    queryKey: ["appUsage", kind, agentId, from, to],
+    queryFn: () => api.get<AppUsageRow[]>(`/admin/user-productivity/app-usage?${params.toString()}`),
+    refetchInterval: 60000,
   });
 }
 

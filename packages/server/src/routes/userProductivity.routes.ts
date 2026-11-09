@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAgentSessions, getDailyLogs, getFleetSummary } from "../services/userProductivity.service";
+import { getAgentSessions, getAppUsage, getDailyLogs, getFleetSummary } from "../services/userProductivity.service";
 
 export const userProductivityRouter = Router();
 
@@ -34,6 +34,18 @@ userProductivityRouter.get("/agents/:agentId/daily-log", async (req, res, next) 
     const from = parseDateParam(req.query.from);
     const to = parseDateParam(req.query.to);
     res.json(await getDailyLogs(req.params.agentId, from, to));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Time per application (?kind=APP, the default) or website (?kind=WEB), for all endpoints or
+// one (?agentId=), between ?from and ?to (YYYY-MM-DD, inclusive; default today, at most 31 days).
+userProductivityRouter.get("/app-usage", async (req, res, next) => {
+  try {
+    const kind = req.query.kind === "WEB" ? "WEB" : "APP";
+    const agentId = typeof req.query.agentId === "string" && req.query.agentId ? req.query.agentId : undefined;
+    res.json(await getAppUsage({ agentId, kind, from: parseDateParam(req.query.from), to: parseDateParam(req.query.to) }));
   } catch (err) {
     next(err);
   }

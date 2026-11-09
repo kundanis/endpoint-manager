@@ -84,6 +84,11 @@ export async function updateAdminUser(id: string, params: UpdateAdminUserRequest
       },
     });
 
+    // A new password signs this admin out everywhere (all their sessions end).
+    if (passwordHash) {
+      await tx.adminSession.updateMany({ where: { adminId: id, revokedAt: null }, data: { revokedAt: new Date() } });
+    }
+
     // Full-replace, same idiom as PUT /agents/:id/groups - simpler and safer than diffing
     // add/remove sets for a form that always submits the complete desired grant list.
     if (params.moduleGrants) {

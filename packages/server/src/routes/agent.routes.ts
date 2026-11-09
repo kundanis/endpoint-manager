@@ -26,6 +26,7 @@ import {
   usbControlEventBatchPayloadSchema,
   usbControlSyncResultPayloadSchema,
   userProductivityScanResultPayloadSchema,
+  appUsageReportSchema,
   verifyUninstallPasswordRequestSchema,
   webBlockSyncResultPayloadSchema,
   zeroTrustScanResultPayloadSchema,
@@ -86,7 +87,7 @@ import {
   recordSyncResult as recordUsbControlSyncResult,
   resolveAssignedRulesForAgent as resolveAssignedUsbControlRulesForAgent,
 } from "../services/usbControlScan.service";
-import { recordScanResult as recordUserProductivityScanResult } from "../services/userProductivity.service";
+import { recordAppUsage, recordScanResult as recordUserProductivityScanResult } from "../services/userProductivity.service";
 import { isEnabledForAgent as isEdrEnabledForAgent, recordScanResult as recordEdrScanResult } from "../services/edr.service";
 import { verifyUninstallPassword } from "../services/agentSecurity.service";
 import { confirmAgentUninstalled } from "../services/agent.service";
@@ -550,6 +551,16 @@ agentRouter.post("/user-productivity/scan-result", async (req, res, next) => {
   try {
     const payload = userProductivityScanResultPayloadSchema.parse(req.body);
     await recordUserProductivityScanResult(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// From the tray app (through the agent): time per application and website since its last report.
+agentRouter.post("/user-productivity/app-usage", async (req, res, next) => {
+  try {
+    await recordAppUsage(req.agentId!, appUsageReportSchema.parse(req.body));
     res.status(204).send();
   } catch (err) {
     next(err);

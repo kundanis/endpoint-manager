@@ -154,6 +154,10 @@ class TrayContext : ApplicationContext
         requestTimer.Start();
         RefreshStatus();
         CheckRequests(true);
+
+        UsageTracker usage = new UsageTracker();
+        Application.ApplicationExit += (s, e) => usage.Flush();
+        Microsoft.Win32.SystemEvents.SessionEnding += (s, e) => usage.Flush();
     }
 
     void Background(Action work)

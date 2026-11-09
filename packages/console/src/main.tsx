@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
-import { SESSION_ENDED_EVENT } from "./api/client";
+import { SESSION_ENDED_EVENT, api } from "./api/client";
 import { DialogProvider } from "./components/ui";
 // Meridian design system (design-system/CLAUDE.md). Order matters: fonts, then tokens, then
 // the ep-* component styles, then the app's own CSS last so its legacy bridge can override
@@ -28,6 +28,38 @@ const queryClient = new QueryClient({
 window.addEventListener(SESSION_ENDED_EVENT, () => {
   void queryClient.invalidateQueries({ queryKey: ["me"] });
 });
+
+// Signs out after 30 minutes without mouse or keyboard use in any console tab. The pages'
+// own auto-refresh would otherwise keep an unattended session alive on the server, which
+// ends sessions after 30 minutes without requests (adminSession.service.ts). The last
+// activity time is shared between tabs through localStorage.
+const IDLE_SIGN_OUT_MS = 30 * 60 * 1000;
+const ACTIVITY_KEY = "em:last-activity";
+let lastActivity = Date.now();
+function noteActivity() {
+  const now = Date.now();
+  if (now - lastActivity < 15_000) return;
+  lastActivity = now;
+  try {
+    localStorage.setItem(ACTIVITY_KEY, String(now));
+  } catch {
+    // storage unavailable: this tab's own activity still counts
+  }
+}
+for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) {
+  window.addEventListener(type, noteActivity, { passive: true });
+}
+window.setInterval(() => {
+  let shared = 0;
+  try {
+    shared = Number(localStorage.getItem(ACTIVITY_KEY)) || 0;
+  } catch {
+    // ignore
+  }
+  const idleFor = Date.now() - Math.max(lastActivity, shared);
+  if (idleFor < IDLE_SIGN_OUT_MS || !queryClient.getQueryData(["me"])) return;
+  void api.post("/auth/logout").finally(() => queryClient.setQueryData(["me"], null));
+}, 30_000);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

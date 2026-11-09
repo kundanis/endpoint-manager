@@ -23,6 +23,25 @@ model AdminUser {
   lastLoginAt      DateTime?
   assetNotes       AssetNote[]
   moduleGrants     AdminModuleGrant[]
+  sessions         AdminSession[]
+}
+
+// One row per console sign-in. The session cookie (a JWT) carries this row's id, and every
+// request checks it here, so a session can be ended on the server: on Sign out, after 30
+// minutes without requests, when the admin's password is changed, or when the account is
+// deleted. A captured cookie stops working at that point instead of lasting its full 12 hours.
+model AdminSession {
+  id         String    @id @default(uuid())
+  adminId    String
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  ipAddress  String?   @db.NVarChar(100)
+
+  @@index([adminId])
+  @@index([expiresAt])
 }
 
 model AdminModuleGrant {
@@ -169,6 +188,7 @@ model Agent {
   policyAccessExceptions PolicyAccessException[]
   userSessions UserSession[]
   userProductivityDailyLogs UserProductivityDailyLog[]
+  appUsageDaily UserAppUsageDaily[]
   edrEvents EdrEvent[]
   edrPersistenceBaseline EdrPersistenceBaseline[]
 }
@@ -1270,6 +1290,26 @@ model UserProductivityDailyLog {
 
   @@unique([agentId, username, logDate])
   @@index([agentId])
+}
+
+// User productivity - time each signed-in user spent in each application and on each website,
+// per day. Sampled by the Endpoint IQ tray app in the user's session (the foreground window
+// every few seconds, not while the user is idle) and sent through the agent. Only the app's
+// name and a website's domain are kept - never window titles or full addresses.
+model UserAppUsageDaily {
+  id            String   @id @default(uuid())
+  agentId       String
+  agent         Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  username      String   @db.NVarChar(300)
+  logDate       DateTime // server-local midnight, as UserProductivityDailyLog.logDate
+  kind          String   @db.NVarChar(10) // APP | WEB
+  key           String   @db.NVarChar(255) // APP: executable name, lower case; WEB: domain
+  label         String   @db.NVarChar(300) // APP: the program's description; WEB: the domain
+  activeSeconds Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([agentId, username, logDate, kind, key])
+  @@index([logDate, kind])
 }
 
 // EDR-lite — built-in (not admin-authored) detections, append-only like every other

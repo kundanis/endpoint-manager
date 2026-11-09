@@ -3,6 +3,8 @@ import rateLimit from "express-rate-limit";
 import { loginRequestSchema } from "@em/shared";
 import { InvalidCredentialsError, login } from "../services/auth.service";
 import { adminAuthMiddleware } from "../middleware/adminAuth";
+import { verifyAdminJwt } from "../utils/jwt";
+import { revokeSession } from "../services/adminSession.service";
 import { logger } from "../logger";
 import { writeAudit } from "../services/adminAudit.service";
 
@@ -76,7 +78,7 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
 
     let result;
     try {
-      result = await login(email, password);
+      result = await login(email, password, req.ip);
     } catch (err) {
       if (err instanceof InvalidCredentialsError) {
         recordFailure(key);
@@ -104,9 +106,23 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   }
 });
 
-authRouter.post("/logout", (_req, res) => {
-  res.clearCookie(COOKIE_NAME);
-  res.status(204).send();
+// Ends the session on the server too, so the cookie can't be reused after signing out.
+authRouter.post("/logout", async (req, res, next) => {
+  try {
+    const token = req.cookies?.[COOKIE_NAME];
+    if (token) {
+      try {
+        const { sid } = verifyAdminJwt(token);
+        if (sid) await revokeSession(sid);
+      } catch {
+        // an expired or invalid token has no live session to end
+      }
+    }
+    res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: "lax", secure: req.secure });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
 });
 
 authRouter.get("/me", adminAuthMiddleware, async (req, res) => {

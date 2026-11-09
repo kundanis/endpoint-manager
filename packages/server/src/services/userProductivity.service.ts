@@ -1,4 +1,4 @@
-import type { UserProductivityScanResultPayload } from "@em/shared";
+import type { AppUsageKind, AppUsageReport, AppUsageRow, UserProductivityScanResultPayload } from "@em/shared";
 import { prisma } from "../db";
 
 export interface UserProductivitySummaryAgentView {
@@ -274,4 +274,66 @@ export async function getDailyLogs(agentId: string, from?: Date, to?: Date): Pro
     activeSecondsTotal: l.activeSecondsTotal,
     idleSecondsTotal: l.idleSecondsTotal,
   }));
+}
+
+// ---- Applications and websites --------------------------------------------------------------
+
+// Adds a tray app report (seconds per app / website since its last report) to today's rows.
+// A day's row can't exceed 24 hours, whatever a report claims.
+export async function recordAppUsage(agentId: string, report: AppUsageReport): Promise<void> {
+  const logDate = startOfDay(new Date());
+  const merged = new Map<string, AppUsageReport["items"][number]>();
+  for (const item of report.items) {
+    const id = `${item.kind}|${item.key}`;
+    const seen = merged.get(id);
+    if (seen) seen.seconds += item.seconds;
+    else merged.set(id, { ...item });
+  }
+
+  for (const item of merged.values()) {
+    const where = { agentId_username_logDate_kind_key: { agentId, username: report.username, logDate, kind: item.kind, key: item.key } };
+    const row = await prisma.userAppUsageDaily.upsert({
+      where,
+      create: { agentId, username: report.username, logDate, kind: item.kind, key: item.key, label: item.label, activeSeconds: item.seconds },
+      update: { label: item.label, activeSeconds: { increment: item.seconds } },
+    });
+    if (row.activeSeconds > 86_400) await prisma.userAppUsageDaily.update({ where, data: { activeSeconds: 86_400 } });
+  }
+}
+
+const MAX_USAGE_RANGE_DAYS = 31;
+
+// Time per application or website between two days (inclusive), for one endpoint or for all,
+// most used first. Defaults to today.
+export async function getAppUsage(params: { agentId?: string; from?: Date; to?: Date; kind: AppUsageKind }): Promise<AppUsageRow[]> {
+  const to = startOfDay(params.to ?? new Date());
+  let from = startOfDay(params.from ?? to);
+  const earliest = new Date(to);
+  earliest.setDate(earliest.getDate() - (MAX_USAGE_RANGE_DAYS - 1));
+  if (from < earliest) from = earliest;
+
+  const rows = await prisma.userAppUsageDaily.findMany({
+    where: { kind: params.kind, logDate: { gte: from, lte: to }, ...(params.agentId ? { agentId: params.agentId } : {}) },
+    select: { key: true, label: true, activeSeconds: true, agentId: true, username: true, updatedAt: true },
+  });
+
+  const byKey = new Map<string, { label: string; labelAt: Date; activeSeconds: number; users: Set<string> }>();
+  for (const r of rows) {
+    const entry = byKey.get(r.key);
+    if (!entry) {
+      byKey.set(r.key, { label: r.label, labelAt: r.updatedAt, activeSeconds: r.activeSeconds, users: new Set([`${r.agentId}|${r.username}`]) });
+      continue;
+    }
+    entry.activeSeconds += r.activeSeconds;
+    entry.users.add(`${r.agentId}|${r.username}`);
+    if (r.updatedAt > entry.labelAt) {
+      entry.label = r.label;
+      entry.labelAt = r.updatedAt;
+    }
+  }
+
+  return [...byKey.entries()]
+    .map(([key, e]) => ({ kind: params.kind, key, label: e.label, activeSeconds: e.activeSeconds, users: e.users.size }))
+    .sort((a, b) => b.activeSeconds - a.activeSeconds)
+    .slice(0, 200);
 }

@@ -109,8 +109,12 @@ $iconPath = Join-Path $templatesDir "endpoint-iq.ico"
 if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the agent service host" }
 $trayDir = Join-Path $stagingRoot "tray"
 New-Item -ItemType Directory -Force -Path $trayDir | Out-Null
+# UI Automation (reads the browser's address bar for website time) ships in the framework's WPF folder.
+$wpfDir = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\WPF"
 & $csc /nologo /target:winexe /platform:anycpu "/out:$(Join-Path $trayDir 'EndpointIQTray.exe')" "/win32icon:$iconPath" `
-    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll (Join-Path $templatesDir "TrayApp.cs")
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll `
+    "/r:$(Join-Path $wpfDir 'UIAutomationClient.dll')" "/r:$(Join-Path $wpfDir 'UIAutomationTypes.dll')" "/r:$(Join-Path $wpfDir 'WindowsBase.dll')" `
+    (Join-Path $templatesDir "TrayApp.cs") (Join-Path $templatesDir "UsageTracker.cs")
 if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the tray app" }
 
 Write-Host "Staging install/uninstall scripts..."

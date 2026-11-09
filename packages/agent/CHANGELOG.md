@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.24
+- User productivity: the Endpoint IQ icon records the time each user spends in each application and,
+  in Chrome, Edge, Firefox, Brave, Opera and Vivaldi, on each website (domain only), while they
+  aren't idle. Reported every 5 minutes. Window titles and page addresses are never collected.
+
 ## 0.2.23
 - Runs as the Windows service "Endpoint IQ Agent" (automatic start, restarted if it stops) instead of
   a hidden scheduled task. Existing endpoints move to the service by themselves after this update.

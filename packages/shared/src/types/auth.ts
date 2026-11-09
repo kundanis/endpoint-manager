@@ -8,6 +8,7 @@ export interface AdminUser {
 export interface AdminJwtPayload {
   sub: string; // AdminUser.id
   email: string;
+  sid?: string; // AdminSession.id - tokens without one (issued before sessions existed) are refused
 }
 
 export interface EnrollmentToken {

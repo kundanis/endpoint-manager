@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { AdminGrantKey, AdminRole } from "@em/shared";
 import { verifyAdminJwt } from "../utils/jwt";
 import { prisma } from "../db";
+import { touchSession } from "../services/adminSession.service";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -39,6 +40,11 @@ export async function adminAuthMiddleware(req: Request, res: Response, next: Nex
   } catch {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
+  // The session must still be live on the server (see adminSession.service.ts) - a signed-out,
+  // idle or password-reset session is refused even though its token hasn't expired.
+  if (!payload.sid) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
 
   // Outside the JWT try/catch on purpose - a DB error here is a real 500, not an auth
   // failure, and must go through next(err) rather than being reported as "invalid session".
@@ -47,7 +53,7 @@ export async function adminAuthMiddleware(req: Request, res: Response, next: Nex
       where: { id: payload.sub },
       select: { role: true, moduleGrants: { select: { moduleKey: true } } },
     });
-    if (!admin) {
+    if (!admin || !(await touchSession(payload.sid, payload.sub))) {
       return res.status(401).json({ error: "Invalid or expired session" });
     }
 

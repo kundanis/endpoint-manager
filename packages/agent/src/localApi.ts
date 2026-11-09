@@ -96,6 +96,11 @@ export function startLocalApi(client: AxiosInstance, source: AgentStatusSource):
           const { data } = await client.post("/api/agent/pause-requests", body);
           return send(res, 201, data);
         }
+        case "POST /usage": {
+          // Time per application and website from the tray (user productivity).
+          await client.post("/api/agent/user-productivity/app-usage", await readBody(req));
+          return send(res, 204);
+        }
         default:
           return send(res, 404, { error: "Not found" });
       }

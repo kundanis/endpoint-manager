@@ -72,6 +72,30 @@ export function createApp() {
   // address from X-Forwarded-For - trusted only when it comes from Cloudflare's edges.
   if (behindCloudflare) app.set("trust proxy", trustCloudflare);
 
+  // Security hardening (penetration test findings):
+  //  - no "X-Powered-By: Express" banner;
+  //  - no ETags on API responses (express.static keeps its own for console files);
+  //  - browser security headers on everything, and API responses never cached, as they carry
+  //    endpoint, user and policy data. The Outlook add-in pages are left frameable, as Outlook
+  //    on the web shows them in a frame.
+  app.disable("x-powered-by");
+  app.set("etag", false);
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "same-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    if (req.secure) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    if (!req.path.startsWith("/outlook-addin")) {
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+    }
+    if (req.path.startsWith("/api/")) {
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Pragma", "no-cache");
+    }
+    next();
+  });
+
   app.use(pinoHttp({ logger }));
   // Internet-facing (NAT on 443): public addresses only reach the Outlook add-in paths.
   app.use(publicAccessAllowlist);
