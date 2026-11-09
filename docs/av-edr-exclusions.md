@@ -17,7 +17,9 @@ until that's actually true.
 |---|---|
 | Install folder | `C:\ProgramData\EndpointPro\Agent\` (recursive) |
 | Main process | `C:\ProgramData\EndpointPro\Agent\node\node.exe` |
-| Scheduled Tasks | `EndpointProAgent`, `EndpointProWatchdog`, `EndpointProSelfUpdateHelper` (the last one is created transiently during a self-update and removes itself after) |
+| Service (agent 0.2.23+) | `EndpointIQAgent` — `C:\ProgramData\EndpointPro\Agent\EndpointIQAgentService.exe`, which starts `node.exe` and, in each signed-in user's session, `C:\ProgramData\EndpointPro\Agent\tray\EndpointIQTray.exe` |
+| Local port | `127.0.0.1:47613` (loopback only; the tray app talks to the agent on it) |
+| Scheduled Tasks | `EndpointProWatchdog`, `EndpointProSelfUpdateHelper` and `EndpointIQServiceSetup` (both created transiently and remove themselves); agents before 0.2.23 also used `EndpointProAgent` |
 
 ## What kind of exclusion — this matters
 

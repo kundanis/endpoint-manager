@@ -6,6 +6,15 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.23
+- Runs as the Windows service "Endpoint IQ Agent" (automatic start, restarted if it stops) instead of
+  a hidden scheduled task. Existing endpoints move to the service by themselves after this update.
+- Endpoint IQ icon in the notification area for every signed-in user: connection status, last sync,
+  Sync now, and the EPM and DLP policies on the PC.
+- Users can ask to pause one or more of those policies for 15 minutes to 1 day, with a reason. The
+  request appears on Access exceptions for an administrator to approve or reject, and the user is
+  notified of the answer.
+
 ## 0.2.22
 - Installs the Endpoint IQ Mail Guard browser extension in Chrome and Edge from their stores while an
   Email attachment blocking policy is in use (users can't remove or disable it), and removes it

@@ -56,6 +56,15 @@ const DURATION_OPTIONS = [
   { minutes: 10080, label: "7 days" },
 ];
 
+// Requests a user raised from the Endpoint IQ tray app on their own PC carry this prefix plus
+// their Windows account (ENDPOINT_USER_REQUESTER_PREFIX in @em/shared - copied, as the console
+// can't import runtime values from that package).
+const ENDPOINT_USER_PREFIX = "endpoint-user:";
+
+function endpointRequester(r: PolicyAccessExceptionView): string | null {
+  return r.requestedByAdminId.startsWith(ENDPOINT_USER_PREFIX) ? r.requestedByAdminId.slice(ENDPOINT_USER_PREFIX.length) : null;
+}
+
 type DisplayStatus = "pending" | "active" | "expired" | "ended" | "rejected";
 
 // Approved requests are "Active" until they expire or an admin ends them; the server sets isActive.
@@ -268,7 +277,8 @@ export default function AccessExceptionsPage() {
         The exception filter is applied server-side, so it takes effect the next time that endpoint syncs (within about
         20 seconds), and expires automatically with no separate revert step. Select End now on an active exception to
         end it early; the policy applies again within about 20 seconds. A request must be approved by a different admin
-        than the one who raised it.
+        than the one who raised it. Users can also ask to pause a policy from the Endpoint IQ icon on their PC; those
+        requests appear here as pending, marked "Requested on the endpoint".
       </Alert>
 
       <Card flush>
@@ -354,8 +364,9 @@ export default function AccessExceptionsPage() {
                           <b>{r.policyName}</b>
                           <small>{POLICY_TYPE_LABELS[r.policyType]}</small>
                         </td>
-                        <td>
+                        <td className="ep-host">
                           <EndpointLabel hostname={r.hostname} agentId={r.agentId} />
+                          {endpointRequester(r) && <small>Requested on the endpoint by {endpointRequester(r)}</small>}
                         </td>
                         <td style={{ maxWidth: 360 }}>{r.reason}</td>
                         <td className="ep-num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>

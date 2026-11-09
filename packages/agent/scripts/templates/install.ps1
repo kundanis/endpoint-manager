@@ -9,7 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$TaskName = "EndpointProAgent"
+$TaskName = "EndpointProAgent" # agents before 0.2.23 ran as this scheduled task
+$ServiceName = "EndpointIQAgent"
 $WatchdogTaskName = "EndpointProWatchdog"
 
 Write-Host "Endpoint IQ Agent Installer"
@@ -37,17 +38,22 @@ $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
 schtasks /query /tn $TaskName 2>$null | Out-Null
 $taskExists = ($LASTEXITCODE -eq 0)
+$serviceExists = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
 $ErrorActionPreference = $prevEap
 
-if ($taskExists) {
+if ($taskExists -or $serviceExists) {
     Write-Host "Existing installation detected - stopping it before updating."
     $ErrorActionPreference = "SilentlyContinue"
-    # Disable first - RestartOnFailure would otherwise immediately relaunch the process
-    # /end just tried to stop, racing the file copy below.
-    schtasks /change /tn $TaskName /disable 2>$null | Out-Null
-    schtasks /end /tn $TaskName 2>$null | Out-Null
+    # The watchdog first - it would otherwise start the agent again mid-copy. Then the agent
+    # (service, or the scheduled task older versions used: disabled first, as RestartOnFailure
+    # would otherwise relaunch what /end just stopped) and the tray app, whose files are in use.
     schtasks /change /tn $WatchdogTaskName /disable 2>$null | Out-Null
     schtasks /end /tn $WatchdogTaskName 2>$null | Out-Null
+    if ($serviceExists) { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue }
+    schtasks /change /tn $TaskName /disable 2>$null | Out-Null
+    schtasks /end /tn $TaskName 2>$null | Out-Null
+    taskkill /IM EndpointIQTray.exe /F 2>$null | Out-Null
+    Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevEap
 
     # The install folder may already be locked down (tamper protection) from a prior
@@ -68,6 +74,9 @@ Write-Host "Installing to $installDir ..."
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Copy-Item -Path (Join-Path $scriptRoot "node") -Destination $installDir -Recurse -Force
 Copy-Item -Path (Join-Path $scriptRoot "app") -Destination $installDir -Recurse -Force
+Copy-Item -Path (Join-Path $scriptRoot "tray") -Destination $installDir -Recurse -Force
+Copy-Item -Path (Join-Path $scriptRoot "EndpointIQAgentService.exe") -Destination $installDir -Force
+Copy-Item -Path (Join-Path $scriptRoot "register-service.ps1") -Destination $installDir -Force
 Copy-Item -Path (Join-Path $scriptRoot "watchdog.ps1") -Destination $installDir -Force
 
 # config.ts resolves config.json relative to dist/'s parent - i.e. <installDir>/app/,
@@ -84,61 +93,11 @@ $config = @{ serverUrl = $serverUrls[0]; serverUrls = $serverUrls; enrollmentTok
 # rejects. The values here (a URL and a hex token) are plain ASCII, so this is safe.
 Set-Content -Path (Join-Path $installDir "app\config.json") -Value $config -Encoding ASCII
 
-$nodeExe = Join-Path $installDir "node\node.exe"
-$entryPoint = Join-Path $installDir "app\dist\index.js"
-
-# Task Scheduler, not a "real" Windows service - no third-party binary (NSSM/WinSW) to
-# fetch, schtasks.exe is built into Windows. RestartOnFailure covers crash recovery;
-# BootTrigger + SYSTEM principal covers running before any user logs in.
-$taskXmlPath = Join-Path $env:TEMP "EndpointProAgentTask.xml"
-$taskXml = @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <Triggers>
-    <BootTrigger>
-      <Enabled>true</Enabled>
-    </BootTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author">
-      <UserId>S-1-5-18</UserId>
-      <RunLevel>HighestAvailable</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <Hidden>true</Hidden>
-    <RestartOnFailure>
-      <Interval>PT1M</Interval>
-      <Count>999</Count>
-    </RestartOnFailure>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>$nodeExe</Command>
-      <Arguments>"$entryPoint"</Arguments>
-      <WorkingDirectory>$installDir</WorkingDirectory>
-    </Exec>
-  </Actions>
-</Task>
-"@
-Set-Content -Path $taskXmlPath -Value $taskXml -Encoding Unicode
-
-schtasks /create /tn $TaskName /xml $taskXmlPath /f | Out-Null
-$createExitCode = $LASTEXITCODE
-Remove-Item $taskXmlPath -Force
-if ($createExitCode -ne 0) {
-    throw "Failed to register the scheduled task (schtasks exit code $createExitCode)."
-}
-
 # Watchdog: an independent, self-contained Scheduled Task (own script, own trigger) that
-# checks and restores the main task above if it's disabled or deleted. The main agent
-# process performs the mirror-image check on THIS task (see watchdogGuard.ts) - together,
-# tampering with either task alone gets undone by the other within one check cycle.
+# puts the agent service back if it's stopped, disabled or deleted (watchdog.ps1 ->
+# register-service.ps1 -Watchdog). The agent performs the mirror-image check on THIS task
+# (see watchdogGuard.ts) - together, tampering with either one alone gets undone by the other
+# within one check cycle.
 Write-Host "Registering the watchdog task..."
 $watchdogScript = Join-Path $installDir "watchdog.ps1"
 $watchdogTaskXmlPath = Join-Path $env:TEMP "EndpointProWatchdogTask.xml"
@@ -188,21 +147,25 @@ if ($watchdogCreateExitCode -ne 0) {
     Write-Warning "Failed to register the watchdog task (schtasks exit code $watchdogCreateExitCode) - the agent will still run, just without task tamper-resistance."
 }
 
-# Tamper resistance: lock the install folder down to SYSTEM only once everything is in
-# place - a local administrator can still bypass this deliberately (take ownership, reset
-# the ACL), but it is no longer a casual one-click delete. This is a deterrent, not an
-# absolute guarantee, and is applied last so nothing above needs to fight it while installing.
-Write-Host "Applying tamper-resistant permissions to the install folder..."
-$currentIdentity = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
-icacls $installDir /inheritance:r | Out-Null
-icacls $installDir /grant:r "SYSTEM:(OI)(CI)F" | Out-Null
-icacls $installDir /grant:r "*S-1-5-32-544:(OI)(CI)RX" | Out-Null
-icacls $installDir /remove:g $currentIdentity 2>$null | Out-Null
-
-Write-Host "Starting the agent..."
-schtasks /run /tn $TaskName | Out-Null
+# The Windows service "EndpointIQAgent" (EndpointIQAgentService.exe): runs the agent as
+# LocalSystem from boot, restarts it if it stops, and starts the Endpoint IQ tray app for each
+# signed-in user. register-service.ps1 also removes the scheduled task older versions used and
+# locks the install folder down to SYSTEM (administrators can read it; a local administrator
+# can still take ownership deliberately - a deterrent, not an absolute guarantee).
+Write-Host "Registering and starting the Endpoint IQ Agent service..."
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir "register-service.ps1")
+$registerExitCode = $LASTEXITCODE
 
 Start-Sleep -Seconds 2
 Write-Host ""
-Write-Host "Done. The Endpoint IQ agent is installed and running (scheduled task '$TaskName')."
-Write-Host "It will start automatically on every boot, and a watchdog task will restore it if stopped or disabled."
+if ($registerExitCode -eq 0) {
+    Write-Host "Done. The Endpoint IQ agent is installed and running (Windows service '$ServiceName')."
+    Write-Host "It starts automatically on every boot, shows the Endpoint IQ icon in the notification area for each"
+    Write-Host "signed-in user, and a watchdog task restores the service if it is stopped or disabled."
+} elseif ($registerExitCode -eq 3) {
+    Write-Warning ("Windows didn't allow the Endpoint IQ Agent service to run (Smart App Control or an application " +
+        "control policy may be blocking unsigned programs). The agent is installed and running as the scheduled task " +
+        "'$TaskName' instead, without the notification-area icon. It will try the service again tomorrow.")
+} else {
+    throw "Failed to register the Endpoint IQ Agent service (register-service.ps1 exit code $registerExitCode)."
+}

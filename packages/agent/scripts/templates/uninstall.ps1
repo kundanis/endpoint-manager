@@ -3,7 +3,8 @@ param(
     [string]$UninstallPassword = ""
 )
 
-$TaskName = "EndpointProAgent"
+$TaskName = "EndpointProAgent" # agents before 0.2.23 ran as this scheduled task
+$ServiceName = "EndpointIQAgent"
 $WatchdogTaskName = "EndpointProWatchdog"
 $installDir = Join-Path $env:ProgramData "EndpointPro\Agent"
 $configPath = Join-Path $installDir "app\config.json"
@@ -143,11 +144,15 @@ if ($config -and $state) {
 }
 
 Write-Host "Stopping and removing the Endpoint IQ agent..."
+# The watchdog first, so it can't put the service back while it's being removed.
+schtasks /change /tn $WatchdogTaskName /disable 2>$null | Out-Null
+schtasks /end /tn $WatchdogTaskName 2>$null | Out-Null
+Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+sc.exe delete $ServiceName 2>$null | Out-Null
+taskkill /IM EndpointIQTray.exe /F 2>$null | Out-Null
 schtasks /change /tn $TaskName /disable 2>$null | Out-Null
 schtasks /end /tn $TaskName 2>$null | Out-Null
 schtasks /delete /tn $TaskName /f 2>$null | Out-Null
-schtasks /change /tn $WatchdogTaskName /disable 2>$null | Out-Null
-schtasks /end /tn $WatchdogTaskName 2>$null | Out-Null
 schtasks /delete /tn $WatchdogTaskName /f 2>$null | Out-Null
 
 if (Test-Path $installDir) {

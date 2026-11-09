@@ -73,18 +73,18 @@ export async function uninstallSoftwareOnAgent(
   });
 }
 
-// The dispatched command runs AS a descendant of the EndpointProAgent scheduled task -
-// `schtasks /end /tn EndpointProAgent` kills the whole process tree Task Scheduler
-// associated with that task, which would kill this very script mid-teardown before it
-// could finish removing the watchdog task/install folder. Sidestepped the same way
-// self-updating installers generally do: this script's only job is to register a
-// completely independent one-time Scheduled Task a few seconds in the future - Task
-// Scheduler launches that fresh, with no process-tree relationship to anything running
-// right now, so it survives EndpointProAgent being torn down and finishes the real
-// cleanup afterward. The dispatched command itself reports SUCCESS almost immediately
+// The dispatched command runs AS a descendant of the agent - stopping the EndpointIQAgent
+// service (or, on agents before 0.2.23, ending the EndpointProAgent scheduled task) kills the
+// agent's whole process tree, which would kill this very script mid-teardown before it could
+// finish removing the watchdog task/install folder. Sidestepped the same way self-updating
+// installers generally do: this script's only job is to register a completely independent
+// one-time Scheduled Task a few seconds in the future - Task Scheduler launches that fresh,
+// with no process-tree relationship to anything running right now, so it survives the agent
+// being torn down and finishes the real cleanup afterward. The dispatched command itself reports SUCCESS almost immediately
 // (registering a task is near-instant), well before the actual removal happens.
 function buildUninstallAgentScript(): string {
-  const taskName = "EndpointProAgent";
+  const taskName = "EndpointProAgent"; // agents before 0.2.23
+  const serviceName = "EndpointIQAgent";
   const watchdogTaskName = "EndpointProWatchdog";
   const helperTaskName = "EndpointProUninstallHelper";
 
@@ -97,12 +97,16 @@ function buildUninstallAgentScript(): string {
     // the install-dir removal that were supposed to run after it. Matches the local
     // uninstall.ps1's own $ErrorActionPreference for the exact same reason.
     `$ErrorActionPreference = 'SilentlyContinue'`,
-    `schtasks /change /tn "${taskName}" /disable 2>$null | Out-Null`,
-    `schtasks /end /tn "${taskName}" 2>$null | Out-Null`,
-    `schtasks /delete /tn "${taskName}" /f 2>$null | Out-Null`,
+    // The watchdog first, so it can't put the service back while it's being removed.
     `schtasks /change /tn "${watchdogTaskName}" /disable 2>$null | Out-Null`,
     `schtasks /end /tn "${watchdogTaskName}" 2>$null | Out-Null`,
     `schtasks /delete /tn "${watchdogTaskName}" /f 2>$null | Out-Null`,
+    `Stop-Service -Name "${serviceName}" -Force -ErrorAction SilentlyContinue`,
+    `sc.exe delete "${serviceName}" 2>$null | Out-Null`,
+    `taskkill /IM EndpointIQTray.exe /F 2>$null | Out-Null`,
+    `schtasks /change /tn "${taskName}" /disable 2>$null | Out-Null`,
+    `schtasks /end /tn "${taskName}" 2>$null | Out-Null`,
+    `schtasks /delete /tn "${taskName}" /f 2>$null | Out-Null`,
     `$installDir = Join-Path $env:ProgramData "EndpointPro\\Agent"`,
     // Best-effort self-report to the server (see confirmAgentUninstalled) so the Agent
     // row - and its license seat - is freed immediately instead of lingering forever as

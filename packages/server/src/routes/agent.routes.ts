@@ -15,6 +15,7 @@ import {
   deploymentStatusPayloadSchema,
   dlpEventBatchPayloadSchema,
   edrScanResultPayloadSchema,
+  endpointPauseRequestSchema,
   inventoryReportSchema,
   ipBlockSyncResultPayloadSchema,
   networkScanTaskResultPayloadSchema,
@@ -89,6 +90,12 @@ import { recordScanResult as recordUserProductivityScanResult } from "../service
 import { isEnabledForAgent as isEdrEnabledForAgent, recordScanResult as recordEdrScanResult } from "../services/edr.service";
 import { verifyUninstallPassword } from "../services/agentSecurity.service";
 import { confirmAgentUninstalled } from "../services/agent.service";
+import {
+  PolicyNotApplicableError,
+  createPauseRequests,
+  listApplicablePolicies,
+  listPauseRequestsForAgent,
+} from "../services/endpointPauseRequest.service";
 
 export const agentRouter = Router();
 
@@ -563,6 +570,34 @@ agentRouter.post("/edr/scan-result", async (req, res, next) => {
     await recordEdrScanResult(req.agentId!, payload);
     res.status(204).send();
   } catch (err) {
+    next(err);
+  }
+});
+
+// The Endpoint IQ tray app on the endpoint (through the local agent): the EPM and DLP policies
+// that apply here, and pause requests the endpoint's user sends for an admin to approve.
+agentRouter.get("/policies", async (req, res, next) => {
+  try {
+    res.json(await listApplicablePolicies(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.get("/pause-requests", async (req, res, next) => {
+  try {
+    res.json(await listPauseRequestsForAgent(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/pause-requests", async (req, res, next) => {
+  try {
+    const payload = endpointPauseRequestSchema.parse(req.body);
+    res.status(201).json(await createPauseRequests(req.agentId!, payload));
+  } catch (err) {
+    if (err instanceof PolicyNotApplicableError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });

@@ -10,7 +10,8 @@ import { getServerUrl } from "./httpClient";
 
 const execFileAsync = promisify(execFile);
 
-const AGENT_TASK_NAME = "EndpointProAgent";
+const SERVICE_NAME = "EndpointIQAgent";
+const LEGACY_AGENT_TASK_NAME = "EndpointProAgent"; // agents before 0.2.23 ran as this scheduled task
 const WATCHDOG_TASK_NAME = "EndpointProWatchdog";
 const HELPER_TASK_NAME = "EndpointProSelfUpdateHelper";
 
@@ -89,14 +90,13 @@ function buildHelperTaskXml(helperScriptPath: string, startBoundary: string): st
 
 // Registers a completely independent one-time Scheduled Task ~20s in the future — same
 // self-survival trick as agent.service.ts's buildUninstallAgentScript, adapted for the fact
-// that THIS process (not a dispatched command subprocess) is what's running inside the
-// EndpointProAgent task. The helper task has no process-tree relationship to
-// EndpointProAgent, so it survives that task (and this very process) being torn down by
-// its own first step.
-async function registerHelperTask(helperScriptPath: string): Promise<void> {
-  const startBoundary = localIsoNoTimezone(new Date(Date.now() + 20_000));
+// that THIS process (not a dispatched command subprocess) is what the agent service runs.
+// The helper task has no process-tree relationship to the service, so it survives the
+// service (and this very process) being stopped by its own first step.
+export async function registerOneTimeTask(taskName: string, helperScriptPath: string, delayMs = 20_000): Promise<void> {
+  const startBoundary = localIsoNoTimezone(new Date(Date.now() + delayMs));
   const taskXml = buildHelperTaskXml(helperScriptPath, startBoundary);
-  const taskXmlPath = path.join(process.env.TEMP ?? getInstallDir(), `${HELPER_TASK_NAME}_${Date.now()}.xml`);
+  const taskXmlPath = path.join(process.env.TEMP ?? getInstallDir(), `${taskName}_${Date.now()}.xml`);
 
   // schtasks requires a BOM to correctly detect UTF-16LE (matching the XML's own
   // <?xml encoding="UTF-16"?> declaration) — Node's "utf16le" encoding alone writes raw
@@ -104,15 +104,16 @@ async function registerHelperTask(helperScriptPath: string): Promise<void> {
   // in watchdogGuard.ts.
   fs.writeFileSync(taskXmlPath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(taskXml, "utf16le")]));
   try {
-    await execFileAsync("schtasks", ["/create", "/tn", HELPER_TASK_NAME, "/xml", taskXmlPath, "/f"]);
+    await execFileAsync("schtasks", ["/create", "/tn", taskName, "/xml", taskXmlPath, "/f"]);
   } finally {
     fs.unlinkSync(taskXmlPath);
   }
 }
 
-// The detached helper's own script — stops both Scheduled Tasks (which kills this very
-// process), extracts the already-downloaded, checksum-verified zip directly over the
-// install root, restarts both tasks, then self-reports the real terminal result using the
+// The detached helper's own script — stops the watchdog and the agent service (which kills
+// this very process) and the tray app (its files are in use), extracts the already-downloaded,
+// checksum-verified zip directly over the install root, re-registers and starts the service
+// (register-service.ps1 also puts the folder permissions back), then self-reports the real terminal result using the
 // agent's own state.json credentials (untouched by the extract — see package-installer.ps1,
 // config.json/.state are never part of this zip). Mirrors update.ps1's proactive
 // takeown/icacls fix for the same ownership-mismatch class of Access Denied error already
@@ -147,11 +148,13 @@ function buildHelperScript(params: { installDir: string; zipPath: string; taskId
     `  }`,
     `}`,
     ``,
-    `schtasks /change /tn "${AGENT_TASK_NAME}" /disable 2>$null | Out-Null`,
-    `schtasks /end /tn "${AGENT_TASK_NAME}" 2>$null | Out-Null`,
     `schtasks /change /tn "${WATCHDOG_TASK_NAME}" /disable 2>$null | Out-Null`,
     `schtasks /end /tn "${WATCHDOG_TASK_NAME}" 2>$null | Out-Null`,
-    `Start-Sleep -Seconds 2`,
+    `Stop-Service -Name "${SERVICE_NAME}" -Force -ErrorAction SilentlyContinue`,
+    `schtasks /change /tn "${LEGACY_AGENT_TASK_NAME}" /disable 2>$null | Out-Null`,
+    `schtasks /end /tn "${LEGACY_AGENT_TASK_NAME}" 2>$null | Out-Null`,
+    `taskkill /IM EndpointIQTray.exe /F 2>$null | Out-Null`,
+    `Start-Sleep -Seconds 3`,
     ``,
     `try {`,
     `  $ErrorActionPreference = 'Stop'`,
@@ -163,11 +166,11 @@ function buildHelperScript(params: { installDir: string; zipPath: string; taskId
     `} catch {`,
     `  Report-Status "FAILED" "$_"`,
     `}`,
+    `$ErrorActionPreference = 'SilentlyContinue'`,
     ``,
+    // The service starts the tray app again in every signed-in session.
+    `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir "register-service.ps1")`,
     `schtasks /change /tn "${WATCHDOG_TASK_NAME}" /enable 2>$null | Out-Null`,
-    `schtasks /run /tn "${WATCHDOG_TASK_NAME}" 2>$null | Out-Null`,
-    `schtasks /change /tn "${AGENT_TASK_NAME}" /enable 2>$null | Out-Null`,
-    `schtasks /run /tn "${AGENT_TASK_NAME}" 2>$null | Out-Null`,
     ``,
     `schtasks /delete /tn "${HELPER_TASK_NAME}" /f 2>$null | Out-Null`,
     `Remove-Item -Path "$PSCommandPath" -Force -ErrorAction SilentlyContinue`,
@@ -222,11 +225,9 @@ export async function processAgentUpdate(
     });
     fs.writeFileSync(helperScriptPath, helperScript, "ascii");
 
-    await registerHelperTask(helperScriptPath);
+    await registerOneTimeTask(HELPER_TASK_NAME, helperScriptPath);
 
-    console.log(
-      `Self-update to ${task.targetVersion} scheduled — EndpointProAgent will restart within about 30 seconds.`,
-    );
+    console.log(`Self-update to ${task.targetVersion} scheduled — the agent service will restart within about 30 seconds.`);
   } catch (err) {
     await reportStatus({ status: "FAILED", message: err instanceof Error ? err.message : String(err) });
   }

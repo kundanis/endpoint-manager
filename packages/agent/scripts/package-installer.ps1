@@ -98,12 +98,28 @@ $systemNodeExe = Join-Path $env:ProgramFiles "nodejs\node.exe"
 if (-not (Test-Path $systemNodeExe)) { throw "Could not find node.exe at $systemNodeExe" }
 Copy-Item -Path $systemNodeExe -Destination (Join-Path $nodeDir "node.exe") -Force
 
+# The Windows service host and the tray app, compiled with the C# compiler that comes with the
+# .NET Framework (the same one the setup exe below uses) - no third-party service wrapper.
+Write-Host "Compiling the agent service host and the tray app..."
+$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+if (-not (Test-Path $csc)) { throw "Could not find csc.exe at $csc" }
+$iconPath = Join-Path $templatesDir "endpoint-iq.ico"
+& $csc /nologo /target:exe /platform:x64 "/out:$(Join-Path $stagingRoot 'EndpointIQAgentService.exe')" "/win32icon:$iconPath" `
+    /r:System.ServiceProcess.dll (Join-Path $templatesDir "AgentService.cs")
+if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the agent service host" }
+$trayDir = Join-Path $stagingRoot "tray"
+New-Item -ItemType Directory -Force -Path $trayDir | Out-Null
+& $csc /nologo /target:winexe /platform:anycpu "/out:$(Join-Path $trayDir 'EndpointIQTray.exe')" "/win32icon:$iconPath" `
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll (Join-Path $templatesDir "TrayApp.cs")
+if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the tray app" }
+
 Write-Host "Staging install/uninstall scripts..."
 Copy-Item -Path (Join-Path $templatesDir "Install.bat") -Destination $stagingRoot -Force
 Copy-Item -Path (Join-Path $templatesDir "install.ps1") -Destination $stagingRoot -Force
 Copy-Item -Path (Join-Path $templatesDir "Uninstall.bat") -Destination $stagingRoot -Force
 Copy-Item -Path (Join-Path $templatesDir "uninstall.ps1") -Destination $stagingRoot -Force
 Copy-Item -Path (Join-Path $templatesDir "watchdog.ps1") -Destination $stagingRoot -Force
+Copy-Item -Path (Join-Path $templatesDir "register-service.ps1") -Destination $stagingRoot -Force
 
 Write-Host "Zipping installer package..."
 # Version-stamped, not a fixed "EndpointProAgentInstaller.zip" name - that fixed name got
@@ -187,8 +203,6 @@ Set-Content -Path $manifestPath -Value $manifest -Encoding UTF8
 
 Write-Host "Compiling single-file setup.exe (embeds the zip above, no new tooling required - uses" `
     "the C# compiler bundled with every Windows install's .NET Framework)..."
-$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-if (-not (Test-Path $csc)) { throw "Could not find csc.exe at $csc" }
 
 $exePath = Join-Path $distInstallerDir "EndpointProAgentSetup-$agentVersion.exe"
 if (Test-Path $exePath) { Remove-Item $exePath -Force }
