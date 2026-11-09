@@ -62,7 +62,6 @@ import {
   useAgentSecurityFindings,
   useAgentUsbControlEvents,
   useAgentUserSessions,
-  useAgentZeroTrustFindings,
   useAssetGroups,
   useCustomFieldDefinitions,
   useDisableRemoteAccess,
@@ -70,8 +69,6 @@ import {
   useEnableRemoteAccess,
   useIsItemHidden,
   usePauseAgent,
-  useRemediateAllForAgent,
-  useRemediateSecurityRule,
   useResumeAgent,
   useSetAgentCustomFields,
   useSetAgentGroups,
@@ -171,47 +168,93 @@ const muted = <span className="app-muted">—</span>;
  * Overview: read-only facts
  * ---------------------------------------------------------------------------------------- */
 
+function batteryStatusTone(status: "GOOD" | "DEGRADED" | "REPLACE" | "UNKNOWN"): BadgeTone {
+  if (status === "GOOD") return "ok";
+  if (status === "REPLACE") return "crit";
+  return "med"; // DEGRADED and UNKNOWN both render as a caution color, not a hard failure
+}
+
+// Hardware facts, then the battery, then storage (the total, then each volume) last.
 function DeviceCard({ agent }: { agent: AgentDetail }) {
   const inv = agent.inventory;
+  const items: { label: ReactNode; value: ReactNode; mono?: boolean }[] = [
+    {
+      label: "Device type",
+      value: agent.deviceTypeOverride
+        ? DEVICE_TYPE_LABEL[agent.deviceTypeOverride]
+        : `${DEVICE_TYPE_LABEL[agent.deviceType]} (auto-detected)`,
+    },
+    { label: "Logged-in user", value: inv?.lastLoggedOnUser ?? "—" },
+    {
+      label: "Processor",
+      value: (
+        <>
+          {inv?.cpuModel ?? "—"}
+          {inv?.cpuSpeedGhz ? ` @ ${inv.cpuSpeedGhz} GHz` : ""}
+          {" — "}
+          <span className="ep-num">{inv?.cpuPhysicalCores ?? "?"}</span> physical /{" "}
+          <span className="ep-num">{inv?.cpuCores ?? "?"}</span> logical cores
+        </>
+      ),
+    },
+    {
+      label: "Memory",
+      value: (
+        <span className="ep-num">
+          {formatBytes(inv?.totalMemBytes ?? null)}
+          {inv && inv.memLayout.length > 0 && (
+            <span className="app-muted">
+              {" "}
+              ({inv.memLayout.map((m) => `${formatBytes(m.sizeBytes)} ${m.type ?? ""}`.trim()).join(" + ")})
+            </span>
+          )}
+        </span>
+      ),
+    },
+  ];
+  if (inv?.battery?.present) {
+    items.push(
+      {
+        label: "Battery health",
+        value: (
+          <Badge tone={batteryStatusTone(inv.battery.healthStatus)}>
+            {humanize(inv.battery.healthStatus)}
+            {inv.battery.healthPercent !== null ? ` (${inv.battery.healthPercent}%)` : ""}
+          </Badge>
+        ),
+      },
+      {
+        label: "Battery capacity",
+        value: (
+          <span className="ep-num">
+            {inv.battery.fullChargeCapacityMwh ? `${(inv.battery.fullChargeCapacityMwh / 1000).toFixed(1)} Wh` : "—"}
+            {inv.battery.designCapacityMwh ? ` of ${(inv.battery.designCapacityMwh / 1000).toFixed(1)} Wh design` : ""}
+          </span>
+        ),
+      },
+      {
+        label: "Battery cycles",
+        value: inv.battery.cycleCount !== null ? <span className="ep-num">{inv.battery.cycleCount}</span> : "Not reported by this device",
+      },
+    );
+  } else {
+    items.push({ label: "Battery", value: inv ? "Not present (desktop or VM)" : "—" });
+  }
+  items.push({
+    label: "Storage",
+    value: (
+      <span className="ep-num">
+        {inv?.totalDiskBytes ? `${formatBytes(inv.totalDiskBytes)}${inv.diskTypes.length > 0 ? ` (${inv.diskTypes.join(" + ")})` : ""}` : "—"}
+      </span>
+    ),
+  });
+
   return (
     <Card title="Device">
-      <KeyValueList
-        items={[
-          {
-            label: "Device type",
-            value: agent.deviceTypeOverride
-              ? DEVICE_TYPE_LABEL[agent.deviceTypeOverride]
-              : `${DEVICE_TYPE_LABEL[agent.deviceType]} (auto-detected)`,
-          },
-          { label: "Logged-in user", value: inv?.lastLoggedOnUser ?? "—" },
-          {
-            label: "Processor",
-            value: (
-              <>
-                {inv?.cpuModel ?? "—"}
-                {inv?.cpuSpeedGhz ? ` @ ${inv.cpuSpeedGhz} GHz` : ""}
-                {" — "}
-                <span className="ep-num">{inv?.cpuPhysicalCores ?? "?"}</span> physical /{" "}
-                <span className="ep-num">{inv?.cpuCores ?? "?"}</span> logical cores
-              </>
-            ),
-          },
-          {
-            label: "Memory",
-            value: (
-              <span className="ep-num">
-                {formatBytes(inv?.totalMemBytes ?? null)}
-                {inv && inv.memLayout.length > 0 && (
-                  <span className="app-muted">
-                    {" "}
-                    ({inv.memLayout.map((m) => `${formatBytes(m.sizeBytes)} ${m.type ?? ""}`.trim()).join(" + ")})
-                  </span>
-                )}
-              </span>
-            ),
-          },
-        ]}
-      />
+      <div className="app-stack">
+        <KeyValueList items={items} />
+        <StorageVolumes agent={agent} />
+      </div>
     </Card>
   );
 }
@@ -229,16 +272,18 @@ function OperatingSystemCard({ agent }: { agent: AgentDetail }) {
     },
     { label: "Edition", value: agent.osEditionLabel ?? "—" },
     {
-      label: "OS end of support",
-      value: agent.osEol ? (
-        <span className="app-badge-row">
-          <span>
-            {agent.osEol.versionName} — {formatDate(agent.osEol.eolDate)}
-          </span>
-          <Badge tone={agent.osEol.isEol ? "crit" : "ok"}>{agent.osEol.isEol ? "End of life" : "Supported"}</Badge>
-        </span>
-      ) : (
-        "—"
+      label: "OS license",
+      value: (
+        <>
+          {agent.inventory?.osLicenseStatus ?? "—"}
+          {agent.inventory?.osLicenseChannel ? ` (${agent.inventory.osLicenseChannel})` : ""}
+          {agent.inventory?.osPartialProductKey && (
+            <>
+              {" — "}
+              <span className="ep-mono">...{agent.inventory.osPartialProductKey}</span>
+            </>
+          )}
+        </>
       ),
     },
   ];
@@ -372,130 +417,136 @@ function AssetFactsCard({ agent }: { agent: AgentDetail }) {
           { label: "Vendor", value: agent.vendor ?? "—" },
           { label: "Location", value: agent.location ?? "—" },
           { label: "Purchase date", value: formatDate(agent.purchaseDate) },
-          { label: "Warranty expiry", value: formatDate(agent.warrantyExpiryDate) },
+          {
+            label: "Warranty expiry",
+            value: agent.warrantyExpiryDate ? (
+              <span className="app-badge-row">
+                <span>{formatDate(agent.warrantyExpiryDate)}</span>
+                {new Date(agent.warrantyExpiryDate) < new Date() ? <Badge tone="crit">Expired</Badge> : <Badge tone="ok">Active</Badge>}
+              </span>
+            ) : (
+              "—"
+            ),
+          },
         ]}
       />
     </Card>
   );
 }
 
-function batteryStatusTone(status: "GOOD" | "DEGRADED" | "REPLACE" | "UNKNOWN"): BadgeTone {
-  if (status === "GOOD") return "ok";
-  if (status === "REPLACE") return "crit";
-  return "med"; // DEGRADED and UNKNOWN both render as a caution color, not a hard failure
-}
-
-function PostureCard({ agent }: { agent: AgentDetail }) {
-  const inv = agent.inventory;
+// Each value opens the module it comes from. Modules hidden by module visibility aren't shown.
+function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
   const vulnerabilitiesHidden = useIsItemHidden("/vulnerabilities");
   const zeroTrustHidden = useIsItemHidden("/zero-trust");
-  const isWarrantyExpired = agent.warrantyExpiryDate ? new Date(agent.warrantyExpiryDate) < new Date() : false;
+  const patchesHidden = useIsItemHidden("/patches");
+  const securityConfigHidden = useIsItemHidden("/security-config");
+  const { data: findings, isLoading: findingsLoading } = useAgentSecurityFindings(securityConfigHidden ? undefined : agent.id);
+
+  // Compliance across every benchmark rule assessed on this endpoint.
+  const assessed = findings ?? [];
+  const passed = assessed.filter((f) => f.status === "PASS").length;
+  const compliance = assessed.length > 0 ? Math.round((passed / assessed.length) * 100) : null;
 
   const items: { label: ReactNode; value: ReactNode }[] = [];
   if (!vulnerabilitiesHidden) {
     items.push({
       label: "Vulnerabilities",
-      value:
-        agent.openVulnerabilityCount > 0 ? (
-          <Badge tone="high">
-            <span className="ep-num">{agent.openVulnerabilityCount}</span> open
-          </Badge>
-        ) : (
-          <Badge tone="ok">Clean</Badge>
-        ),
+      value: (
+        <Link className="ep-link" to="/vulnerabilities">
+          {agent.openVulnerabilityCount > 0 ? (
+            <Badge tone="high">
+              <span className="ep-num">{agent.openVulnerabilityCount}</span> open
+            </Badge>
+          ) : (
+            <Badge tone="ok">Clean</Badge>
+          )}
+        </Link>
+      ),
     });
   }
   if (!zeroTrustHidden) {
     items.push({
       label: "Zero Trust",
-      value:
-        agent.zeroTrustNonCompliantCount > 0 ? (
-          <Badge tone="crit">
-            <span className="ep-num">{agent.zeroTrustNonCompliantCount}</span> failing
-          </Badge>
-        ) : (
-          <Badge tone="ok">Compliant</Badge>
-        ),
+      value: (
+        <Link className="ep-link" to="/zero-trust">
+          {agent.zeroTrustNonCompliantCount > 0 ? (
+            <Badge tone="crit">
+              <span className="ep-num">{agent.zeroTrustNonCompliantCount}</span> failing
+            </Badge>
+          ) : (
+            <Badge tone="ok">Compliant</Badge>
+          )}
+        </Link>
+      ),
     });
   }
-  if (inv?.battery?.present) {
-    items.push(
-      {
-        label: "Battery health",
-        value: (
-          <Badge tone={batteryStatusTone(inv.battery.healthStatus)}>
-            {humanize(inv.battery.healthStatus)}
-            {inv.battery.healthPercent !== null ? ` (${inv.battery.healthPercent}%)` : ""}
-          </Badge>
-        ),
-      },
-      {
-        label: "Battery capacity",
-        value: (
-          <span className="ep-num">
-            {inv.battery.fullChargeCapacityMwh ? `${(inv.battery.fullChargeCapacityMwh / 1000).toFixed(1)} Wh` : "—"}
-            {inv.battery.designCapacityMwh ? ` of ${(inv.battery.designCapacityMwh / 1000).toFixed(1)} Wh design` : ""}
-          </span>
-        ),
-      },
-      {
-        label: "Battery cycles",
-        value: inv.battery.cycleCount !== null ? <span className="ep-num">{inv.battery.cycleCount}</span> : "Not reported by this device",
-      },
-    );
-  } else {
-    items.push({ label: "Battery", value: inv ? "Not present (desktop or VM)" : "—" });
+  if (!patchesHidden) {
+    items.push({
+      label: "Patches available",
+      value: (
+        <Link className="ep-link" to="/patches">
+          {agent.missingPatchCount > 0 ? (
+            <Badge tone="med">
+              <span className="ep-num">{agent.missingPatchCount}</span> available
+            </Badge>
+          ) : (
+            <Badge tone="ok">Up to date</Badge>
+          )}
+        </Link>
+      ),
+    });
   }
+  if (!securityConfigHidden) {
+    items.push({
+      label: "Security configuration",
+      value: (
+        <Link className="ep-link" to="/security-config">
+          {findingsLoading ? (
+            "…"
+          ) : compliance === null ? (
+            <Badge tone="neu">Not assessed</Badge>
+          ) : (
+            <>
+              <Badge tone={compliance === 100 ? "ok" : compliance >= 80 ? "med" : "crit"}>
+                <span className="ep-num">{compliance}%</span> compliant
+              </Badge>{" "}
+              <span className="app-muted">
+                (<span className="ep-num">{passed}</span> of <span className="ep-num">{assessed.length}</span> rules)
+              </span>
+            </>
+          )}
+        </Link>
+      ),
+    });
+  }
+  // From the built-in OS lifecycle catalogue; there's no module page to open for it.
   items.push({
-    label: "OS license",
-    value: (
-      <>
-        {inv?.osLicenseStatus ?? "—"}
-        {inv?.osLicenseChannel ? ` (${inv.osLicenseChannel})` : ""}
-        {inv?.osPartialProductKey ? (
-          <>
-            {" — "}
-            <span className="ep-mono">...{inv.osPartialProductKey}</span>
-          </>
-        ) : (
-          ""
-        )}
-      </>
+    label: "OS end of support",
+    value: agent.osEol ? (
+      <span className="app-badge-row">
+        <Badge tone={agent.osEol.isEol ? "crit" : "ok"}>{agent.osEol.isEol ? "End of life" : "Supported"}</Badge>
+        <span>
+          {agent.osEol.versionName} — {formatDate(agent.osEol.eolDate)}
+        </span>
+      </span>
+    ) : (
+      "—"
     ),
   });
-  if (agent.warrantyExpiryDate) {
-    items.push({
-      label: "Warranty",
-      value: <Badge tone={isWarrantyExpired ? "crit" : "ok"}>{isWarrantyExpired ? "Expired" : "Active"}</Badge>,
-    });
-  }
 
   return (
-    <Card title="Posture">
-      <KeyValueList items={items} />
+    <Card title="Security posture">
+      {items.length > 0 ? <KeyValueList items={items} /> : <p className="app-muted">The security modules are hidden for your account.</p>}
     </Card>
   );
 }
 
-function StorageCard({ agent }: { agent: AgentDetail }) {
-  const inv = agent.inventory;
-  const volumes = inv?.diskVolumes ?? [];
+// Each volume, shown at the end of the Device card.
+function StorageVolumes({ agent }: { agent: AgentDetail }) {
+  const volumes = agent.inventory?.diskVolumes ?? [];
 
   return (
-    <Card
-      flush
-      title="Storage"
-      hint={
-        <>
-          Total physical storage:{" "}
-          <span className="ep-num">
-            {inv?.totalDiskBytes
-              ? `${formatBytes(inv.totalDiskBytes)}${inv.diskTypes.length > 0 ? ` (${inv.diskTypes.join(" + ")})` : ""}`
-              : "—"}
-          </span>
-        </>
-      }
-    >
+    <>
       {volumes.length === 0 ? (
         <EmptyState icon={HardDrive} title="No volume data reported yet">
           Volumes appear after the agent's next inventory report.
@@ -544,7 +595,7 @@ function StorageCard({ agent }: { agent: AgentDetail }) {
           </table>
         </div>
       )}
-    </Card>
+    </>
   );
 }
 
@@ -1212,246 +1263,6 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
 }
 
 /* ------------------------------------------------------------------------------------------
- * Security
- * ---------------------------------------------------------------------------------------- */
-
-function securityStatusTone(status: "PASS" | "FAIL" | "ERROR"): BadgeTone {
-  if (status === "PASS") return "ok";
-  if (status === "ERROR") return "med";
-  return "crit";
-}
-
-// Zero Trust findings are displayed as "Compliant"/"Non-compliant" rather than
-// "Pass"/"Fail" — the same underlying PASS/FAIL/ERROR status is shared with
-// Security Configuration, this is a Zero-Trust-specific display label only.
-function zeroTrustStatusLabel(status: "PASS" | "FAIL" | "ERROR"): string {
-  if (status === "PASS") return "Compliant";
-  if (status === "ERROR") return "Error";
-  return "Non-compliant";
-}
-
-function SecurityFindingsSection({ agentId }: { agentId: string }) {
-  const { data: findings, isLoading, error } = useAgentSecurityFindings(agentId);
-  const remediate = useRemediateSecurityRule();
-  const remediateAll = useRemediateAllForAgent();
-  const confirmFix = useConfirm();
-  const [remediatingRuleId, setRemediatingRuleId] = useState<string | null>(null);
-  const [lastResult, setLastResult] = useState<{ ruleId: string; jobId?: string; error?: string } | null>(null);
-  const paged = usePagedList(findings ?? []);
-
-  async function handleRemediate(ruleId: string) {
-    const warning = findings?.find((f) => f.ruleId === ruleId)?.remediationWarning;
-    if (warning) {
-      const ok = await confirmFix({
-        title: "This fix changes how Windows starts or signs in",
-        body: `${warning} The change takes effect after the next restart.`,
-        confirmLabel: "Apply on this device",
-        tone: "danger",
-      });
-      if (!ok) return;
-    }
-    setRemediatingRuleId(ruleId);
-    setLastResult(null);
-    remediate.mutate(
-      { ruleId, agentId },
-      {
-        onSuccess: (result) => setLastResult({ ruleId, jobId: result.jobId }),
-        onError: (err) => setLastResult({ ruleId, error: (err as Error).message }),
-        onSettled: () => setRemediatingRuleId(null),
-      },
-    );
-  }
-
-  if (!findings || findings.length === 0) {
-    return (
-      <SectionState
-        title="Security configuration"
-        isLoading={isLoading}
-        error={error}
-        empty={
-          <EmptyState
-            icon={ShieldCheck}
-            title="No security configuration results yet"
-            action={
-              <Link className="ep-link" to="/security-config">
-                Open security configuration
-              </Link>
-            }
-          >
-            Results appear after a benchmark policy is assigned and the agent runs its next security scan.
-          </EmptyState>
-        }
-      />
-    );
-  }
-
-  const remediableFailCount = findings.filter((f) => f.status === "FAIL" && f.hasRemediation).length;
-  const passCount = findings.filter((f) => f.status === "PASS").length;
-  const failCount = findings.filter((f) => f.status === "FAIL").length;
-  const errorCount = findings.filter((f) => f.status === "ERROR").length;
-
-  return (
-    <Card
-      flush
-      title="Security configuration"
-      hint={`${passCount} pass / ${failCount} fail / ${errorCount} error`}
-      actions={
-        remediableFailCount > 0 && (
-          <Button size="sm" onClick={() => remediateAll.mutate(agentId)} disabled={remediateAll.isPending}>
-            {remediateAll.isPending ? "Remediating…" : `Remediate all (${remediableFailCount})`}
-          </Button>
-        )
-      }
-    >
-      {remediableFailCount > 0 && (remediateAll.isSuccess || remediateAll.isError) && (
-        <div className="ep-cb">
-          {remediateAll.isSuccess && (
-            <Alert tone="success">
-              Dispatched {remediateAll.data.remediatedCount} remediation job(s)
-              {remediateAll.data.skippedCount > 0 ? ` — ${remediateAll.data.skippedCount} failing rule(s) were not fixed automatically` : ""}.
-              {remediateAll.data.needsReview && remediateAll.data.needsReview.length > 0 && (
-                <> Fix these one at a time, after checking the device: {remediateAll.data.needsReview.join(", ")}.</>
-              )}
-            </Alert>
-          )}
-          {remediateAll.isError && <Alert tone="critical">{(remediateAll.error as Error).message}</Alert>}
-        </div>
-      )}
-      <div className="app-table-scroll">
-        <table className="ep-tbl">
-          <thead>
-            <tr>
-              <th scope="col">Benchmark</th>
-              <th scope="col">Rule</th>
-              <th scope="col">Status</th>
-              <th scope="col">Expected</th>
-              <th scope="col">Actual</th>
-              <th scope="col">
-                <span className="app-vh">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.pageItems.map((f) => (
-              <tr key={f.id}>
-                <td>{f.benchmarkName}</td>
-                <td>{f.title}</td>
-                <td>
-                  <Badge tone={securityStatusTone(f.status)}>{humanize(f.status)}</Badge>
-                </td>
-                <td className="ep-mono">{f.expectedValue}</td>
-                <td className="ep-mono">{f.actualValue ?? "—"}</td>
-                <td>
-                  {f.status === "FAIL" && f.hasRemediation && (
-                    <div className="app-stack-sm">
-                      <div className="app-cell-actions">
-                        <Button
-                          size="sm"
-                          onClick={() => handleRemediate(f.ruleId)}
-                          disabled={remediate.isPending && remediatingRuleId === f.ruleId}
-                        >
-                          {remediate.isPending && remediatingRuleId === f.ruleId ? "Remediating…" : "Remediate"}
-                        </Button>
-                      </div>
-                      {lastResult?.ruleId === f.ruleId && lastResult.jobId && (
-                        <span className="app-cell-note app-muted">
-                          Queued (job <span className="ep-mono">{lastResult.jobId.slice(0, 8)}</span>) — runs on the agent's next
-                          check-in, status appears on the{" "}
-                          <Link className="ep-link" to="/commands">
-                            Commands
-                          </Link>{" "}
-                          page; this rule re-grades on the next security scan.
-                        </span>
-                      )}
-                      {lastResult?.ruleId === f.ruleId && lastResult.error && <span className="ep-error">{lastResult.error}</span>}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <ListPager paged={paged} noun="rules" />
-    </Card>
-  );
-}
-
-function ZeroTrustFindingsSection({ agentId }: { agentId: string }) {
-  const { data: findings, isLoading, error } = useAgentZeroTrustFindings(agentId);
-  const paged = usePagedList(findings ?? []);
-
-  if (!findings || findings.length === 0) {
-    return (
-      <SectionState
-        title="Zero Trust"
-        isLoading={isLoading}
-        error={error}
-        empty={
-          <EmptyState
-            icon={ShieldCheck}
-            title="No Zero Trust results yet"
-            action={
-              <Link className="ep-link" to="/zero-trust">
-                Open Zero Trust
-              </Link>
-            }
-          >
-            Results appear after a Zero Trust policy applies to this endpoint and it reports its next check.
-          </EmptyState>
-        }
-      />
-    );
-  }
-
-  const passCount = findings.filter((f) => f.status === "PASS").length;
-  const failCount = findings.filter((f) => f.status === "FAIL").length;
-  const errorCount = findings.filter((f) => f.status === "ERROR").length;
-  const policyNames = [...new Set(findings.map((f) => f.policyName))];
-  const trusted = failCount === 0 && errorCount === 0;
-
-  return (
-    <Card flush title="Zero Trust" hint={`${passCount} compliant / ${failCount} non-compliant / ${errorCount} error`}>
-      <div className="ep-cb">
-        <KeyValueList
-          items={policyNames.map((policyName) => ({
-            label: policyName,
-            value: <Pill tone={trusted ? "ok" : "critical"}>{trusted ? "Trusted" : "Not trusted"}</Pill>,
-          }))}
-        />
-      </div>
-      <div className="app-table-scroll">
-        <table className="ep-tbl">
-          <thead>
-            <tr>
-              <th scope="col">Policy</th>
-              <th scope="col">Condition</th>
-              <th scope="col">Status</th>
-              <th scope="col">Expected</th>
-              <th scope="col">Actual</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.pageItems.map((f) => (
-              <tr key={f.id}>
-                <td>{f.policyName}</td>
-                <td>{f.title}</td>
-                <td>
-                  <Badge tone={securityStatusTone(f.status)}>{zeroTrustStatusLabel(f.status)}</Badge>
-                </td>
-                <td className="ep-mono">{f.expectedValue}</td>
-                <td className="ep-mono">{f.actualValue ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <ListPager paged={paged} noun="conditions" />
-    </Card>
-  );
-}
-
-/* ------------------------------------------------------------------------------------------
  * Data protection
  * ---------------------------------------------------------------------------------------- */
 
@@ -2059,7 +1870,7 @@ function HistorySection({ agentId }: { agentId: string }) {
  * ---------------------------------------------------------------------------------------- */
 
 
-type TabKey = "overview" | "software" | "security" | "data" | "activity" | "manage" | "history";
+type TabKey = "overview" | "software" | "data" | "activity" | "manage" | "history";
 
 const backLink = (
   <Link to="/endpoints" className="ep-btn">
@@ -2071,8 +1882,6 @@ const backLink = (
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: agent, isLoading, error, refetch } = useAgent(id);
-  const securityConfigHidden = useIsItemHidden("/security-config");
-  const zeroTrustHidden = useIsItemHidden("/zero-trust");
   const dataDiscoveryHidden = useIsItemHidden("/data-discovery");
   const dlpHidden = useIsItemHidden("/dlp");
   const dataMovementHidden = useIsItemHidden("/data-movement");
@@ -2125,13 +1934,11 @@ export default function AgentDetailPage() {
   const inv = agent.inventory;
 
   // A tab whose sections are all hidden by module visibility isn't offered at all.
-  const securityTabVisible = !securityConfigHidden || !zeroTrustHidden;
   const dataTabVisible = !dataDiscoveryHidden || !dlpHidden || !dataMovementHidden || !epmHidden;
   const activityTabVisible = !userProductivityHidden;
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview" },
     { value: "software", label: "Software" },
-    ...(securityTabVisible ? [{ value: "security", label: "Security" }] : []),
     ...(dataTabVisible ? [{ value: "data", label: "Data protection" }] : []),
     { value: "manage", label: "Manage" },
     { value: "history", label: "History" },
@@ -2171,23 +1978,15 @@ export default function AgentDetailPage() {
             <AgentCard agent={agent} />
             <NetworkCard agent={agent} />
             <AssetFactsCard agent={agent} />
-            <StorageCard agent={agent} />
           </div>
           <div className="app-stack">
-            <PostureCard agent={agent} />
+            <SecurityPostureCard agent={agent} />
             <NotesFeed agentId={agent.id} />
           </div>
         </Row>
       )}
 
       {activeTab === "software" && <InstalledSoftwareSection agentId={agent.id} software={inv?.installedSoftware ?? []} collectedAt={inv?.collectedAt ?? null} />}
-
-      {activeTab === "security" && (
-        <div className="app-stack">
-          {!securityConfigHidden && <SecurityFindingsSection agentId={agent.id} />}
-          {!zeroTrustHidden && <ZeroTrustFindingsSection agentId={agent.id} />}
-        </div>
-      )}
 
       {activeTab === "data" && (
         <div className="app-stack">

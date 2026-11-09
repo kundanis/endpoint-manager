@@ -36,6 +36,7 @@ import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { installBuiltInBenchmarks } from "../services/builtInBenchmarks";
 import { GpoImportError, previewGpoBackup } from "../services/gpoImport.service";
 import { prisma } from "../db";
+import { requestScan } from "../services/scanRequests";
 
 export const securityConfigRouter = Router();
 
@@ -211,7 +212,11 @@ securityConfigRouter.post("/:id/assign", async (req, res, next) => {
       return res.status(400).json({ error: "No agents resolved from the given agentIds/groupIds" });
     }
 
-    res.status(201).json(await assignBenchmark(req.params.id, payload));
+    const result = await assignBenchmark(req.params.id, payload);
+    // Scan the newly assigned endpoints at their next check-in, rather than leaving the
+    // assignment "Pending" until the regular 6-hourly scan.
+    requestScan("securityConfig", resolved);
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }

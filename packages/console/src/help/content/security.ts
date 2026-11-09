@@ -237,7 +237,6 @@ export const SECURITY_TOPICS: HelpTopic[] = [
         title: "See why a device isn't trusted",
         steps: [
           { route: "/zero-trust", text: "In Device trust, find the device. The failing conditions are listed on its row." },
-          { text: "Open the endpoint's Security tab for expected and actual values per condition." },
         ],
       },
     ],

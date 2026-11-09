@@ -33,6 +33,7 @@ import {
 import { applyForceComply, listOverridableConditionKeys, revokeOverride } from "../services/zeroTrustOverride.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
+import { requestScan } from "../services/scanRequests";
 
 export const zeroTrustRouter = Router();
 
@@ -210,7 +211,10 @@ zeroTrustRouter.post("/:id/assign", async (req, res, next) => {
       return res.status(400).json({ error: "No agents resolved from the given agentIds/groupIds" });
     }
 
-    res.status(201).json(await assignPolicy(req.params.id, payload));
+    const result = await assignPolicy(req.params.id, payload);
+    // Evaluate the newly assigned endpoints at their next check-in, not at the next scheduled scan.
+    requestScan("zeroTrust", resolved);
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }
