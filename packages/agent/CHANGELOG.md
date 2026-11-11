@@ -6,6 +6,20 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.25
+- Data movement: files are recorded the moment they land on a USB drive, cloud-sync folder or mapped
+  network drive, with where they came from (copied or moved from a folder on the PC) and the user
+  signed in. Old files copied today are now caught too: arrival is judged by when the file was
+  created or moved there, not its last-modified date. Cloud-sync folders and mapped drives are found
+  for every signed-in user, not the service account.
+- Screenshot blocking (EPM): on PCs with a screenshot-blocking policy, Print Screen, Win+Shift+S and
+  similar keys do nothing, screenshot tools (Snipping Tool, ShareX, Greenshot, Lightshot and others)
+  are closed when they open, Snipping Tool, Game Bar capture and Edge's web capture are turned off,
+  and optionally any picture copied to the clipboard is removed. The user is told each time, and each
+  attempt is reported. Everything is put back when the policy no longer applies.
+- Screen capture: when a policy keeps screenshot images for this PC, each new screenshot is read the
+  moment it appears and uploaded to the server (images only, up to 15 MB; screen recordings never).
+
 ## 0.2.24
 - User productivity: the Endpoint IQ icon records the time each user spends in each application and,
   in Chrome, Edge, Firefox, Brave, Opera and Vivaldi, on each website (domain only), while they

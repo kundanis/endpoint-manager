@@ -1,3 +1,4 @@
+import { removeAgentImages } from "./screenCaptureImage.service";
 import type { UpdateAssetDetailsRequest } from "@em/shared";
 import { prisma } from "../db";
 import { createCommandJob } from "./command.service";
@@ -243,6 +244,7 @@ export async function confirmAgentUninstalled(agentId: string): Promise<void> {
     if (err?.code === "P2025") return; // already deleted - nothing to do, and already counted
     throw err;
   }
+  await removeAgentImages(agentId).catch(() => undefined); // its saved screenshots
   await incrementTotalAgentsUninstalled();
 }
 

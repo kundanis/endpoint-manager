@@ -123,6 +123,7 @@ class TrayContext : ApplicationContext
     readonly Dictionary<string, string> knownStatus = new Dictionary<string, string>();
     readonly SynchronizationContext ui;
     PoliciesForm policiesForm;
+    ScreenshotBlocker screenshotBlocker; // EPM screenshot blocking, see ScreenshotBlocker.cs
     string version = "", hostname = "", server = "";
     int lastState = -1; // 0 offline, 1 connected, 2 agent not running
 
@@ -154,6 +155,8 @@ class TrayContext : ApplicationContext
         requestTimer.Start();
         RefreshStatus();
         CheckRequests(true);
+
+        screenshotBlocker = new ScreenshotBlocker(text => icon.ShowBalloonTip(5000, "Endpoint IQ", text, ToolTipIcon.Warning));
 
         UsageTracker usage = new UsageTracker();
         Application.ApplicationExit += (s, e) => usage.Flush();

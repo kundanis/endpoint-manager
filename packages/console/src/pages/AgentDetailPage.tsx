@@ -47,6 +47,7 @@ import {
   type TabItem,
 } from "../components/ui";
 import { formatBytes, formatDate, formatDateTime, formatRelative } from "../format";
+import DataMovementEventTable from "../components/DataMovementEventTable";
 import type { AgentDetail, InstalledSoftwareEntry, LifecycleStatus, NormalizedSeverity } from "../api/types";
 import {
   useAddAgentNote,
@@ -1436,21 +1437,6 @@ function DlpEventsSection({ agentId }: { agentId: string }) {
   );
 }
 
-const DATA_MOVEMENT_CHANNEL_LABEL: Record<string, string> = {
-  USB: "USB / removable media",
-  CLOUD_SYNC: "Cloud sync",
-  NETWORK_SHARE: "Network share",
-};
-
-function formatChannelDetail(channel: string, detail: Record<string, string | null>): string {
-  if (channel === "USB") {
-    const parts = [detail.driveLetter, detail.volumeLabel, detail.serialNumber ? `serial ${detail.serialNumber}` : null];
-    return parts.filter(Boolean).join(" — ") || "—";
-  }
-  if (channel === "NETWORK_SHARE") return detail.uncPath || "—";
-  return detail.provider || "—";
-}
-
 function DataMovementEventsSection({ agentId }: { agentId: string }) {
   const { data: events, isLoading, error } = useAgentDataMovementEvents(agentId);
   const paged = usePagedList(events ?? []);
@@ -1479,36 +1465,9 @@ function DataMovementEventsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="Data movement" hint={`${events.length} ${plural(events.length, "event")}`}>
-      <div className="app-table-scroll">
-        <table className="ep-tbl">
-          <thead>
-            <tr>
-              <th scope="col">Policy</th>
-              <th scope="col">File</th>
-              <th scope="col">Channel</th>
-              <th scope="col">Destination</th>
-              <th scope="col">File modified</th>
-              <th scope="col">Detected</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.pageItems.map((e) => (
-              <tr key={e.id}>
-                <td>{e.policyName}</td>
-                <td className="ep-mono">{e.filePath}</td>
-                <td>
-                  <Badge tone="med">{DATA_MOVEMENT_CHANNEL_LABEL[e.channel] ?? e.channel}</Badge>
-                </td>
-                <td className="ep-mono">{formatChannelDetail(e.channel, e.channelDetail)}</td>
-                <td className="app-muted">{formatDateTime(e.fileModifiedAt)}</td>
-                <td className="app-muted">{formatDateTime(e.detectedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <ListPager paged={paged} noun="events" />
+    <Card flush title="Data movement" hint={`${events.length} ${plural(events.length, "file")} · newest first`}>
+      <DataMovementEventTable events={paged.pageItems} showPolicy />
+      <ListPager paged={paged} noun="files" />
     </Card>
   );
 }

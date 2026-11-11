@@ -3,6 +3,11 @@ import { z } from "zod";
 export const DATA_MOVEMENT_CHANNELS = ["USB", "CLOUD_SYNC", "NETWORK_SHARE"] as const;
 export type DataMovementChannel = (typeof DATA_MOVEMENT_CHANNELS)[number];
 
+// COPY: the source file is still where it was. MOVE: it disappeared as the file arrived.
+// UNKNOWN: no file with the same name and size was found (downloaded or created there).
+export const DATA_MOVEMENT_OPERATIONS = ["COPY", "MOVE", "UNKNOWN"] as const;
+export type DataMovementOperation = (typeof DATA_MOVEMENT_OPERATIONS)[number];
+
 export const createDataMovementPolicyRequestSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).nullable().optional(),
@@ -48,6 +53,12 @@ export const dataMovementFileEventSchema = z.object({
   fileModifiedAt: z.string(),
   channel: z.enum(DATA_MOVEMENT_CHANNELS),
   channelDetail: z.record(z.string(), z.string().nullable()),
+  // Agent 0.2.25+: the file with the same name and size found on the endpoint's own disks,
+  // whether it is still there (COPY) or just disappeared (MOVE), and who was signed in.
+  // Optional so older agents' reports still validate.
+  sourcePath: z.string().max(1000).nullable().optional(),
+  operation: z.enum(DATA_MOVEMENT_OPERATIONS).nullable().optional(),
+  userName: z.string().max(200).nullable().optional(),
 });
 export type DataMovementFileEvent = z.infer<typeof dataMovementFileEventSchema>;
 

@@ -1,7 +1,8 @@
 import { SectionHeader } from "../components/policy";
-import { useEffect, useState } from "react";
-import { ArrowRightLeft, Cloud, Monitor, Network, Pencil, Plus, SearchX, Trash2, Usb } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { ArrowRightLeft, ChevronDown, ChevronRight, Cloud, Monitor, Network, Pencil, Plus, SearchX, Trash2, Usb } from "lucide-react";
 import {
+  useAgentDataMovementEvents,
   useAssignDataMovementPolicy,
   useCreateDataMovementPolicy,
   useDataMovementAgentBreakdown,
@@ -13,6 +14,7 @@ import {
   useUpdateDataMovementPolicy,
 } from "../api/hooks";
 import type { DataMovementPolicyDetail } from "../api/types";
+import DataMovementEventTable from "../components/DataMovementEventTable";
 import EndpointLabel from "../components/EndpointLabel";
 import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm } from "../components/policy";
 import {
@@ -23,6 +25,7 @@ import {
   Check,
   EmptyState,
   Field,
+  IconButton,
   Kpi,
   KpiStrip,
   Pagination,
@@ -168,9 +171,35 @@ function CountCell({ count }: { count: number }) {
   );
 }
 
+// The files one endpoint moved under this policy: name, from where, to where, who.
+function AgentMovementDetail({ agentId, policyId }: { agentId: string; policyId: string }) {
+  const { data, isLoading, error } = useAgentDataMovementEvents(agentId);
+  const events = (data ?? []).filter((e) => e.policyId === policyId);
+  const paged = usePagedList(events, 25);
+  if (isLoading) return <Skeleton />;
+  if (error) return <Alert tone="critical">{(error as Error).message}</Alert>;
+  if (events.length === 0) return <EmptyState icon={ArrowRightLeft} title="No files recorded for this endpoint yet" />;
+  return (
+    <div className="app-stack-sm">
+      <DataMovementEventTable events={paged.pageItems} />
+      {paged.total > paged.pageSize && (
+        <Pagination
+          page={paged.page}
+          pageSize={paged.pageSize}
+          total={paged.total}
+          noun="files"
+          onPageChange={paged.setPage}
+          onPageSizeChange={paged.setPageSize}
+        />
+      )}
+    </div>
+  );
+}
+
 function ActivityPanel({ policyId }: { policyId: string }) {
   const { data: breakdown, isLoading } = useDataMovementAgentBreakdown(policyId);
   const [filter, setFilter] = useState<ActivityFilter>("all");
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
 
   const agents = breakdown?.agents ?? [];
   const usbTotal = agents.reduce((sum, a) => sum + a.usbCount, 0);
@@ -236,17 +265,50 @@ function ActivityPanel({ policyId }: { policyId: string }) {
               </tr>
             </thead>
             <tbody>
-              {paged.pageItems.map((a) => (
-                <tr key={a.agentId}>
-                  <td>
-                    <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
-                  </td>
-                  <CountCell count={a.usbCount} />
-                  <CountCell count={a.cloudSyncCount} />
-                  <CountCell count={a.networkShareCount} />
-                  <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
-                </tr>
-              ))}
+              {paged.pageItems.map((a) => {
+                const canExpand = a.eventCount > 0;
+                const isExpanded = expandedAgentId === a.agentId;
+                const toggle = () => setExpandedAgentId(isExpanded ? null : a.agentId);
+                return (
+                  <Fragment key={a.agentId}>
+                    <tr
+                      className={`${canExpand ? "app-clickable" : ""} ${isExpanded ? "ep-sel" : ""}`}
+                      onClick={canExpand ? toggle : undefined}
+                      title={canExpand ? "Click to show each file, where it came from and where it went" : undefined}
+                    >
+                      <td>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {canExpand && (
+                            <IconButton
+                              icon={isExpanded ? ChevronDown : ChevronRight}
+                              label={isExpanded ? `Hide files from ${a.hostname}` : `Show files from ${a.hostname}`}
+                              aria-expanded={isExpanded}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggle();
+                              }}
+                            />
+                          )}
+                          <span onClick={(e) => e.stopPropagation()}>
+                            <EndpointLabel hostname={a.hostname} agentId={a.agentId} />
+                          </span>
+                        </span>
+                      </td>
+                      <CountCell count={a.usbCount} />
+                      <CountCell count={a.cloudSyncCount} />
+                      <CountCell count={a.networkShareCount} />
+                      <td className="app-muted">{formatDateTime(a.lastEventAt)}</td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={5} style={{ background: "var(--ep-surface-2)" }}>
+                          <AgentMovementDetail agentId={a.agentId} policyId={policyId} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
           <Pagination

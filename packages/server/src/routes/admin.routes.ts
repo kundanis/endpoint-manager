@@ -1,3 +1,4 @@
+import { removeAgentImages } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
 import { Router, type Response } from "express";
 import { requestScan } from "../services/scanRequests";
@@ -530,6 +531,7 @@ adminRouter.post("/agents/:id/notes", async (req, res, next) => {
 adminRouter.delete("/agents/:id", async (req, res, next) => {
   try {
     await prisma.agent.delete({ where: { id: req.params.id } });
+    await removeAgentImages(req.params.id).catch(() => undefined); // its saved screenshots
     await incrementTotalAgentsUninstalled();
     res.status(204).send();
   } catch (err) {

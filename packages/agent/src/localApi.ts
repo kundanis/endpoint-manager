@@ -1,3 +1,4 @@
+import { currentScreenshotBlockSettings, queueScreenshotBlockEvents } from "./screenshotBlockEnforcer";
 import http from "node:http";
 import os from "node:os";
 import type { AxiosInstance } from "axios";
@@ -95,6 +96,14 @@ export function startLocalApi(client: AxiosInstance, source: AgentStatusSource):
           const body = await readBody(req);
           const { data } = await client.post("/api/agent/pause-requests", body);
           return send(res, 201, data);
+        }
+        case "GET /screenshot-block":
+          // What the tray app blocks in this user's session (EPM screenshot blocking).
+          return send(res, 200, currentScreenshotBlockSettings());
+        case "POST /screenshot-block/events": {
+          const body = (await readBody(req)) as { events?: unknown } | undefined;
+          queueScreenshotBlockEvents(body?.events);
+          return send(res, 204);
         }
         case "POST /usage": {
           // Time per application and website from the tray (user productivity).

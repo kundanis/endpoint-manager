@@ -181,6 +181,9 @@ export async function getEventsForAgent(agentId: string) {
     fileModifiedAt: e.fileModifiedAt.toISOString(),
     channel: e.channel as "USB" | "CLOUD_SYNC" | "NETWORK_SHARE",
     channelDetail: JSON.parse(e.channelDetail) as Record<string, string | null>,
+    sourcePath: e.sourcePath,
+    operation: e.operation as "COPY" | "MOVE" | "UNKNOWN" | null,
+    userName: e.userName,
     detectedAt: e.detectedAt.toISOString(),
   }));
 }

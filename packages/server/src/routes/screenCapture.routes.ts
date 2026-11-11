@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { assignScreenCapturePolicyRequestSchema, createScreenCapturePolicyRequestSchema, updateScreenCapturePolicyRequestSchema } from "@em/shared";
 import {
   assignPolicy,
@@ -13,12 +14,75 @@ import {
   updatePolicy,
 } from "../services/screenCapturePolicy.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
+import { deleteImages, getImage, zipImages } from "../services/screenCaptureImage.service";
+import { requireSuperAdmin } from "../middleware/requireAdminRole";
 import { prisma } from "../db";
 
 export const screenCaptureRouter = Router();
 
+// Keeping screenshot images is a super admin decision: only they can see the images.
+const IMAGE_SETTINGS = ["saveImages", "saveImagesAllEndpoints", "saveImagesAgentIds", "imageRetentionDays"];
+function touchesImageSettings(req: { body: unknown; adminRole?: string }): boolean {
+  if (req.adminRole === "SUPER_ADMIN" || !req.body || typeof req.body !== "object") return false;
+  return IMAGE_SETTINGS.some((k) => k in (req.body as Record<string, unknown>));
+}
+const IMAGE_SETTINGS_FORBIDDEN = { error: "Only a super admin can change whether screenshot images are kept" };
+
+const eventIdsSchema = z.object({ eventIds: z.array(z.string().min(1)).min(1).max(1000) });
+
+// ---- Saved images (super admins only). Viewing a user's list of screenshots is logged in Admin
+// logs (sensitive view); downloads and deletions are logged too.
+
+screenCaptureRouter.get("/images/:eventId", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const image = await getImage(req.params.eventId);
+    if (!image) return res.status(404).json({ error: "Image not found" });
+    res.setHeader("Content-Type", image.contentType);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Content-Disposition", `inline; filename="${image.fileName}"`);
+    res.sendFile(image.absPath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+screenCaptureRouter.get("/images/:eventId/download", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const image = await getImage(req.params.eventId);
+    if (!image) return res.status(404).json({ error: "Image not found" });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.download(image.absPath, image.fileName);
+  } catch (err) {
+    next(err);
+  }
+});
+
+screenCaptureRouter.post("/images/download-images", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const { eventIds } = eventIdsSchema.parse(req.body);
+    const zip = await zipImages(eventIds);
+    if (!zip) return res.status(404).json({ error: "None of these screenshots has a saved image" });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Content-Disposition", `attachment; filename="screenshots-${new Date().toISOString().slice(0, 10)}.zip"`);
+    res.send(zip.data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+screenCaptureRouter.post("/images/delete-images", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const { eventIds } = eventIdsSchema.parse(req.body);
+    res.json({ deleted: await deleteImages(eventIds) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 screenCaptureRouter.post("/", async (req, res, next) => {
   try {
+    if (touchesImageSettings(req)) return res.status(403).json(IMAGE_SETTINGS_FORBIDDEN);
     const payload = createScreenCapturePolicyRequestSchema.parse(req.body);
     res.status(201).json(await createPolicy(payload, req.adminId!));
   } catch (err) {
@@ -46,6 +110,7 @@ screenCaptureRouter.get("/:id", async (req, res, next) => {
 
 screenCaptureRouter.patch("/:id", async (req, res, next) => {
   try {
+    if (touchesImageSettings(req)) return res.status(403).json(IMAGE_SETTINGS_FORBIDDEN);
     const payload = updateScreenCapturePolicyRequestSchema.parse(req.body);
     res.json(await updatePolicy(req.params.id, payload));
   } catch (err) {
@@ -115,7 +180,7 @@ screenCaptureRouter.get("/:id/captures", async (req, res, next) => {
   try {
     const { agentId, username, day } = req.query as Record<string, string | undefined>;
     if (!agentId || !username || !day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return res.status(400).json({ error: "agentId, username and day are required" });
-    const captures = await getCaptures(req.params.id, agentId, username, day);
+    const captures = await getCaptures(req.params.id, agentId, username, day, req.adminRole === "SUPER_ADMIN");
     if (!captures) return res.status(404).json({ error: "Policy not found" });
     res.json(captures);
   } catch (err) {

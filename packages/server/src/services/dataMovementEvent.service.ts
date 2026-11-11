@@ -55,8 +55,13 @@ export async function recordScanResult(agentId: string, payload: DataMovementSca
         fileModifiedAt: new Date(e.fileModifiedAt),
         channel: e.channel,
         channelDetail: JSON.stringify(e.channelDetail),
+        sourcePath: e.sourcePath ?? null,
+        operation: e.operation ?? null,
+        userName: e.userName ?? null,
       },
-      update: {},
+      // The live watcher and the periodic sweep can both report a file; keep the source the
+      // first report found, but fill it in if that one had none.
+      update: e.sourcePath ? { sourcePath: e.sourcePath, operation: e.operation ?? null } : {},
     });
   }
 }

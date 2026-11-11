@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AssignedScreenCaptureWire, ScreenCaptureCapture, ScreenCaptureReportPayload, ScreenCaptureSource } from "@em/shared";
-import { isIgnoredScreenshotOpener } from "@em/shared";
+import { SCREEN_CAPTURE_IMAGE_EXTENSIONS, SCREEN_CAPTURE_IMAGE_MAX_BYTES, isIgnoredScreenshotOpener } from "@em/shared";
 import { agentConfig } from "./config";
 import { listUserProfiles, resolveTargetPath } from "./userPaths";
 
@@ -16,7 +16,9 @@ const execFileAsync = promisify(execFile);
 // and deleting it straight after still leaves a record. It also reports deletions, and (with
 // Windows file-access auditing on those folders) the programs that opened each screenshot -
 // a browser, WhatsApp, Outlook or OneDrive opening it usually means it was sent or uploaded.
-// Only metadata is reported; the image never leaves the endpoint.
+// Only metadata is reported, unless a policy keeps images for this endpoint (saveImages): then
+// each new screenshot is read the moment it appears (so deleting it straight after doesn't stop
+// it) and uploaded after its capture has been reported. Videos are never uploaded.
 
 const REFRESH_MS = 60_000; // re-read the assignment and look for newly created folders
 const REPORT_MS = 60_000;
@@ -52,7 +54,54 @@ interface KnownCapture {
   seenAt: number;
 }
 
-let assigned: AssignedScreenCaptureWire = { sources: [], extraPaths: [], trackOpenedBy: false };
+let assigned: AssignedScreenCaptureWire = { sources: [], extraPaths: [], trackOpenedBy: false, saveImages: false };
+
+interface PendingImage {
+  filePath: string;
+  capturedAt: string;
+  data: Buffer;
+  attempts: number;
+}
+const MAX_IMAGE_QUEUE_BYTES = 150 * 1024 * 1024;
+const MAX_IMAGE_ATTEMPTS = 10;
+const images: PendingImage[] = [];
+let imageQueueBytes = 0;
+
+async function queueImage(file: string, size: number, capturedAt: string) {
+  if (!assigned.saveImages || size === 0 || size > SCREEN_CAPTURE_IMAGE_MAX_BYTES) return;
+  if (!SCREEN_CAPTURE_IMAGE_EXTENSIONS.includes(path.extname(file).toLowerCase())) return;
+  if (imageQueueBytes + size > MAX_IMAGE_QUEUE_BYTES) return; // server unreachable for long - keep memory bounded
+  try {
+    const data = await fsp.readFile(file);
+    images.push({ filePath: file, capturedAt, data, attempts: 0 });
+    imageQueueBytes += data.length;
+  } catch {
+    // deleted or locked before it could be read - the capture itself is still reported
+  }
+}
+
+// After the captures are reported: the server matches each image to its capture.
+async function uploadImages(client: AxiosInstance) {
+  for (const img of [...images]) {
+    let done = true;
+    try {
+      await client.post("/api/agent/screen-capture/image", img.data, {
+        headers: { "Content-Type": "application/octet-stream", "X-Capture-Path": encodeURIComponent(img.filePath), "X-Captured-At": img.capturedAt },
+        maxBodyLength: SCREEN_CAPTURE_IMAGE_MAX_BYTES + 1024,
+        timeout: 120_000,
+      });
+    } catch (err: any) {
+      const status = err?.response?.status;
+      // 409: capture not recorded yet; no response: server unreachable. Both: try again later.
+      if ((status === 409 || !status) && ++img.attempts < MAX_IMAGE_ATTEMPTS) done = false;
+      else console.error(`Screen capture: image upload failed (${status ?? "no response"})`, img.filePath);
+    }
+    if (done) {
+      images.splice(images.indexOf(img), 1);
+      imageQueueBytes -= img.data.length;
+    }
+  }
+}
 const watchers = new Map<string, { watched: WatchedDir; watcher: fs.FSWatcher }>();
 const known = new Map<string, KnownCapture>(); // lower-cased path -> capture
 const pending = new Map<string, NodeJS.Timeout>();
@@ -181,6 +230,7 @@ async function handleChange(file: string, w: WatchedDir) {
     captureDay: localDay(capturedAt),
   };
   push(queue.captures, capture);
+  await queueImage(file, stat.size, capture.capturedAt);
 }
 
 function schedule(file: string, w: WatchedDir) {
@@ -357,7 +407,10 @@ async function readOpens() {
 }
 
 async function sendReport(client: AxiosInstance) {
-  if (queue.captures.length + queue.deletions.length + queue.opens.length === 0) return;
+  if (queue.captures.length + queue.deletions.length + queue.opens.length === 0) {
+    if (images.length > 0) await uploadImages(client); // retries
+    return;
+  }
   const batch: ScreenCaptureReportPayload = {
     captures: queue.captures.splice(0, 500),
     deletions: queue.deletions.splice(0, 500),
@@ -366,6 +419,7 @@ async function sendReport(client: AxiosInstance) {
   try {
     await client.post("/api/agent/screen-capture/report", batch);
     if (batch.captures.length > 0) console.log(`Screen capture: reported ${batch.captures.length} capture(s)`);
+    if (images.length > 0) await uploadImages(client);
   } catch (err) {
     // Keep them for the next attempt.
     queue.captures.unshift(...batch.captures);

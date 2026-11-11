@@ -1,7 +1,12 @@
 import { Fragment, useEffect, useState } from "react";
-import { AppWindow, Camera, ChevronDown, ChevronRight, Pencil, Plus, SearchX, Trash2, TriangleAlert, Users } from "lucide-react";
+import { AppWindow, Camera, ChevronDown, ChevronRight, Download, Image as ImageIcon, Pencil, Plus, SearchX, Trash2, TriangleAlert, Users } from "lucide-react";
 import {
+  downloadScreenCaptureImages,
+  screenCaptureImageUrl,
+  useAgents,
   useAssignScreenCapturePolicy,
+  useDeleteScreenCaptureImages,
+  useMe,
   useCreateScreenCapturePolicy,
   useDeleteScreenCapturePolicy,
   useScreenCaptureAssignments,
@@ -12,7 +17,8 @@ import {
   useUnassignScreenCapturePolicy,
   useUpdateScreenCapturePolicy,
 } from "../api/hooks";
-import type { ScreenCapturePolicyDetail, ScreenCaptureReportRow, ScreenCaptureSourceKey } from "../api/types";
+import type { ScreenCaptureItem, ScreenCapturePolicyDetail, ScreenCaptureReportRow, ScreenCaptureSourceKey } from "../api/types";
+import EndpointCheckboxList from "../components/EndpointCheckboxList";
 import EndpointLabel from "../components/EndpointLabel";
 import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm, SectionHeader } from "../components/policy";
 import {
@@ -27,6 +33,7 @@ import {
   IconButton,
   Kpi,
   KpiStrip,
+  Modal,
   Pagination,
   RowMenu,
   Skeleton,
@@ -35,7 +42,7 @@ import {
   useConfirm,
   usePagedList,
 } from "../components/ui";
-import { formatDateTime } from "../format";
+import { formatBytes, formatDateTime } from "../format";
 
 // DLP -> Screen capture: policy list -> selected policy's Report / Assignment / Settings tabs.
 // The agent records screenshots as they are saved (so deleting one doesn't hide it), deletions,
@@ -215,61 +222,258 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   );
 }
 
+// Super admins only: whether this policy keeps the screenshot images, from which endpoints and
+// for how long. Saved separately from the other settings.
+function ImagesPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
+  const updatePolicy = useUpdateScreenCapturePolicy();
+  const { data: agents } = useAgents();
+  const [saveImages, setSaveImages] = useState(policy.saveImages);
+  const [allEndpoints, setAllEndpoints] = useState(policy.saveImagesAllEndpoints);
+  const [agentIds, setAgentIds] = useState<string[]>(policy.saveImagesAgentIds);
+  const [retention, setRetention] = useState(policy.imageRetentionDays);
+
+  useEffect(() => {
+    setSaveImages(policy.saveImages);
+    setAllEndpoints(policy.saveImagesAllEndpoints);
+    setAgentIds(policy.saveImagesAgentIds);
+    setRetention(policy.imageRetentionDays);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policy.id, policy.saveImages, policy.saveImagesAllEndpoints, policy.saveImagesAgentIds.join(","), policy.imageRetentionDays]);
+
+  const retentionValid = retention >= 7 && retention <= 365;
+  const selectionValid = !saveImages || allEndpoints || agentIds.length > 0;
+  const toggle = (id: string) => setAgentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+
+  return (
+    <form
+      className="app-stack"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!retentionValid || !selectionValid) return;
+        updatePolicy.mutate({ id: policy.id, saveImages, saveImagesAllEndpoints: allEndpoints, saveImagesAgentIds: agentIds, imageRetentionDays: retention });
+      }}
+    >
+      <Alert tone="warn" title="Screenshots can contain passwords, chats and personal data">
+        Only super admins can see, download or delete the images; other admins see the list and counts only. Every view of a user&apos;s
+        screenshots, download and deletion is recorded in Admin logs. Tell users that screenshots on these PCs are kept.
+      </Alert>
+      <Switch checked={saveImages} onChange={setSaveImages} label={saveImages ? "Keep screenshot images" : "Don't keep images (details only)"} />
+      {saveImages && (
+        <>
+          <FormGrid>
+            <Field label="Keep images from" htmlFor={`sc-img-scope-${policy.id}`}>
+              <select
+                id={`sc-img-scope-${policy.id}`}
+                className="ep-select"
+                value={allEndpoints ? "all" : "selected"}
+                onChange={(e) => setAllEndpoints(e.target.value === "all")}
+              >
+                <option value="all">Every endpoint this policy is assigned to</option>
+                <option value="selected">Only the endpoints selected below</option>
+              </select>
+            </Field>
+            <Field label="Keep images for (days)" htmlFor={`sc-img-days-${policy.id}`} required help="7 to 365. Deleted automatically after this, or earlier by a super admin.">
+              <input
+                id={`sc-img-days-${policy.id}`}
+                type="number"
+                min={7}
+                max={365}
+                className="ep-input"
+                value={retention}
+                onChange={(e) => setRetention(Math.floor(Number(e.target.value) || 0))}
+                required
+              />
+            </Field>
+          </FormGrid>
+          {!allEndpoints && <EndpointCheckboxList agents={agents} selectedAgentIds={agentIds} onToggle={toggle} legend="Keep images from these endpoints" />}
+          <span className="app-muted">
+            Images are kept only from endpoints the policy is assigned to, with Windows agent 0.2.25 or later. Screen recordings (videos) and
+            images over 15 MB are never kept; they still appear in the report.
+          </span>
+        </>
+      )}
+      {!retentionValid && <Alert tone="warn">Keep images for 7 to 365 days.</Alert>}
+      {!selectionValid && <Alert tone="warn">Select at least one endpoint, or keep images from every endpoint.</Alert>}
+      {updatePolicy.error && <Alert tone="critical">{(updatePolicy.error as Error).message}</Alert>}
+      <div className="app-actions-row">
+        <Button type="submit" variant="primary" disabled={updatePolicy.isPending || !retentionValid || !selectionValid}>
+          Save
+        </Button>
+        {updatePolicy.isSuccess && <span className="app-muted">Saved. Endpoints pick it up within a minute.</span>}
+      </div>
+    </form>
+  );
+}
+
 function fileName(p: string): string {
   return p.split(/[\\/]/).pop() ?? p;
 }
 
+function ImageViewer({ capture, onClose, onDelete, deleting }: { capture: ScreenCaptureItem; onClose: () => void; onDelete: () => void; deleting: boolean }) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Modal
+      title={fileName(capture.filePath)}
+      description={`${formatDateTime(capture.capturedAt)} · ${SOURCE_LABEL[capture.source] ?? capture.source}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="danger" icon={Trash2} onClick={onDelete} disabled={deleting}>
+            Delete image
+          </Button>
+          <Button icon={Download} onClick={() => downloadScreenCaptureImages([capture.id]).catch((e: Error) => setError(e.message))}>
+            Download
+          </Button>
+          <Button variant="primary" onClick={onClose}>
+            Close
+          </Button>
+        </>
+      }
+    >
+      {error && <Alert tone="critical">{error}</Alert>}
+      <img
+        src={screenCaptureImageUrl(capture.id)}
+        alt={`Screenshot ${fileName(capture.filePath)}`}
+        style={{ maxWidth: "100%", maxHeight: "70vh", display: "block", margin: "0 auto", border: "1px solid var(--ep-border)", borderRadius: "var(--ep-radius-sm)" }}
+      />
+    </Modal>
+  );
+}
+
 function CaptureList({ policyId, row }: { policyId: string; row: ScreenCaptureReportRow }) {
   const { data: captures, isLoading } = useScreenCaptures(policyId, row);
+  const deleteImages = useDeleteScreenCaptureImages();
+  const confirm = useConfirm();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [viewing, setViewing] = useState<ScreenCaptureItem | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   if (isLoading) return <Skeleton lines={3} />;
   if (!captures || captures.length === 0) return <span className="app-muted">No screenshots.</span>;
+
+  // hasImage is only sent to super admins.
+  const showImages = captures.some((c) => c.hasImage !== undefined);
+  const withImage = captures.filter((c) => c.hasImage).map((c) => c.id);
+  const target = selected.length > 0 ? selected : withImage;
+
+  async function removeImages(ids: string[]) {
+    const ok = await confirm({
+      title: ids.length === 1 ? "Delete this screenshot image?" : `Delete ${ids.length} screenshot images?`,
+      body: "The images are removed from the server. The screenshot records (time, user, file name) stay in the report. This cannot be undone.",
+      confirmLabel: ids.length === 1 ? "Delete image" : "Delete images",
+      tone: "danger",
+    });
+    if (!ok) return;
+    deleteImages.mutate(ids, {
+      onSuccess: () => {
+        setSelected((sel) => sel.filter((id) => !ids.includes(id)));
+        setViewing(null);
+      },
+    });
+  }
+
   return (
-    <table className="ep-tbl">
-      <thead>
-        <tr>
-          <th scope="col">Taken</th>
-          <th scope="col">File</th>
-          <th scope="col">Tool</th>
-          <th scope="col">Opened by</th>
-          <th scope="col">Deleted</th>
-        </tr>
-      </thead>
-      <tbody>
-        {captures.map((c) => (
-          <tr key={c.id}>
-            <td className="ep-num">{formatDateTime(c.capturedAt)}</td>
-            <td className="ep-mono" title={c.filePath} style={{ overflowWrap: "anywhere" }}>
-              {fileName(c.filePath)}
-            </td>
-            <td>{SOURCE_LABEL[c.source] ?? c.source}</td>
-            <td>
-              {c.openedBy.length > 0 ? (
-                <div className="app-badge-row">
-                  {c.openedBy.map((o) => (
-                    <span key={o.process} title={formatDateTime(o.at)}>
-                      <Badge tone="med">{o.process}</Badge>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span className="app-muted">—</span>
-              )}
-            </td>
-            <td>
-              {c.deletedAt ? (
-                c.quickDeleted ? (
-                  <Badge tone="crit">{formatDateTime(c.deletedAt)}</Badge>
-                ) : (
-                  formatDateTime(c.deletedAt)
-                )
-              ) : (
-                <span className="app-muted">—</span>
-              )}
-            </td>
+    <div className="app-stack-sm">
+      {showImages && withImage.length > 0 && (
+        <div className="app-actions-row">
+          <Button size="sm" icon={Download} onClick={() => downloadScreenCaptureImages(target).catch((e: Error) => setDownloadError(e.message))}>
+            {selected.length > 0 ? `Download ${selected.length} selected` : `Download all ${withImage.length} images`}
+          </Button>
+          <Button size="sm" variant="danger" icon={Trash2} onClick={() => removeImages(target)} disabled={deleteImages.isPending}>
+            {selected.length > 0 ? `Delete ${selected.length} selected` : `Delete all ${withImage.length} images`}
+          </Button>
+          <span className="app-muted">
+            {withImage.length} of {captures.length} screenshots have a saved image.
+          </span>
+        </div>
+      )}
+      {downloadError && <Alert tone="critical">{downloadError}</Alert>}
+      {deleteImages.error && <Alert tone="critical">{(deleteImages.error as Error).message}</Alert>}
+      <table className="ep-tbl">
+        <thead>
+          <tr>
+            {showImages && (
+              <th scope="col">
+                <span className="app-vh">Select</span>
+              </th>
+            )}
+            {showImages && <th scope="col">Image</th>}
+            <th scope="col">Taken</th>
+            <th scope="col">File</th>
+            <th scope="col">Tool</th>
+            <th scope="col">Opened by</th>
+            <th scope="col">Deleted</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {captures.map((c) => (
+            <tr key={c.id}>
+              {showImages && (
+                <td className="ep-cb">
+                  {c.hasImage && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${fileName(c.filePath)}`}
+                      checked={selected.includes(c.id)}
+                      onChange={(e) => setSelected((sel) => (e.target.checked ? [...sel, c.id] : sel.filter((id) => id !== c.id)))}
+                    />
+                  )}
+                </td>
+              )}
+              {showImages && (
+                <td>
+                  {c.hasImage ? (
+                    <button
+                      type="button"
+                      onClick={() => setViewing(c)}
+                      aria-label={`View screenshot ${fileName(c.filePath)}`}
+                      title={`View · ${formatBytes(c.imageSizeBytes ?? null)}`}
+                      style={{ padding: 0, border: "1px solid var(--ep-border)", borderRadius: "var(--ep-radius-sm)", background: "none", cursor: "zoom-in", lineHeight: 0 }}
+                    >
+                      <img src={screenCaptureImageUrl(c.id)} alt="" loading="lazy" style={{ width: 112, height: 63, objectFit: "cover", borderRadius: "var(--ep-radius-sm)" }} />
+                    </button>
+                  ) : (
+                    <span className="app-muted" title="Not kept: images were off, a video, too large, or already deleted">
+                      <ImageIcon size={16} strokeWidth={1.7} aria-hidden /> Not kept
+                    </span>
+                  )}
+                </td>
+              )}
+              <td className="ep-num">{formatDateTime(c.capturedAt)}</td>
+              <td className="ep-mono" title={c.filePath} style={{ overflowWrap: "anywhere" }}>
+                {fileName(c.filePath)}
+              </td>
+              <td>{SOURCE_LABEL[c.source] ?? c.source}</td>
+              <td>
+                {c.openedBy.length > 0 ? (
+                  <div className="app-badge-row">
+                    {c.openedBy.map((o) => (
+                      <span key={o.process} title={formatDateTime(o.at)}>
+                        <Badge tone="med">{o.process}</Badge>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="app-muted">—</span>
+                )}
+              </td>
+              <td>
+                {c.deletedAt ? (
+                  c.quickDeleted ? (
+                    <Badge tone="crit">{formatDateTime(c.deletedAt)}</Badge>
+                  ) : (
+                    formatDateTime(c.deletedAt)
+                  )
+                ) : (
+                  <span className="app-muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {viewing && <ImageViewer capture={viewing} onClose={() => setViewing(null)} onDelete={() => removeImages([viewing.id])} deleting={deleteImages.isPending} />}
+    </div>
   );
 }
 
@@ -450,6 +654,8 @@ function ReportPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
 
 export default function ScreenCapturePage() {
   const { data: policies, isLoading, error, refetch } = useScreenCapturePolicies();
+  const { data: me } = useMe();
+  const isSuperAdmin = me?.role === "SUPER_ADMIN";
   const createPolicy = useCreateScreenCapturePolicy();
   const updatePolicy = useUpdateScreenCapturePolicy();
   const deletePolicy = useDeleteScreenCapturePolicy();
@@ -483,7 +689,7 @@ export default function ScreenCapturePage() {
     <>
       <SectionHeader
         title="Screen capture"
-        description="Reports users who take many screenshots in a day, delete them soon after, or open them in other programs such as a browser, WhatsApp or Outlook. Only details about each screenshot are collected, never the image."
+        description="Reports users who take many screenshots in a day, delete them soon after, or open them in other programs such as a browser, WhatsApp or Outlook. Only details about each screenshot are collected, unless a super admin sets a policy to keep the images."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
             New policy
@@ -599,12 +805,13 @@ export default function ScreenCapturePage() {
           policyId={policy.id}
           name={policy.name}
           enabled={policy.enabled}
-          meta={`Threshold ${policy.dailyThreshold}/day · ${policy.assignedAgentCount} ${policy.assignedAgentCount === 1 ? "endpoint" : "endpoints"}`}
+          meta={`Threshold ${policy.dailyThreshold}/day · ${policy.assignedAgentCount} ${policy.assignedAgentCount === 1 ? "endpoint" : "endpoints"}${policy.saveImages ? ` · images kept ${policy.imageRetentionDays} days` : ""}`}
           onClose={() => setSelectedId(undefined)}
           tabs={[
             { value: "report", label: "Report", content: <ReportPanel policy={policy} /> },
             { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
             { value: "settings", label: "Settings", content: <PolicySettingsPanel policy={policy} /> },
+            ...(isSuperAdmin ? [{ value: "images", label: "Screenshot images", content: <ImagesPanel policy={policy} /> }] : []),
           ]}
         />
       )}

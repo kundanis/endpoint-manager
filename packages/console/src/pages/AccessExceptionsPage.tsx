@@ -11,6 +11,7 @@ import {
   usePolicyAccessExceptions,
   useRejectPolicyAccessException,
   useEndPolicyAccessException,
+  useScreenshotBlockPolicies,
   useUsbControlPolicies,
   useWebBlockPolicies,
 } from "../api/hooks";
@@ -44,6 +45,7 @@ const POLICY_TYPE_LABELS: Record<PolicyAccessExceptionType, string> = {
   COMMAND_BLOCK: "Command blocking",
   IP_BLOCK: "IP blocking",
   USB_CONTROL: "USB device control",
+  SCREENSHOT_BLOCK: "Screenshot blocking",
   DLP: "DLP",
 };
 const POLICY_TYPES = Object.keys(POLICY_TYPE_LABELS) as PolicyAccessExceptionType[];
@@ -90,6 +92,7 @@ function usePoliciesForType(policyType: PolicyAccessExceptionType) {
   const ipBlock = useIpBlockPolicies();
   const usbControl = useUsbControlPolicies();
   const dlp = useDlpPolicies();
+  const screenshotBlock = useScreenshotBlockPolicies();
 
   switch (policyType) {
     case "APP_CONTROL":
@@ -104,6 +107,8 @@ function usePoliciesForType(policyType: PolicyAccessExceptionType) {
       return usbControl.data ?? [];
     case "DLP":
       return dlp.data ?? [];
+    case "SCREENSHOT_BLOCK":
+      return screenshotBlock.data ?? [];
   }
 }
 

@@ -214,6 +214,14 @@ export async function collect(cursors: Cursors, resolver: ResolveUser): Promise<
 
   added += await collectSource(
     cursors,
+    "screenshotBlock",
+    (from) => prisma.screenshotBlockEvent.findMany({ where: { occurredAt: { gt: from } }, orderBy: { occurredAt: "asc" }, take: BATCH }),
+    (r) => r.occurredAt,
+    (r) => [{ agentId: r.agentId, username: r.username, type: "SCREENSHOT_BLOCKED", summary: `Screenshot blocked: ${r.detail}`, detail: { kind: r.kind, what: r.detail }, occurredAt: r.occurredAt, sourceTable: "ScreenshotBlockEvent", sourceId: r.id }],
+  );
+
+  added += await collectSource(
+    cursors,
     "commandBlock",
     (from) => prisma.commandBlockEvent.findMany({ where: { occurredAt: { gt: from } }, orderBy: { occurredAt: "asc" }, take: BATCH }),
     (r) => r.occurredAt,

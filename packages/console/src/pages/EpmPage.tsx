@@ -10,6 +10,7 @@ const EPM_TABS = [
   { to: "command-block", label: "Command blocking" },
   { to: "ip-block", label: "IP blocking" },
   { to: "usb-control", label: "USB device control" },
+  { to: "screenshot-block", label: "Screenshot blocking" },
 ];
 
 // Emergency release: if a policy is causing trouble on devices, pause every endpoint at once -
@@ -62,7 +63,7 @@ export default function EpmPage() {
     <>
       <PageHeader
         title="Endpoint privilege management"
-        description="Restrict which software can execute, which sites are reachable, which commands can run, and which USB storage devices are trusted on assigned endpoints."
+        description="Restrict which software can execute, which sites are reachable, which commands can run, which USB storage devices are trusted and whether screenshots can be taken on assigned endpoints."
         actions={<EmergencyRelease />}
       />
       <Tabs items={EPM_TABS} />

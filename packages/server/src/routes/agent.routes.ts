@@ -1,5 +1,7 @@
+import { recordReport as recordScreenshotBlockReport, resolveAssignedForAgent as resolveScreenshotBlockForAgent } from "../services/screenshotBlock.service";
+import { storeImage as storeScreenCaptureImage } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
-import { Router } from "express";
+import express, { Router } from "express";
 import {
   agentUpdateStatusPayloadSchema,
   appControlScanResultPayloadSchema,
@@ -30,6 +32,8 @@ import {
   verifyUninstallPasswordRequestSchema,
   webBlockSyncResultPayloadSchema,
   zeroTrustScanResultPayloadSchema,
+  SCREEN_CAPTURE_IMAGE_MAX_BYTES,
+  screenshotBlockReportSchema,
 } from "@em/shared";
 import { agentUpdatePackageFor } from "../services/agentBuild.service";
 import { prisma } from "../db";
@@ -353,6 +357,29 @@ agentRouter.get("/screen-capture/assigned", async (req, res, next) => {
   }
 });
 
+// One screenshot's image, when a policy keeps images for this endpoint. Raw image bytes; the
+// capture it belongs to (reported earlier) is named by the X-Capture-Path (URI-encoded) and
+// X-Captured-At headers. 409 = that capture hasn't been recorded yet - the agent retries.
+agentRouter.post(
+  "/screen-capture/image",
+  express.raw({ type: () => true, limit: SCREEN_CAPTURE_IMAGE_MAX_BYTES }),
+  async (req, res, next) => {
+    try {
+      const filePath = decodeURIComponent(String(req.header("x-capture-path") ?? ""));
+      const capturedAt = new Date(String(req.header("x-captured-at") ?? ""));
+      if (!filePath || filePath.length > 1000 || Number.isNaN(capturedAt.getTime()) || !Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ error: "X-Capture-Path, X-Captured-At and the image are required" });
+      }
+      const result = await storeScreenCaptureImage(req.agentId!, filePath, capturedAt, req.body);
+      if (result === "no-capture") return res.status(409).json({ error: "Capture not recorded yet" });
+      if (result === "invalid") return res.status(400).json({ error: "Not a supported image" });
+      res.status(204).send(); // stored, or no longer wanted (policy changed) - either way, done
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 agentRouter.post("/screen-capture/report", async (req, res, next) => {
   try {
     const payload = screenCaptureReportPayloadSchema.parse(req.body);
@@ -440,6 +467,24 @@ agentRouter.post("/pii-block/sync-result", async (req, res, next) => {
   try {
     const payload = piiBlockSyncResultPayloadSchema.parse(req.body);
     await recordPiiBlockSyncResult(req.agentId!, payload);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// EPM -> Screenshot blocking: what this endpoint blocks, and the blocked attempts (+ sync status).
+agentRouter.get("/screenshot-block/assigned", async (req, res, next) => {
+  try {
+    res.json(await resolveScreenshotBlockForAgent(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/screenshot-block/report", async (req, res, next) => {
+  try {
+    await recordScreenshotBlockReport(req.agentId!, screenshotBlockReportSchema.parse(req.body));
     res.status(204).send();
   } catch (err) {
     next(err);

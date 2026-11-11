@@ -348,6 +348,13 @@ button.ep-link.app-link-btn {
   gap: 8px;
 }
 
+/* Two or three stacked lines inside one table cell (e.g. file name over its size). */
+.app-stack-xs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .app-actions-row {
   display: flex;
   flex-wrap: wrap;

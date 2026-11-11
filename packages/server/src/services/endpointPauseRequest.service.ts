@@ -20,6 +20,7 @@ const PAUSABLE: { type: PolicyAccessExceptionType; area: "EPM" | "DLP"; label: s
   { type: "COMMAND_BLOCK", area: "EPM", label: "Command blocking", policy: "commandBlockPolicy", assignment: "commandBlockPolicyAssignment" },
   { type: "IP_BLOCK", area: "EPM", label: "IP blocking", policy: "ipBlockPolicy", assignment: "ipBlockPolicyAssignment" },
   { type: "USB_CONTROL", area: "EPM", label: "USB device control", policy: "usbControlPolicy", assignment: "usbControlPolicyAssignment" },
+  { type: "SCREENSHOT_BLOCK", area: "EPM", label: "Screenshot blocking", policy: "screenshotBlockPolicy", assignment: "screenshotBlockPolicyAssignment" },
   { type: "DLP", area: "DLP", label: "Content policy", policy: "dlpPolicy", assignment: "dlpPolicyAssignment" },
 ];
 

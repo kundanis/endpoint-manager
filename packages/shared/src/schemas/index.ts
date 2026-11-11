@@ -30,6 +30,7 @@ export * from "./piiBlock.schema";
 export * from "./piiEmailBlock.schema";
 export * from "./commandBlock.schema";
 export * from "./ipBlock.schema";
+export * from "./screenshotBlock.schema";
 export * from "./usbControl.schema";
 export * from "./policyAccessException.schema";
 export * from "./userProductivity.schema";

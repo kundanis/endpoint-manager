@@ -114,7 +114,7 @@ $wpfDir = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\WPF"
 & $csc /nologo /target:winexe /platform:anycpu "/out:$(Join-Path $trayDir 'EndpointIQTray.exe')" "/win32icon:$iconPath" `
     /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll `
     "/r:$(Join-Path $wpfDir 'UIAutomationClient.dll')" "/r:$(Join-Path $wpfDir 'UIAutomationTypes.dll')" "/r:$(Join-Path $wpfDir 'WindowsBase.dll')" `
-    (Join-Path $templatesDir "TrayApp.cs") (Join-Path $templatesDir "UsageTracker.cs")
+    (Join-Path $templatesDir "TrayApp.cs") (Join-Path $templatesDir "UsageTracker.cs") (Join-Path $templatesDir "ScreenshotBlocker.cs")
 if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the tray app" }
 
 Write-Host "Staging install/uninstall scripts..."

@@ -209,6 +209,18 @@ export const RULES: RuleDefinition[] = [
     alertTitle: (n) => `${plural(n, "blocked application launch", "blocked application launches")} in a day`,
   },
   {
+    key: "BLOCKED_SCREENSHOT_ATTEMPTS",
+    title: "Repeated blocked screenshots",
+    description: "Several attempts in a day to take a screenshot where screenshots are blocked (Print Screen, a screenshot tool, or a copied picture).",
+    category: "EPM",
+    kind: "count",
+    types: ["SCREENSHOT_BLOCKED"],
+    window: "day",
+    thresholdLabel: "Attempts per day",
+    defaults: { enabled: true, threshold: 5, points: 10, severity: "LOW" },
+    alertTitle: (n) => `${plural(n, "blocked screenshot attempt")} in a day`,
+  },
+  {
     key: "BLOCKED_COMMAND",
     title: "Blocked command run",
     description: "A command blocked by a command-blocking policy (for example a script or admin tool).",

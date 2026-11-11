@@ -38,6 +38,7 @@ import { piiBlockRouter } from "./routes/piiBlock.routes";
 import { piiEmailBlockRouter } from "./routes/piiEmailBlock.routes";
 import { commandBlockRouter } from "./routes/commandBlock.routes";
 import { ipBlockRouter } from "./routes/ipBlock.routes";
+import { screenshotBlockRouter } from "./routes/screenshotBlock.routes";
 import { usbControlRouter } from "./routes/usbControl.routes";
 import { dataTypesRouter } from "./routes/dataTypes.routes";
 import { policyAccessExceptionRouter } from "./routes/policyAccessException.routes";
@@ -186,6 +187,7 @@ export function createApp() {
   app.use("/api/admin/pii-email-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), piiEmailBlockRouter);
   app.use("/api/admin/command-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), commandBlockRouter);
   app.use("/api/admin/ip-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), ipBlockRouter);
+  app.use("/api/admin/screenshot-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), screenshotBlockRouter);
   app.use("/api/admin/usb-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), usbControlRouter);
   app.use("/api/admin/data-types", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataTypesRouter);
   app.use("/api/admin/policy-exceptions", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), policyAccessExceptionRouter);

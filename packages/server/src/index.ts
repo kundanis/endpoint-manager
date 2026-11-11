@@ -13,6 +13,7 @@ import { startFleetCache } from "./cache/fleetCache";
 import { startPresenceFlush } from "./presence/presence";
 import { scheduleUserRisk } from "./services/userRisk/userRisk.service";
 import { scheduleAuditRetention } from "./services/adminAudit.service";
+import { scheduleScreenCaptureImageRetention } from "./services/screenCaptureImage.service";
 
 // Last-resort safety net: without this, an unhandled rejection anywhere the request/response
 // try/catch chain doesn't reach (e.g. a future bug shaped like the one just fixed in
@@ -62,6 +63,7 @@ scheduleStaleAgentUpdateReconciliation();
 scheduleUninstalledAgentCleanup();
 scheduleUserRisk();
 scheduleAuditRetention();
+scheduleScreenCaptureImageRetention();
 startFleetCache();
 startPresenceFlush();
 

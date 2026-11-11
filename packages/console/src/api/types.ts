@@ -1042,6 +1042,12 @@ export interface AgentDataMovementEventView {
   fileModifiedAt: string;
   channel: DataMovementChannel;
   channelDetail: Record<string, string | null>;
+  // Agent 0.2.25+: the file it came from on the endpoint (null when none was found), whether
+  // that file is still there (COPY) or just disappeared (MOVE), and the user signed in.
+  // All null on events from older agents.
+  sourcePath: string | null;
+  operation: "COPY" | "MOVE" | "UNKNOWN" | null;
+  userName: string | null;
   detectedAt: string;
 }
 
@@ -1238,6 +1244,53 @@ export interface PiiEmailBlockEventView {
   attachmentName: string;
   action: PiiEmailBlockEventAction;
   matchedCategoryLabels: string[];
+  occurredAt: string;
+}
+
+// ---- EPM -> Screenshot blocking
+
+export interface ScreenshotBlockPolicyView {
+  id: string;
+  name: string;
+  description: string | null;
+  blockKeys: boolean;
+  blockTools: boolean;
+  blockClipboardImages: boolean;
+  extraTools: string[];
+  enabled: boolean;
+  assignedAgentCount: number;
+  blocked7d: number;
+  createdAt: string;
+}
+
+export interface ScreenshotBlockAssignmentView {
+  id: string;
+  agentId: string | null;
+  hostname: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+}
+
+export interface ScreenshotBlockAgentActivity {
+  agentId: string;
+  hostname: string;
+  keyCount: number;
+  toolCount: number;
+  clipboardCount: number;
+  lastBlockedAt: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+}
+
+export interface ScreenshotBlockEventView {
+  id: string;
+  username: string;
+  kind: "KEY" | "TOOL" | "CLIPBOARD";
+  detail: string;
   occurredAt: string;
 }
 
@@ -1583,6 +1636,11 @@ export interface ScreenCapturePolicyDetail {
   monitorThirdParty: boolean;
   extraPaths: string[];
   trackOpenedBy: boolean;
+  // Keep the screenshot images (super admins only see them, and only they can change these).
+  saveImages: boolean;
+  saveImagesAllEndpoints: boolean;
+  saveImagesAgentIds: string[];
+  imageRetentionDays: number;
   enabled: boolean;
   assignedAgentCount: number;
   flaggedUsers7d: number;
@@ -1626,6 +1684,9 @@ export interface ScreenCaptureItem {
   deletedAt: string | null;
   quickDeleted: boolean;
   openedBy: { process: string; at: string }[];
+  // Super admins only (absent for other admins): whether the image was kept.
+  hasImage?: boolean;
+  imageSizeBytes?: string | null;
 }
 
 // ---- Identity Governance -> User Risk

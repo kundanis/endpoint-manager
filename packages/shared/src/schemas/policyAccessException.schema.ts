@@ -10,6 +10,7 @@ export const POLICY_ACCESS_EXCEPTION_TYPES = [
   "IP_BLOCK",
   "USB_CONTROL",
   "DLP",
+  "SCREENSHOT_BLOCK",
 ] as const;
 export type PolicyAccessExceptionType = (typeof POLICY_ACCESS_EXCEPTION_TYPES)[number];
 

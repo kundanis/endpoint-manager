@@ -147,6 +147,10 @@ import type {
   AdminAuditSettings,
   AdminGrantKey,
   ScreenCaptureAssignmentView,
+  ScreenshotBlockAgentActivity,
+  ScreenshotBlockAssignmentView,
+  ScreenshotBlockEventView,
+  ScreenshotBlockPolicyView,
   ScreenCaptureItem,
   ScreenCapturePolicyDetail,
   ScreenCaptureReport,
@@ -2505,6 +2509,109 @@ export function usePiiEmailBlockEvents(policyId: string | undefined) {
   });
 }
 
+// ---- EPM -> Screenshot blocking
+
+type ScreenshotBlockPolicyBody = {
+  name: string;
+  description?: string | null;
+  blockKeys: boolean;
+  blockTools: boolean;
+  blockClipboardImages: boolean;
+  extraTools: string[];
+  enabled?: boolean;
+};
+
+export function useScreenshotBlockPolicies() {
+  return useQuery({
+    queryKey: ["screenshotBlockPolicies"],
+    queryFn: () => api.get<ScreenshotBlockPolicyView[]>("/admin/screenshot-block"),
+    refetchInterval: 15000,
+  });
+}
+
+export function useScreenshotBlockPolicy(id: string | undefined) {
+  return useQuery({
+    queryKey: ["screenshotBlockPolicies", id],
+    queryFn: () => api.get<ScreenshotBlockPolicyView>(`/admin/screenshot-block/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateScreenshotBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ScreenshotBlockPolicyBody) => api.post<ScreenshotBlockPolicyView>("/admin/screenshot-block", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screenshotBlockPolicies"] }),
+  });
+}
+
+export function useUpdateScreenshotBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<ScreenshotBlockPolicyBody>) => api.patch<ScreenshotBlockPolicyView>(`/admin/screenshot-block/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screenshotBlockPolicies"] }),
+  });
+}
+
+export function useDeleteScreenshotBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/screenshot-block/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screenshotBlockPolicies"] }),
+  });
+}
+
+export function useScreenshotBlockAssignments(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["screenshotBlockAssignments", policyId],
+    queryFn: () => api.get<ScreenshotBlockAssignmentView[]>(`/admin/screenshot-block/${policyId}/assignments`),
+    enabled: !!policyId,
+  });
+}
+
+export function useAssignScreenshotBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, agentIds, groupIds }: { policyId: string; agentIds: string[]; groupIds: string[] }) =>
+      api.post<ScreenshotBlockPolicyView>(`/admin/screenshot-block/${policyId}/assign`, { agentIds, groupIds }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["screenshotBlockAssignments"] });
+      qc.invalidateQueries({ queryKey: ["screenshotBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["screenshotBlockActivity"] });
+    },
+  });
+}
+
+export function useUnassignScreenshotBlockPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, assignmentId }: { policyId: string; assignmentId: string }) => api.del(`/admin/screenshot-block/${policyId}/assign/${assignmentId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["screenshotBlockAssignments"] });
+      qc.invalidateQueries({ queryKey: ["screenshotBlockPolicies"] });
+      qc.invalidateQueries({ queryKey: ["screenshotBlockActivity"] });
+    },
+  });
+}
+
+export function useScreenshotBlockActivity(policyId: string | undefined, days: number) {
+  return useQuery({
+    queryKey: ["screenshotBlockActivity", policyId, days],
+    queryFn: () => api.get<{ agents: ScreenshotBlockAgentActivity[] }>(`/admin/screenshot-block/${policyId}/activity?days=${days}`),
+    enabled: !!policyId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useScreenshotBlockAgentEvents(agentId: string | null, days: number) {
+  return useQuery({
+    queryKey: ["screenshotBlockEvents", agentId, days],
+    queryFn: () => api.get<ScreenshotBlockEventView[]>(`/admin/screenshot-block/agents/${agentId}/events?days=${days}`),
+    enabled: !!agentId,
+    refetchInterval: 15000,
+  });
+}
+
 export function useIpBlockPolicies() {
   return useQuery({
     queryKey: ["ipBlockPolicies"],
@@ -3367,6 +3474,10 @@ type ScreenCapturePolicyBody = {
   monitorThirdParty: boolean;
   extraPaths: string[];
   trackOpenedBy: boolean;
+  saveImages?: boolean;
+  saveImagesAllEndpoints?: boolean;
+  saveImagesAgentIds?: string[];
+  imageRetentionDays?: number;
   enabled?: boolean;
 };
 
@@ -3467,6 +3578,25 @@ export function useScreenCaptures(policyId: string, row: { agentId: string; user
       ),
     enabled: !!row,
     refetchInterval: 15000,
+  });
+}
+
+// Saved screenshot images (super admins only). The images stay referenced by URL; the server
+// streams them with the session cookie.
+export function screenCaptureImageUrl(eventId: string): string {
+  return `/api/admin/screen-capture/images/${encodeURIComponent(eventId)}`;
+}
+
+export function downloadScreenCaptureImages(eventIds: string[]) {
+  if (eventIds.length === 1) return api.getDownload(`/admin/screen-capture/images/${encodeURIComponent(eventIds[0])}/download`, "screenshot.png");
+  return api.postDownload("/admin/screen-capture/images/download-images", { eventIds }, "screenshots.zip");
+}
+
+export function useDeleteScreenCaptureImages() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (eventIds: string[]) => api.post<{ deleted: number }>("/admin/screen-capture/images/delete-images", { eventIds }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["screenCaptures"] }),
   });
 }
 

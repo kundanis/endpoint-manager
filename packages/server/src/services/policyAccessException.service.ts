@@ -21,6 +21,8 @@ async function getPolicyName(policyType: PolicyAccessExceptionType, policyId: st
       return (await prisma.usbControlPolicy.findUnique({ where: { id: policyId }, select: { name: true } }))?.name ?? null;
     case "DLP":
       return (await prisma.dlpPolicy.findUnique({ where: { id: policyId }, select: { name: true } }))?.name ?? null;
+    case "SCREENSHOT_BLOCK":
+      return (await prisma.screenshotBlockPolicy.findUnique({ where: { id: policyId }, select: { name: true } }))?.name ?? null;
   }
 }
 

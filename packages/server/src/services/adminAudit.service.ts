@@ -98,6 +98,7 @@ const MODULES: Record<string, { label: string; category: string }> = {
   "pii-email-block": { label: "Email attachment blocking", category: "Policies" },
   "command-block": { label: "Command blocking", category: "Policies" },
   "ip-block": { label: "IP blocking", category: "Policies" },
+  "screenshot-block": { label: "Screenshot blocking", category: "Policies" },
   "usb-control": { label: "USB control", category: "Policies" },
   "data-types": { label: "Data types", category: "Policies" },
   "policy-exceptions": { label: "Access exceptions", category: "Policies" },
@@ -145,6 +146,8 @@ const VERBS: Record<string, string> = {
   approve: "Approved",
   reject: "Rejected",
   end: "Ended early",
+  "download-images": "Downloaded screenshot images",
+  "delete-images": "Deleted screenshot images",
 };
 
 // GET requests that read sensitive data - logged as views.
@@ -154,7 +157,8 @@ const SENSITIVE_VIEWS: { pattern: RegExp; summary: (m: RegExpMatchArray) => stri
   { pattern: /^\/user-risk\/alerts\/([^/]+)\/events$/, summary: () => "Viewed the activity behind a user risk alert", module: "User risk" },
   { pattern: /^\/enrollment-tokens\/([^/]+)\/value$/, summary: () => "Revealed an enrollment token", module: "Enrollment tokens" },
   { pattern: /^\/data-discovery\/agents\/([^/]+)$/, summary: () => "Viewed the personal-data findings of an endpoint", module: "Data discovery" },
-  { pattern: /^\/screen-capture\/([^/]+)\/captures$/, summary: () => "Viewed a user's screenshots list", module: "Screen capture" },
+  { pattern: /^\/screen-capture\/([^/]+)\/captures$/, summary: () => "Viewed a user's screenshots (with the images, for a super admin)", module: "Screen capture" },
+  { pattern: /^\/screen-capture\/images\/([^/]+)\/download$/, summary: () => "Downloaded a screenshot image", module: "Screen capture" },
 ];
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^builtin:/i;

@@ -173,6 +173,8 @@ model Agent {
   dataMovementEvents      DataMovementEvent[]
   dataMovementAssignments DataMovementPolicyAssignment[]
   screenCaptureEvents      ScreenCaptureEvent[]
+  screenshotBlockEvents      ScreenshotBlockEvent[]
+  screenshotBlockAssignments ScreenshotBlockPolicyAssignment[]
   userActivityEvents       UserActivityEvent[]
   softwareChanges          AgentSoftwareChange[]
   screenCaptureAssignments ScreenCapturePolicyAssignment[]
@@ -560,6 +562,7 @@ model AssetGroup {
   screenCaptureAssignments ScreenCapturePolicyAssignment[]
   ipBlockAssignments IpBlockPolicyAssignment[]
   usbControlAssignments UsbControlPolicyAssignment[]
+  screenshotBlockAssignments ScreenshotBlockPolicyAssignment[]
   enrollmentTokens   EnrollmentToken[]
 }
 
@@ -1099,6 +1102,12 @@ model DataMovementEvent {
   // Channel-specific identity, JSON so the shape can vary without extra columns —
   // USB: {driveLetter, volumeLabel, serialNumber}; CLOUD_SYNC: {provider}; NETWORK_SHARE: {uncPath}.
   channelDetail  String             @default("{}") @db.NVarChar(1000)
+  // Where the file came from: a file with the same name and size found on the endpoint's own
+  // disks. operation COPY (source still there) | MOVE (source just gone) | UNKNOWN (no source
+  // found); all three null on events from agents before 0.2.25.
+  sourcePath     String?            @db.NVarChar(1000)
+  operation      String?            @db.NVarChar(10)
+  userName       String?            @db.NVarChar(200) // user signed in when the file arrived
   detectedAt     DateTime           @default(now())
 
   @@unique([agentId, policyId, filePath, channel, fileModifiedAt])
@@ -1122,6 +1131,13 @@ model ScreenCapturePolicy {
   monitorThirdParty   Boolean                         @default(true)
   extraPaths          String                          @default("[]") @db.NVarChar(Max) // JSON; %USERPROFILE% etc. expanded per user
   trackOpenedBy       Boolean                         @default(true)
+  // Keep the screenshot image itself (uploaded by the agent, stored under uploads/screen-captures,
+  // visible to super admins only): from every endpoint the policy covers, or only from
+  // saveImagesAgentIds (JSON array of agent ids). Images are deleted after imageRetentionDays.
+  saveImages             Boolean                      @default(false)
+  saveImagesAllEndpoints Boolean                      @default(true)
+  saveImagesAgentIds     String                       @default("[]") @db.NVarChar(Max)
+  imageRetentionDays     Int                          @default(30)
   enabled             Boolean                         @default(true)
   createdByAdminId    String?
   createdAt           DateTime                        @default(now())
@@ -1157,6 +1173,11 @@ model ScreenCaptureEvent {
   captureDay    String    @db.NVarChar(10) // YYYY-MM-DD in the endpoint's own time zone
   deletedAt     DateTime?
   openedBy      String    @default("[]") @db.NVarChar(2000) // JSON [{ process, at }]
+  // The saved image, when a policy keeps images for this endpoint: file name under
+  // <uploads>/screen-captures/<agentId>/. Cleared when an admin deletes it or it expires.
+  imageFile      String?  @db.NVarChar(300)
+  imageSizeBytes BigInt?
+  imageSavedAt   DateTime?
   detectedAt    DateTime  @default(now())
 
   @@unique([agentId, filePath, capturedAt])
@@ -1607,6 +1628,58 @@ model IpBlockRule {
   value     String        @db.NVarChar(64)
   label     String?       @db.NVarChar(200)
   createdAt DateTime      @default(now())
+}
+
+// EPM -> Screenshot blocking. Stops users taking screenshots on assigned Windows endpoints: the
+// Print Screen / Win+Shift+S keys (swallowed by the Endpoint IQ tray app in each user's session),
+// screenshot tools (closed when they start), Windows' own Snipping Tool and Game Bar capture
+// (turned off by machine policy) and, optionally, any picture placed on the clipboard.
+model ScreenshotBlockPolicy {
+  id                   String                            @id @default(uuid())
+  name                 String                            @db.NVarChar(200)
+  description          String?                           @db.NVarChar(1000)
+  blockKeys            Boolean                           @default(true)
+  blockTools           Boolean                           @default(true)
+  blockClipboardImages Boolean                           @default(false)
+  extraTools           String                            @default("[]") @db.NVarChar(2000) // JSON ["Lightshot.exe"]
+  enabled              Boolean                           @default(true)
+  createdByAdminId     String?
+  createdAt            DateTime                          @default(now())
+  assignments          ScreenshotBlockPolicyAssignment[]
+}
+
+model ScreenshotBlockPolicyAssignment {
+  id             String                @id @default(uuid())
+  policyId       String
+  policy         ScreenshotBlockPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId        String?
+  agent          Agent?                @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          AssetGroup?           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt      DateTime              @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?               @db.NVarChar(20)
+  lastSyncError  String?               @db.NVarChar(1000)
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// One blocked screenshot attempt on an endpoint (not per policy: the endpoint enforces the union
+// of its policies). kind KEY (Print Screen etc.) | TOOL (a screenshot program closed) |
+// CLIPBOARD (a picture removed from the clipboard).
+model ScreenshotBlockEvent {
+  id         String   @id @default(uuid())
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  username   String   @db.NVarChar(200)
+  kind       String   @db.NVarChar(20)
+  detail     String   @db.NVarChar(300)
+  occurredAt DateTime
+  detectedAt DateTime @default(now())
+
+  @@index([agentId, occurredAt])
+  @@index([occurredAt])
 }
 
 model IpBlockPolicyAssignment {

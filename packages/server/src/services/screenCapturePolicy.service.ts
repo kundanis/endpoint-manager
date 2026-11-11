@@ -120,6 +120,10 @@ async function toView(p: PolicyRow) {
     monitorThirdParty: p.monitorThirdParty,
     extraPaths: JSON.parse(p.extraPaths) as string[],
     trackOpenedBy: p.trackOpenedBy,
+    saveImages: p.saveImages,
+    saveImagesAllEndpoints: p.saveImagesAllEndpoints,
+    saveImagesAgentIds: JSON.parse(p.saveImagesAgentIds) as string[],
+    imageRetentionDays: p.imageRetentionDays,
     enabled: p.enabled,
     assignedAgentCount: assignedAgentIds.length,
     flaggedUsers7d: new Set(flagged.map((r) => `${r.agentId}|${r.username.toLowerCase()}`)).size,
@@ -140,6 +144,10 @@ export async function createPolicy(params: CreateScreenCapturePolicyRequest, cre
       monitorThirdParty: params.monitorThirdParty,
       extraPaths: JSON.stringify(params.extraPaths),
       trackOpenedBy: params.trackOpenedBy,
+      saveImages: params.saveImages,
+      saveImagesAllEndpoints: params.saveImagesAllEndpoints,
+      saveImagesAgentIds: JSON.stringify(params.saveImagesAgentIds),
+      imageRetentionDays: params.imageRetentionDays,
       enabled: params.enabled,
       createdByAdminId,
     },
@@ -171,6 +179,10 @@ export async function updatePolicy(id: string, params: UpdateScreenCapturePolicy
       monitorThirdParty: params.monitorThirdParty,
       extraPaths: params.extraPaths ? JSON.stringify(params.extraPaths) : undefined,
       trackOpenedBy: params.trackOpenedBy,
+      saveImages: params.saveImages,
+      saveImagesAllEndpoints: params.saveImagesAllEndpoints,
+      saveImagesAgentIds: params.saveImagesAgentIds ? JSON.stringify(params.saveImagesAgentIds) : undefined,
+      imageRetentionDays: params.imageRetentionDays,
       enabled: params.enabled,
     },
   });
@@ -236,8 +248,9 @@ export async function getPolicyReport(policyId: string, days: number) {
   };
 }
 
-// The individual screenshots behind one report row.
-export async function getCaptures(policyId: string, agentId: string, username: string, day: string) {
+// The individual screenshots behind one report row. Whether an image was saved is shown to
+// super admins only (withImages); they alone can open it.
+export async function getCaptures(policyId: string, agentId: string, username: string, day: string, withImages = false) {
   const policy = await prisma.screenCapturePolicy.findUnique({ where: { id: policyId } });
   if (!policy) return null;
   const events = await prisma.screenCaptureEvent.findMany({
@@ -253,5 +266,6 @@ export async function getCaptures(policyId: string, agentId: string, username: s
     deletedAt: e.deletedAt?.toISOString() ?? null,
     quickDeleted: isQuickDelete(e, policy.quickDeleteMinutes),
     openedBy: openersOf(e),
+    ...(withImages ? { hasImage: !!e.imageFile, imageSizeBytes: e.imageSizeBytes?.toString() ?? null } : {}),
   }));
 }

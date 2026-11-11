@@ -142,8 +142,8 @@ export const DATA_TOPICS: HelpTopic[] = [
     module: "Data Governance",
     title: "Data movement: Screen capture",
     path: "/data-movement/screen-capture",
-    summary: "Flags users who take many screenshots, delete them soon after, or open them in a browser, WhatsApp or Outlook. Only details are collected, never the image.",
-    keywords: ["screenshot", "snipping tool", "print screen", "screen capture"],
+    summary: "Flags users who take many screenshots, delete them soon after, or open them in a browser, WhatsApp or Outlook. A super admin can also keep the images.",
+    keywords: ["screenshot", "snipping tool", "print screen", "screen capture", "screenshot image", "download screenshot"],
     sections: [
       {
         title: "Policy tabs",
@@ -151,6 +151,16 @@ export const DATA_TOPICS: HelpTopic[] = [
           "Report: screenshots per user per day, quick deletes and programs that opened them; expand for each screenshot.",
           "Assignment: apply the policy to groups or endpoints.",
           "Settings: daily threshold, quick-delete window, sources and 'opened by' tracking.",
+          "Screenshot images (super admins only): keep the images from every assigned endpoint or only selected ones, for 7 to 365 days.",
+        ],
+      },
+      {
+        title: "Screenshot images",
+        items: [
+          "Off by default: only details about each screenshot are collected.",
+          "Only super admins see the images, in the Report tab when a day is expanded; other admins see the list and counts.",
+          "Super admins can view, download (one image or a zip) and delete images. Each view of a user's screenshots, download and deletion is in Admin logs.",
+          "Images are deleted automatically after the policy's 'Keep images for' days. Videos and images over 15 MB aren't kept. Needs Windows agent 0.2.25 or later.",
         ],
       },
     ],
@@ -160,6 +170,15 @@ export const DATA_TOPICS: HelpTopic[] = [
         title: "Report users taking more than 10 screenshots a day",
         steps: policySteps("/data-movement/screen-capture", "Settings", "Check the Daily threshold (10 by default) and the sources in Settings."),
       },
+      {
+        id: "screen-images",
+        title: "Keep screenshot images from one endpoint only",
+        steps: [
+          { route: "/data-movement/screen-capture", text: "Open the policy and go to Screenshot images (super admins only).", target: { kind: "tab", label: "Screenshot images" } },
+          { text: "Turn on Keep screenshot images, choose Only the endpoints selected below and tick the endpoint." },
+          { text: "Set Keep images for, then Save. New screenshots on that endpoint appear with their image in the Report tab." },
+        ],
+      },
     ],
   },
   {
@@ -168,7 +187,18 @@ export const DATA_TOPICS: HelpTopic[] = [
     title: "Data movement",
     path: "/data-movement",
     summary: "Track files leaving endpoints through USB and removable drives, cloud-sync folders and mapped network drives.",
-    keywords: ["usb copy", "onedrive", "dropbox", "google drive", "network share"],
+    keywords: ["usb copy", "onedrive", "dropbox", "google drive", "network share", "file copied", "source", "moved"],
+    sections: [
+      {
+        title: "What each file shows",
+        items: [
+          "When it arrived, the user signed in, the file name and size.",
+          "From: the folder on the PC it was copied or moved from. The agent looks for a file with the same name and size; when none is found (for example a download saved straight to the drive), it says so.",
+          "To: USB drive (label and serial number), cloud provider or network share, and the folder.",
+          "Files are recorded the moment they land, including old documents copied today. Files only edited where they already were aren't counted. Needs Windows agent 0.2.25 or later.",
+        ],
+      },
+    ],
     howTos: [
       {
         id: "dm-set",
@@ -176,7 +206,7 @@ export const DATA_TOPICS: HelpTopic[] = [
         steps: [
           { route: "/data-movement", text: "Select New policy, tick the channels to watch and create it.", target: { kind: "button", label: "New policy" } },
           { text: "Assign it on the Assignment tab.", target: { kind: "tab", label: "Assignment" } },
-          { text: "The Activity tab shows copies per device; each file is listed on the endpoint's Data protection tab.", target: { kind: "tab", label: "Activity" } },
+          { text: "The Activity tab shows copies per device. Select a device to see each file, where it came from and where it went; they're also on the endpoint's Data protection tab.", target: { kind: "tab", label: "Activity" } },
         ],
       },
     ],
@@ -307,6 +337,33 @@ export const DATA_TOPICS: HelpTopic[] = [
         id: "epm-usb-allow",
         title: "Allow only company USB drives",
         steps: policySteps("/epm/usb-control", "Allowed serial numbers", "On Allowed serial numbers, add the serials of approved drives."),
+      },
+    ],
+  },
+  {
+    id: "epm-screenshot",
+    module: "Data Governance",
+    title: "EPM: Screenshot blocking",
+    path: "/epm/screenshot-block",
+    summary: "Stop users taking screenshots: the screenshot keys do nothing, screenshot tools are closed and, optionally, pictures can't be copied.",
+    keywords: ["block screenshot", "print screen", "prtscn", "snipping tool", "disable screenshot", "screen capture", "win shift s"],
+    sections: [
+      {
+        title: "What it blocks",
+        items: [
+          "Screenshot keys: Print Screen (alone, with Alt or Win), Win+Shift+S and Win+Shift+R.",
+          "Screenshot tools: Snipping Tool, ShareX, Greenshot, Lightshot, PicPick, Snagit, OBS and more are closed when they open; add your own by program name. Windows' Snipping Tool, Game Bar capture and Edge's web capture are turned off.",
+          "Optional: any picture copied to the clipboard is removed. This also stops copy-and-paste of pictures.",
+          "The user sees a message each time; every attempt is on the policy's Activity tab and counts in User risk.",
+          "A phone camera, or a screenshot of a remote-access session taken on another computer, can't be stopped. Needs Windows agent 0.2.25 or later.",
+        ],
+      },
+    ],
+    howTos: [
+      {
+        id: "epm-screenshot-set",
+        title: "Stop screenshots on a group of PCs",
+        steps: policySteps("/epm/screenshot-block", "Settings", "Choose what to block in Settings (keys and tools are on by default)."),
       },
     ],
   },

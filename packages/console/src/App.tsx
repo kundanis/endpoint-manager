@@ -33,6 +33,7 @@ import EmailAttachmentBlockPage from "./pages/EmailAttachmentBlockPage";
 import CommandBlockPage from "./pages/CommandBlockPage";
 import IpBlockPage from "./pages/IpBlockPage";
 import UsbControlPage from "./pages/UsbControlPage";
+import ScreenshotBlockPage from "./pages/ScreenshotBlockPage";
 import AccessExceptionsPage from "./pages/AccessExceptionsPage";
 import UserProductivityPage from "./pages/UserProductivityPage";
 import EdrPage from "./pages/EdrPage";
@@ -96,6 +97,7 @@ export default function App() {
           <Route path="command-block" element={<CommandBlockPage />} />
           <Route path="ip-block" element={<IpBlockPage />} />
           <Route path="usb-control" element={<UsbControlPage />} />
+          <Route path="screenshot-block" element={<ScreenshotBlockPage />} />
         </Route>
         <Route path="/access-exceptions" element={<RequireModule module="DATA_MANAGER"><AccessExceptionsPage /></RequireModule>} />
         <Route path="/user-productivity" element={<RequireModule module="USER_MANAGER"><UserProductivityPage /></RequireModule>} />

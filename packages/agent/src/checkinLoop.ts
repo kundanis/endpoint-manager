@@ -23,7 +23,7 @@ import { runVlanNetworkScan } from "./networkScanner";
 import { runSecurityConfigScan } from "./securityConfigScanner";
 import { runZeroTrustScan } from "./zeroTrustScanner";
 import { runDataDiscoveryScan } from "./dataDiscoveryScanner";
-import { runDataMovementScan } from "./dataMovementScanner";
+import { runDataMovementScan, startDataMovementMonitor } from "./dataMovementScanner";
 import { startScreenCaptureMonitor } from "./screenCaptureMonitor";
 import { startSecuritySignals } from "./securitySignals";
 import { startShellHealthGuard } from "./shellHealthGuard";
@@ -32,6 +32,7 @@ import { flushDlpEvents, syncDlpPolicy } from "./dlpBridge";
 import { runAppControlScan } from "./appControlEnforcer";
 import { runWebBlockScan } from "./webBlockEnforcer";
 import { runIpBlockScan } from "./ipBlockEnforcer";
+import { runScreenshotBlockSync } from "./screenshotBlockEnforcer";
 import { runUsbControlScan } from "./usbControlEnforcer";
 import { ensureWatchdogTaskRegistered } from "./watchdogGuard";
 import { runCommandBlockScan } from "./commandBlockEnforcer";
@@ -158,6 +159,14 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
       await runIpBlockScan(client);
     } catch (err) {
       console.error("IP Block scan failed", err);
+    }
+  }
+
+  async function sendScreenshotBlockSync() {
+    try {
+      await runScreenshotBlockSync(client);
+    } catch (err) {
+      console.error("Screenshot blocking sync failed", err);
     }
   }
 
@@ -373,6 +382,7 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
     void sendWebBlockScan();
     void sendCommandBlockScan();
     void sendIpBlockScan();
+    void sendScreenshotBlockSync();
     void sendUsbControlScan();
     void sendInventory();
     return true;
@@ -390,6 +400,7 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   setInterval(sendDataDiscoveryScan, agentConfig.dataDiscoveryScanIntervalMs);
   void sendDataMovementScan();
   setInterval(sendDataMovementScan, agentConfig.dataMovementScanIntervalMs);
+  startDataMovementMonitor(client);
   startScreenCaptureMonitor(client);
   startSecuritySignals(client);
   startShellHealthGuard(client);
@@ -406,6 +417,8 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   setInterval(sendCommandBlockScan, agentConfig.commandBlockScanIntervalMs);
   void sendIpBlockScan();
   setInterval(sendIpBlockScan, agentConfig.ipBlockScanIntervalMs);
+  void sendScreenshotBlockSync();
+  setInterval(sendScreenshotBlockSync, agentConfig.ipBlockScanIntervalMs); // same policy sync interval
   void sendUsbControlScan();
   setInterval(sendUsbControlScan, agentConfig.usbControlScanIntervalMs);
   void checkWatchdogTask();

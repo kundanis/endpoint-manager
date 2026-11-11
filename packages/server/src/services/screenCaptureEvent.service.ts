@@ -2,6 +2,7 @@ import type { AssignedScreenCaptureWire, ScreenCaptureReportPayload, ScreenCaptu
 import { isIgnoredScreenshotOpener } from "@em/shared";
 import { prisma } from "../db";
 import { isAgentPaused } from "./pause.service";
+import { shouldSaveImages } from "./screenCaptureImage.service";
 import { policySources } from "./screenCapturePolicy.service";
 
 const MAX_OPENED_BY = 10; // programs kept per screenshot (fits the 2000-character column)
@@ -9,7 +10,7 @@ const MAX_OPENED_BY = 10; // programs kept per screenshot (fits the 2000-charact
 // What this endpoint watches: the union of its enabled, assigned policies. Nothing assigned (or
 // the endpoint paused) means no sources, and the agent stops watching and auditing.
 export async function resolveAssignedForAgent(agentId: string): Promise<AssignedScreenCaptureWire> {
-  const none: AssignedScreenCaptureWire = { sources: [], extraPaths: [], trackOpenedBy: false };
+  const none: AssignedScreenCaptureWire = { sources: [], extraPaths: [], trackOpenedBy: false, saveImages: false };
   if (await isAgentPaused(agentId)) return none;
 
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
@@ -28,7 +29,12 @@ export async function resolveAssignedForAgent(agentId: string): Promise<Assigned
     for (const s of policySources(p)) sources.add(s);
     for (const x of JSON.parse(p.extraPaths) as string[]) extraPaths.add(x);
   }
-  return { sources: [...sources], extraPaths: [...extraPaths], trackOpenedBy: policies.some((p) => p.trackOpenedBy) };
+  return {
+    sources: [...sources],
+    extraPaths: [...extraPaths],
+    trackOpenedBy: policies.some((p) => p.trackOpenedBy),
+    saveImages: shouldSaveImages(policies, agentId),
+  };
 }
 
 async function latestCapture(agentId: string, filePath: string) {
