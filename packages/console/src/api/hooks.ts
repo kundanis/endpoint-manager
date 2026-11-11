@@ -152,8 +152,10 @@ import type {
   ScreenshotBlockEventView,
   ScreenshotBlockPolicyView,
   ScreenCaptureItem,
+  EndpointScreenCaptureReport,
+  NotificationsView,
+  PolicyScreenCaptureReport,
   ScreenCapturePolicyDetail,
-  ScreenCaptureReport,
   UserActivityItem,
   UserRiskAlert,
   UserRiskIdentities,
@@ -3384,6 +3386,15 @@ export function useSetModuleVisibility() {
   });
 }
 
+// Top-bar alert bell. `since` is when this admin last opened the bell in this browser.
+export function useNotifications(since: string | null) {
+  return useQuery({
+    queryKey: ["notifications", since ?? ""],
+    queryFn: () => api.get<NotificationsView>(`/admin/notifications${since ? `?since=${encodeURIComponent(since)}` : ""}`),
+    refetchInterval: 60000,
+  });
+}
+
 // Reusable "should this cross-cutting display (a Dashboard tile, a badge on the Endpoints
 // table, etc.) show itself" check — true if `path` was hidden directly, OR its whole
 // parent nav module was hidden (e.g. hiding all of Security Manager should also hide a
@@ -3560,10 +3571,11 @@ export function useUnassignScreenCapturePolicy() {
   });
 }
 
-export function useScreenCaptureReport(policyId: string | undefined, days: number) {
+export function useScreenCaptureReport(policyId: string | undefined, days: number, agentId?: string) {
   return useQuery({
-    queryKey: ["screenCaptureReport", policyId, days],
-    queryFn: () => api.get<ScreenCaptureReport>(`/admin/screen-capture/${policyId}/report?days=${days}`),
+    queryKey: ["screenCaptureReport", policyId, days, agentId ?? ""],
+    queryFn: () =>
+      api.get<PolicyScreenCaptureReport>(`/admin/screen-capture/${policyId}/report?days=${days}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}`),
     enabled: !!policyId,
     refetchInterval: 15000,
   });
@@ -3575,6 +3587,28 @@ export function useScreenCaptures(policyId: string, row: { agentId: string; user
     queryFn: () =>
       api.get<ScreenCaptureItem[]>(
         `/admin/screen-capture/${policyId}/captures?agentId=${encodeURIComponent(row!.agentId)}&username=${encodeURIComponent(row!.username)}&day=${row!.day}`,
+      ),
+    enabled: !!row,
+    refetchInterval: 15000,
+  });
+}
+
+// One endpoint's screenshots (its Data protection tab), across every policy.
+export function useEndpointScreenCaptureReport(agentId: string, days: number, enabled = true) {
+  return useQuery({
+    queryKey: ["screenCaptureReport", "endpoint", agentId, days],
+    queryFn: () => api.get<EndpointScreenCaptureReport>(`/admin/screen-capture/endpoints/${encodeURIComponent(agentId)}/report?days=${days}`),
+    enabled,
+    refetchInterval: 15000,
+  });
+}
+
+export function useEndpointScreenCaptures(agentId: string, row: { username: string; day: string } | null) {
+  return useQuery({
+    queryKey: ["screenCaptures", "endpoint", agentId, row?.username, row?.day],
+    queryFn: () =>
+      api.get<ScreenCaptureItem[]>(
+        `/admin/screen-capture/endpoints/${encodeURIComponent(agentId)}/captures?username=${encodeURIComponent(row!.username)}&day=${row!.day}`,
       ),
     enabled: !!row,
     refetchInterval: 15000,

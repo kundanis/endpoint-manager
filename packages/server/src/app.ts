@@ -32,6 +32,7 @@ import { dataDiscoveryRouter } from "./routes/dataDiscovery.routes";
 import { dlpRouter } from "./routes/dlp.routes";
 import { dataMovementRouter } from "./routes/dataMovement.routes";
 import { screenCaptureRouter } from "./routes/screenCapture.routes";
+import { notificationsRouter } from "./routes/notifications.routes";
 import { appControlRouter } from "./routes/appControl.routes";
 import { webBlockRouter } from "./routes/webBlock.routes";
 import { piiBlockRouter } from "./routes/piiBlock.routes";
@@ -163,6 +164,8 @@ export function createApp() {
   app.use("/api/admin/dashboard", adminAuthMiddleware, dashboardRouter);
   // SSE push stream for the console - no module gate (it carries cross-module invalidations).
   app.use("/api/admin/events", adminAuthMiddleware, eventsRouter);
+  // The alert bell: each module's part is filtered inside by the admin's own access.
+  app.use("/api/admin/notifications", adminAuthMiddleware, notificationsRouter);
   app.use("/api/admin/commands", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandsRouter);
   app.use("/api/admin/command-templates", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandTemplatesRouter);
   app.use("/api/admin/packages", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), packagesRouter);

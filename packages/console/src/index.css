@@ -108,6 +108,88 @@ button.ep-ni {
   font-size: 12px;
 }
 
+/* Top-bar alert bell (components/NotificationBell.tsx) */
+.app-bell-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 80px));
+  overflow-y: auto;
+}
+
+.ep-menu .app-bell-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.ep-menu .app-bell-head:hover {
+  background: none;
+}
+
+.app-bell-head small,
+.app-bell-text small {
+  color: var(--ep-ink-subtle);
+  font-size: 12px;
+}
+
+.app-bell-note {
+  margin: 0;
+  padding: 10px;
+  font-size: 13px;
+  color: var(--ep-ink-muted);
+}
+
+.app-bell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-bell-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ep-ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-bell-list button:hover,
+.app-bell-list button:focus-visible {
+  background: var(--ep-surface-2);
+}
+
+.app-bell-list button > svg {
+  flex: none;
+  color: var(--ep-ink-subtle);
+}
+
+.app-bell-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-bell-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
 .app-drawer-toggle {
   display: none;
 }

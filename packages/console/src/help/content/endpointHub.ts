@@ -7,6 +7,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
     title: "Dashboard",
     path: "/dashboard",
     summary: "A live view of the whole estate. Every tile, bar and chart segment opens the matching filtered list.",
+    keywords: ["alerts", "notifications", "bell", "violations", "alarm"],
     sections: [
       {
         title: "What's on it",
@@ -20,8 +21,24 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
           "Cards hide automatically when their module is hidden or not licensed.",
         ],
       },
+      {
+        title: "Alert bell (top bar, every page)",
+        items: [
+          "The bell lists policy violations and matches from the last 7 days, one line per kind: DLP matches, files moved out, users over the screenshot limit, blocked screenshots, apps, commands and USB devices, emails with personal data, high and critical EDR detections and user risk alerts, and pause or access requests waiting for approval.",
+          "A red dot means something new arrived since you last opened the bell; each line shows how many are new. Click a line to open its page.",
+          "You only see the modules you have access to. What you have seen is remembered in this browser only, so another browser shows the last 7 days as new.",
+        ],
+      },
     ],
     howTos: [
+      {
+        id: "dashboard-bell",
+        title: "Check new policy violations",
+        steps: [
+          { text: "Click the bell at the top right of any page." },
+          { text: "Lines marked new arrived since you last looked. Click one to open that module's page." },
+        ],
+      },
       {
         id: "dashboard-drill",
         title: "Find the endpoints behind a number",
@@ -105,7 +122,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
           "Software: installed applications with licence status; uninstall any of them remotely. Sync now fetches the current list from the device.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
-          "Data protection: personal data found, DLP events, file movements, blocked apps, commands and USB devices.",
+          "Data protection: personal data found, DLP events, file movements, screenshots, blocked apps, commands and USB devices.",
           "Manage: asset details, custom fields, groups, Remote Desktop, pause and remote agent uninstall.",
           "History: applications installed, removed or updated on the device (and whether a removal came from the console), plus every admin action on it for super admins.",
           "User Productivity: sign-in sessions with active and idle time.",
@@ -278,7 +295,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     title: "Agent updates",
     path: "/agent-updates",
     summary: "Push new agent builds to endpoints without reinstalling: the agent downloads, applies and restarts itself.",
-    keywords: ["upgrade agent", "version", "duplicate"],
+    keywords: ["upgrade agent", "version", "duplicate", "defender", "antivirus", "false positive", "trojan", "quarantined"],
     sections: [
       {
         title: "What you can do",
@@ -287,6 +304,14 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
           "Read the release notes and checksum of the current Windows, macOS and Linux builds.",
           "Push the update to selected endpoints or groups; mixed platforms are fine.",
           "Remove duplicate device records left after reinstalls.",
+        ],
+      },
+      {
+        title: "Antivirus alerts about the agent",
+        items: [
+          "Microsoft Defender can flag the agent's own data files, such as app-control-rules.json (the list of programs your policies block), as a trojan with a name ending in !ml. This is a false alarm: the files are data, not programs.",
+          "Windows agent 0.2.26 and later exclude their data folder (C:\\ProgramData\\EndpointPro\\Agent\\app\\.state) from Defender scanning. On older agents, allow or restore the file in Windows Security → Protection history, then update the agent.",
+          "If Defender exclusions are managed by Intune or Group Policy, or you use another antivirus, add that folder as an exclusion there.",
         ],
       },
     ],

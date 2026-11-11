@@ -158,6 +158,7 @@ const SENSITIVE_VIEWS: { pattern: RegExp; summary: (m: RegExpMatchArray) => stri
   { pattern: /^\/enrollment-tokens\/([^/]+)\/value$/, summary: () => "Revealed an enrollment token", module: "Enrollment tokens" },
   { pattern: /^\/data-discovery\/agents\/([^/]+)$/, summary: () => "Viewed the personal-data findings of an endpoint", module: "Data discovery" },
   { pattern: /^\/screen-capture\/([^/]+)\/captures$/, summary: () => "Viewed a user's screenshots (with the images, for a super admin)", module: "Screen capture" },
+  { pattern: /^\/screen-capture\/endpoints\/([^/]+)\/captures$/, summary: () => "Viewed a user's screenshots on an endpoint (with the images, for a super admin)", module: "Screen capture" },
   { pattern: /^\/screen-capture\/images\/([^/]+)\/download$/, summary: () => "Downloaded a screenshot image", module: "Screen capture" },
 ];
 

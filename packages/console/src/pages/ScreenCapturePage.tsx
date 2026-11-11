@@ -19,7 +19,7 @@ import {
 } from "../api/hooks";
 import type { ScreenCaptureItem, ScreenCapturePolicyDetail, ScreenCaptureReportRow, ScreenCaptureSourceKey } from "../api/types";
 import EndpointCheckboxList from "../components/EndpointCheckboxList";
-import EndpointLabel from "../components/EndpointLabel";
+import { SOURCE_LABEL, ScreenCaptureDailyTable, ScreenCaptureList } from "../components/ScreenCaptureReportView";
 import { AssignmentEditor, NewPolicyDialog, PolicyDetail, PolicySettingsForm, SectionHeader } from "../components/policy";
 import {
   Alert,
@@ -47,14 +47,6 @@ import { formatBytes, formatDateTime } from "../format";
 // DLP -> Screen capture: policy list -> selected policy's Report / Assignment / Settings tabs.
 // The agent records screenshots as they are saved (so deleting one doesn't hide it), deletions,
 // and the programs that opened each one; this page turns that into a per-user, per-day report.
-
-const SOURCE_LABEL: Record<ScreenCaptureSourceKey, string> = {
-  WINDOWS: "Windows",
-  SNIPPING_TOOL: "Snipping Tool",
-  GAME_BAR: "Game Bar",
-  THIRD_PARTY: "ShareX",
-  CUSTOM: "Custom folder",
-};
 
 interface SettingsValues {
   dailyThreshold: number;
@@ -305,176 +297,9 @@ function ImagesPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
   );
 }
 
-function fileName(p: string): string {
-  return p.split(/[\\/]/).pop() ?? p;
-}
-
-function ImageViewer({ capture, onClose, onDelete, deleting }: { capture: ScreenCaptureItem; onClose: () => void; onDelete: () => void; deleting: boolean }) {
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <Modal
-      title={fileName(capture.filePath)}
-      description={`${formatDateTime(capture.capturedAt)} · ${SOURCE_LABEL[capture.source] ?? capture.source}`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="danger" icon={Trash2} onClick={onDelete} disabled={deleting}>
-            Delete image
-          </Button>
-          <Button icon={Download} onClick={() => downloadScreenCaptureImages([capture.id]).catch((e: Error) => setError(e.message))}>
-            Download
-          </Button>
-          <Button variant="primary" onClick={onClose}>
-            Close
-          </Button>
-        </>
-      }
-    >
-      {error && <Alert tone="critical">{error}</Alert>}
-      <img
-        src={screenCaptureImageUrl(capture.id)}
-        alt={`Screenshot ${fileName(capture.filePath)}`}
-        style={{ maxWidth: "100%", maxHeight: "70vh", display: "block", margin: "0 auto", border: "1px solid var(--ep-border)", borderRadius: "var(--ep-radius-sm)" }}
-      />
-    </Modal>
-  );
-}
-
 function CaptureList({ policyId, row }: { policyId: string; row: ScreenCaptureReportRow }) {
   const { data: captures, isLoading } = useScreenCaptures(policyId, row);
-  const deleteImages = useDeleteScreenCaptureImages();
-  const confirm = useConfirm();
-  const [selected, setSelected] = useState<string[]>([]);
-  const [viewing, setViewing] = useState<ScreenCaptureItem | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
-  if (isLoading) return <Skeleton lines={3} />;
-  if (!captures || captures.length === 0) return <span className="app-muted">No screenshots.</span>;
-
-  // hasImage is only sent to super admins.
-  const showImages = captures.some((c) => c.hasImage !== undefined);
-  const withImage = captures.filter((c) => c.hasImage).map((c) => c.id);
-  const target = selected.length > 0 ? selected : withImage;
-
-  async function removeImages(ids: string[]) {
-    const ok = await confirm({
-      title: ids.length === 1 ? "Delete this screenshot image?" : `Delete ${ids.length} screenshot images?`,
-      body: "The images are removed from the server. The screenshot records (time, user, file name) stay in the report. This cannot be undone.",
-      confirmLabel: ids.length === 1 ? "Delete image" : "Delete images",
-      tone: "danger",
-    });
-    if (!ok) return;
-    deleteImages.mutate(ids, {
-      onSuccess: () => {
-        setSelected((sel) => sel.filter((id) => !ids.includes(id)));
-        setViewing(null);
-      },
-    });
-  }
-
-  return (
-    <div className="app-stack-sm">
-      {showImages && withImage.length > 0 && (
-        <div className="app-actions-row">
-          <Button size="sm" icon={Download} onClick={() => downloadScreenCaptureImages(target).catch((e: Error) => setDownloadError(e.message))}>
-            {selected.length > 0 ? `Download ${selected.length} selected` : `Download all ${withImage.length} images`}
-          </Button>
-          <Button size="sm" variant="danger" icon={Trash2} onClick={() => removeImages(target)} disabled={deleteImages.isPending}>
-            {selected.length > 0 ? `Delete ${selected.length} selected` : `Delete all ${withImage.length} images`}
-          </Button>
-          <span className="app-muted">
-            {withImage.length} of {captures.length} screenshots have a saved image.
-          </span>
-        </div>
-      )}
-      {downloadError && <Alert tone="critical">{downloadError}</Alert>}
-      {deleteImages.error && <Alert tone="critical">{(deleteImages.error as Error).message}</Alert>}
-      <table className="ep-tbl">
-        <thead>
-          <tr>
-            {showImages && (
-              <th scope="col">
-                <span className="app-vh">Select</span>
-              </th>
-            )}
-            {showImages && <th scope="col">Image</th>}
-            <th scope="col">Taken</th>
-            <th scope="col">File</th>
-            <th scope="col">Tool</th>
-            <th scope="col">Opened by</th>
-            <th scope="col">Deleted</th>
-          </tr>
-        </thead>
-        <tbody>
-          {captures.map((c) => (
-            <tr key={c.id}>
-              {showImages && (
-                <td className="ep-cb">
-                  {c.hasImage && (
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${fileName(c.filePath)}`}
-                      checked={selected.includes(c.id)}
-                      onChange={(e) => setSelected((sel) => (e.target.checked ? [...sel, c.id] : sel.filter((id) => id !== c.id)))}
-                    />
-                  )}
-                </td>
-              )}
-              {showImages && (
-                <td>
-                  {c.hasImage ? (
-                    <button
-                      type="button"
-                      onClick={() => setViewing(c)}
-                      aria-label={`View screenshot ${fileName(c.filePath)}`}
-                      title={`View · ${formatBytes(c.imageSizeBytes ?? null)}`}
-                      style={{ padding: 0, border: "1px solid var(--ep-border)", borderRadius: "var(--ep-radius-sm)", background: "none", cursor: "zoom-in", lineHeight: 0 }}
-                    >
-                      <img src={screenCaptureImageUrl(c.id)} alt="" loading="lazy" style={{ width: 112, height: 63, objectFit: "cover", borderRadius: "var(--ep-radius-sm)" }} />
-                    </button>
-                  ) : (
-                    <span className="app-muted" title="Not kept: images were off, a video, too large, or already deleted">
-                      <ImageIcon size={16} strokeWidth={1.7} aria-hidden /> Not kept
-                    </span>
-                  )}
-                </td>
-              )}
-              <td className="ep-num">{formatDateTime(c.capturedAt)}</td>
-              <td className="ep-mono" title={c.filePath} style={{ overflowWrap: "anywhere" }}>
-                {fileName(c.filePath)}
-              </td>
-              <td>{SOURCE_LABEL[c.source] ?? c.source}</td>
-              <td>
-                {c.openedBy.length > 0 ? (
-                  <div className="app-badge-row">
-                    {c.openedBy.map((o) => (
-                      <span key={o.process} title={formatDateTime(o.at)}>
-                        <Badge tone="med">{o.process}</Badge>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="app-muted">—</span>
-                )}
-              </td>
-              <td>
-                {c.deletedAt ? (
-                  c.quickDeleted ? (
-                    <Badge tone="crit">{formatDateTime(c.deletedAt)}</Badge>
-                  ) : (
-                    formatDateTime(c.deletedAt)
-                  )
-                ) : (
-                  <span className="app-muted">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {viewing && <ImageViewer capture={viewing} onClose={() => setViewing(null)} onDelete={() => removeImages([viewing.id])} deleting={deleteImages.isPending} />}
-    </div>
-  );
+  return <ScreenCaptureList captures={captures} isLoading={isLoading} />;
 }
 
 type ReportFilter = "all" | "flagged" | "quick" | "opened";
@@ -488,8 +313,9 @@ const RANGES = [
 function ReportPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
   const [days, setDays] = useState(7);
   const [filter, setFilter] = useState<ReportFilter>("all");
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const { data: report, isLoading, error } = useScreenCaptureReport(policy.id, days);
+  const [agentId, setAgentId] = useState("");
+  const { data: report, isLoading, error } = useScreenCaptureReport(policy.id, days, agentId || undefined);
+  const endpoints = report?.endpoints ?? [];
 
   const rows = (report?.rows ?? []).filter((r) => {
     if (filter === "flagged") return r.overThreshold;
@@ -497,7 +323,6 @@ function ReportPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
     if (filter === "opened") return r.openedBy.length > 0;
     return true;
   });
-  const paged = usePagedList(rows, 25);
   const totals = report?.totals;
 
   return (
@@ -507,13 +332,24 @@ function ReportPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
           A user is flagged after more than <b>{policy.dailyThreshold}</b> screenshots in a day. Deleted within{" "}
           {policy.quickDeleteMinutes} min counts as a quick delete.
         </span>
-        <select className="ep-select" aria-label="Period" value={days} onChange={(e) => setDays(Number(e.target.value))}>
-          {RANGES.map((r) => (
-            <option key={r.days} value={r.days}>
-              {r.label}
-            </option>
-          ))}
-        </select>
+        <div className="app-cell-actions">
+          <select className="ep-select" aria-label="Endpoint" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+            <option value="">All endpoints</option>
+            {agentId && !endpoints.some((ep) => ep.agentId === agentId) && <option value={agentId}>Selected endpoint</option>}
+            {endpoints.map((ep) => (
+              <option key={ep.agentId} value={ep.agentId}>
+                {ep.hostname ?? ep.agentId}
+              </option>
+            ))}
+          </select>
+          <select className="ep-select" aria-label="Period" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            {RANGES.map((r) => (
+              <option key={r.days} value={r.days}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <KpiStrip>
@@ -558,95 +394,23 @@ function ReportPanel({ policy }: { policy: ScreenCapturePolicyDetail }) {
       ) : rows.length === 0 ? (
         <EmptyState
           icon={SearchX}
-          title={(report?.rows.length ?? 0) > 0 ? "Nothing matches this filter" : "No screenshots in this period"}
+          title={(report?.rows.length ?? 0) > 0 ? "Nothing matches this filter" : agentId ? "No screenshots from this endpoint in this period" : "No screenshots in this period"}
           action={
-            filter !== "all" ? (
-              <Button size="sm" onClick={() => setFilter("all")}>
+            filter !== "all" || agentId ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setFilter("all");
+                  setAgentId("");
+                }}
+              >
                 Show everything
               </Button>
             ) : undefined
           }
         />
       ) : (
-        <div className="app-table-wrap">
-          <table className="ep-tbl">
-            <thead>
-              <tr>
-                <th scope="col">
-                  <span className="app-vh">Expand</span>
-                </th>
-                <th scope="col">Date</th>
-                <th scope="col">Endpoint</th>
-                <th scope="col">User</th>
-                <th scope="col" style={{ textAlign: "right" }}>
-                  Screenshots
-                </th>
-                <th scope="col" style={{ textAlign: "right" }}>
-                  Deleted quickly
-                </th>
-                <th scope="col">Opened by</th>
-                <th scope="col">Tools</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.pageItems.map((r) => {
-                const key = `${r.agentId}|${r.username}|${r.day}`;
-                const isOpen = expanded === key;
-                return (
-                  <Fragment key={key}>
-                    <tr>
-                      <td className="ep-cb">
-                        <IconButton
-                          icon={isOpen ? ChevronDown : ChevronRight}
-                          label={isOpen ? `Hide screenshots of ${r.username}` : `Show screenshots of ${r.username}`}
-                          onClick={() => setExpanded(isOpen ? null : key)}
-                        />
-                      </td>
-                      <td className="ep-num">{r.day}</td>
-                      <td>
-                        <EndpointLabel hostname={r.hostname} agentId={r.agentId} />
-                      </td>
-                      <td>{r.username}</td>
-                      <td className="ep-num" style={{ textAlign: "right" }}>
-                        {r.overThreshold ? <Badge tone="crit">{r.count}</Badge> : r.count}
-                      </td>
-                      <td className="ep-num" style={{ textAlign: "right" }}>
-                        {r.quickDeleted > 0 ? <Badge tone="med">{r.quickDeleted}</Badge> : <span className="app-muted">—</span>}
-                      </td>
-                      <td>
-                        {r.openedBy.length > 0 ? (
-                          <div className="app-badge-row">
-                            {r.openedBy.map((p) => (
-                              <Tag key={p}>{p}</Tag>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="app-muted">—</span>
-                        )}
-                      </td>
-                      <td>{r.sources.map((s) => SOURCE_LABEL[s] ?? s).join(", ")}</td>
-                    </tr>
-                    {isOpen && (
-                      <tr>
-                        <td colSpan={8} style={{ background: "var(--ep-surface-2)" }}>
-                          <CaptureList policyId={policy.id} row={r} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          <Pagination
-            page={paged.page}
-            pageSize={paged.pageSize}
-            total={paged.total}
-            noun="rows"
-            onPageChange={paged.setPage}
-            onPageSizeChange={paged.setPageSize}
-          />
-        </div>
+        <ScreenCaptureDailyTable rows={rows} renderCaptures={(r: ScreenCaptureReportRow) => <CaptureList policyId={policy.id} row={r} />} />
       )}
     </div>
   );

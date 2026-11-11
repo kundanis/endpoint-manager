@@ -6,6 +6,8 @@ import {
   createPolicy,
   deletePolicy,
   getCaptures,
+  getEndpointCaptures,
+  getEndpointReport,
   getPolicy,
   getPolicyReport,
   listAssignments,
@@ -75,6 +77,32 @@ screenCaptureRouter.post("/images/delete-images", requireSuperAdmin, async (req,
   try {
     const { eventIds } = eventIdsSchema.parse(req.body);
     res.json({ deleted: await deleteImages(eventIds) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---- One endpoint's screenshots, from every policy (the endpoint's Data protection tab).
+// Daily report per user over the last ?days= days (1-90, default 7).
+screenCaptureRouter.get("/endpoints/:agentId/report", async (req, res, next) => {
+  try {
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 7));
+    const report = await getEndpointReport(req.params.agentId, days);
+    if (!report) return res.status(404).json({ error: "Endpoint not found" });
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The screenshots behind one row: ?username=&day=YYYY-MM-DD (logged as a sensitive view).
+screenCaptureRouter.get("/endpoints/:agentId/captures", async (req, res, next) => {
+  try {
+    const { username, day } = req.query as Record<string, string | undefined>;
+    if (!username || !day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return res.status(400).json({ error: "username and day are required" });
+    const captures = await getEndpointCaptures(req.params.agentId, username, day, req.adminRole === "SUPER_ADMIN");
+    if (!captures) return res.status(404).json({ error: "Endpoint not found" });
+    res.json(captures);
   } catch (err) {
     next(err);
   }
@@ -163,11 +191,12 @@ screenCaptureRouter.delete("/:id/assign/:assignmentId", async (req, res, next) =
   }
 });
 
-// Daily report per user over the last ?days= days (1-90, default 7).
+// Daily report per user over the last ?days= days (1-90, default 7); ?agentId= for one endpoint.
 screenCaptureRouter.get("/:id/report", async (req, res, next) => {
   try {
     const days = Math.min(90, Math.max(1, Number(req.query.days) || 7));
-    const report = await getPolicyReport(req.params.id, days);
+    const agentId = typeof req.query.agentId === "string" && req.query.agentId ? req.query.agentId : undefined;
+    const report = await getPolicyReport(req.params.id, days, agentId);
     if (!report) return res.status(404).json({ error: "Policy not found" });
     res.json(report);
   } catch (err) {

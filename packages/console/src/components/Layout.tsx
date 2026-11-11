@@ -23,6 +23,7 @@ import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
 import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
+import NotificationBell from "./NotificationBell";
 import { HelpProvider, useHelp } from "../help/HelpProvider";
 
 // Lucide icon per nav module (design-system/docs/COMPONENTS.md §18).
@@ -287,6 +288,7 @@ export default function Layout() {
             )}
           </nav>
           <div className="ep-tbr">
+            <NotificationBell email={me?.email} />
             <HelpButton />
             <AccountMenu email={me?.email} role={me?.role} onLogout={() => logout.mutate()} />
           </div>

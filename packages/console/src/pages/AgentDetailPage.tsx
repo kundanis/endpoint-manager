@@ -48,6 +48,7 @@ import {
 } from "../components/ui";
 import { formatBytes, formatDate, formatDateTime, formatRelative } from "../format";
 import DataMovementEventTable from "../components/DataMovementEventTable";
+import EndpointScreenCaptures from "../components/EndpointScreenCaptures";
 import type { AgentDetail, InstalledSoftwareEntry, LifecycleStatus, NormalizedSeverity } from "../api/types";
 import {
   useAddAgentNote,
@@ -1969,6 +1970,7 @@ export default function AgentDetailPage() {
           {!dataDiscoveryHidden && <DataDiscoveryFindingsSection agentId={agent.id} />}
           {!dlpHidden && <DlpEventsSection agentId={agent.id} />}
           {!dataMovementHidden && <DataMovementEventsSection agentId={agent.id} />}
+          {!dataMovementHidden && <EndpointScreenCaptures agentId={agent.id} />}
           {!epmHidden && (
             <>
               <AppControlEventsSection agentId={agent.id} />

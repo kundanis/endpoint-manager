@@ -6,6 +6,14 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.26
+- Microsoft Defender no longer quarantines the agent's own data files. Defender's machine-learning
+  scan could flag the App Control rules file (a list of the programs your policies block) as a
+  trojan, such as "Trojan:Win32/Cammando.B!ml", and remove it, which stopped App Control until the
+  next sync. The agent now excludes its data folder (app\.state, data only, not its programs) from
+  Defender scanning and checks it every 6 hours; uninstalling removes the exclusion. Where Defender's
+  exclusions are managed by Intune or Group Policy, add the folder there instead.
+
 ## 0.2.25
 - Data movement: files are recorded the moment they land on a USB drive, cloud-sync folder or mapped
   network drive, with where they came from (copied or moved from a folder on the PC) and the user

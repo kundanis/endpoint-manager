@@ -226,16 +226,20 @@ export async function unassign(policyId: string, assignmentId: string): Promise<
 }
 
 // The policy's report over the last `days` days (endpoint-local dates).
-export async function getPolicyReport(policyId: string, days: number) {
+// agentId narrows the rows and totals to one endpoint; `endpoints` still lists every endpoint
+// with screenshots in the period, for the console's endpoint filter.
+export async function getPolicyReport(policyId: string, days: number, agentId?: string) {
   const policy = await prisma.screenCapturePolicy.findUnique({ where: { id: policyId } });
   if (!policy) return null;
-  const events = await policyEvents(policy, daysAgo(days - 1));
+  const allEvents = await policyEvents(policy, daysAgo(days - 1));
+  const events = agentId ? allEvents.filter((e) => e.agentId === agentId) : allEvents;
   const rows = buildDailyRows(events, policy);
-  const agentIds = [...new Set(rows.map((r) => r.agentId))];
+  const agentIds = [...new Set(allEvents.map((e) => e.agentId))];
   const hostnames = new Map(
     (agentIds.length > 0 ? await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, hostname: true } }) : []).map((a) => [a.id, a.hostname]),
   );
   return {
+    endpoints: agentIds.map((id) => ({ agentId: id, hostname: hostnames.get(id) ?? null })).sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? "")),
     dailyThreshold: policy.dailyThreshold,
     quickDeleteMinutes: policy.quickDeleteMinutes,
     totals: {
@@ -257,15 +261,79 @@ export async function getCaptures(policyId: string, agentId: string, username: s
     where: { agentId, username, captureDay: day, source: { in: policySources(policy) } },
     orderBy: { capturedAt: "asc" },
   });
-  return events.map((e) => ({
+  return events.map((e) => captureView(e, policy.quickDeleteMinutes, withImages));
+}
+
+function captureView(e: EventRow, quickDeleteMinutes: number, withImages: boolean) {
+  return {
     id: e.id,
     source: e.source as ScreenCaptureSource,
     filePath: e.filePath,
     fileSizeBytes: e.fileSizeBytes.toString(),
     capturedAt: e.capturedAt.toISOString(),
     deletedAt: e.deletedAt?.toISOString() ?? null,
-    quickDeleted: isQuickDelete(e, policy.quickDeleteMinutes),
+    quickDeleted: isQuickDelete(e, quickDeleteMinutes),
     openedBy: openersOf(e),
     ...(withImages ? { hasImage: !!e.imageFile, imageSizeBytes: e.imageSizeBytes?.toString() ?? null } : {}),
-  }));
+  };
+}
+
+// ---- One endpoint's screenshots (the endpoint's Data protection tab), from every source and
+// policy. The threshold and quick-delete window are the strictest of the policies assigned to it
+// now; with none assigned, the defaults new policies start with.
+const DEFAULT_THRESHOLD = 10;
+const DEFAULT_QUICK_DELETE_MINUTES = 10;
+
+async function endpointLimits(agentId: string) {
+  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const groupIds = memberships.map((m) => m.groupId);
+  const assignments = await prisma.screenCapturePolicyAssignment.findMany({
+    where: { OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] },
+    select: { policyId: true },
+  });
+  const policyIds = [...new Set(assignments.map((a) => a.policyId))];
+  const policies =
+    policyIds.length > 0
+      ? await prisma.screenCapturePolicy.findMany({ where: { id: { in: policyIds } }, select: { id: true, name: true, enabled: true, dailyThreshold: true, quickDeleteMinutes: true } })
+      : [];
+  const active = policies.filter((p) => p.enabled);
+  return {
+    policies: policies.map((p) => ({ id: p.id, name: p.name, enabled: p.enabled })).sort((a, b) => a.name.localeCompare(b.name)),
+    dailyThreshold: active.length > 0 ? Math.min(...active.map((p) => p.dailyThreshold)) : DEFAULT_THRESHOLD,
+    quickDeleteMinutes: active.length > 0 ? Math.max(...active.map((p) => p.quickDeleteMinutes)) : DEFAULT_QUICK_DELETE_MINUTES,
+  };
+}
+
+export async function getEndpointReport(agentId: string, days: number) {
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { id: true, hostname: true } });
+  if (!agent) return null;
+  const limits = await endpointLimits(agentId);
+  const events = await prisma.screenCaptureEvent.findMany({
+    where: { agentId, captureDay: { gte: daysAgo(days - 1) } },
+    orderBy: { capturedAt: "desc" },
+  });
+  const rows = buildDailyRows(events, limits);
+  return {
+    policies: limits.policies,
+    dailyThreshold: limits.dailyThreshold,
+    quickDeleteMinutes: limits.quickDeleteMinutes,
+    totals: {
+      captures: events.length,
+      flaggedUserDays: rows.filter((r) => r.overThreshold).length,
+      quickDeleted: events.filter((e) => isQuickDelete(e, limits.quickDeleteMinutes)).length,
+      openedByOtherApps: events.filter((e) => openersOf(e).length > 0).length,
+    },
+    rows: rows.map((r) => ({ ...r, hostname: agent.hostname })),
+  };
+}
+
+export async function getEndpointCaptures(agentId: string, username: string, day: string, withImages = false) {
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { id: true } });
+  if (!agent) return null;
+  const { quickDeleteMinutes } = await endpointLimits(agentId);
+  const events = await prisma.screenCaptureEvent.findMany({
+    where: { agentId, username, captureDay: day },
+    orderBy: { capturedAt: "asc" },
+  });
+  return events.map((e) => captureView(e, quickDeleteMinutes, withImages));
 }

@@ -143,12 +143,12 @@ export const DATA_TOPICS: HelpTopic[] = [
     title: "Data movement: Screen capture",
     path: "/data-movement/screen-capture",
     summary: "Flags users who take many screenshots, delete them soon after, or open them in a browser, WhatsApp or Outlook. A super admin can also keep the images.",
-    keywords: ["screenshot", "snipping tool", "print screen", "screen capture", "screenshot image", "download screenshot"],
+    keywords: ["screenshot", "snipping tool", "print screen", "screen capture", "screenshot image", "download screenshot", "screenshots by endpoint", "endpoint screenshots"],
     sections: [
       {
         title: "Policy tabs",
         items: [
-          "Report: screenshots per user per day, quick deletes and programs that opened them; expand for each screenshot.",
+          "Report: screenshots per user per day, quick deletes and programs that opened them; expand for each screenshot. Pick an endpoint at the top to see only that endpoint.",
           "Assignment: apply the policy to groups or endpoints.",
           "Settings: daily threshold, quick-delete window, sources and 'opened by' tracking.",
           "Screenshot images (super admins only): keep the images from every assigned endpoint or only selected ones, for 7 to 365 days.",
@@ -159,6 +159,7 @@ export const DATA_TOPICS: HelpTopic[] = [
         items: [
           "Off by default: only details about each screenshot are collected.",
           "Only super admins see the images, in the Report tab when a day is expanded; other admins see the list and counts.",
+          "One endpoint's screenshots from every policy are also on that endpoint's Data protection tab, under Screen capture, with the same image rules.",
           "Super admins can view, download (one image or a zip) and delete images. Each view of a user's screenshots, download and deletion is in Admin logs.",
           "Images are deleted automatically after the policy's 'Keep images for' days. Videos and images over 15 MB aren't kept. Needs Windows agent 0.2.25 or later.",
         ],
@@ -177,6 +178,15 @@ export const DATA_TOPICS: HelpTopic[] = [
           { route: "/data-movement/screen-capture", text: "Open the policy and go to Screenshot images (super admins only).", target: { kind: "tab", label: "Screenshot images" } },
           { text: "Turn on Keep screenshot images, choose Only the endpoints selected below and tick the endpoint." },
           { text: "Set Keep images for, then Save. New screenshots on that endpoint appear with their image in the Report tab." },
+        ],
+      },
+      {
+        id: "screen-endpoint",
+        title: "See the screenshots taken on one endpoint",
+        steps: [
+          { route: "/data-movement/screen-capture", text: "Open the policy's Report tab and choose the endpoint in the endpoint list at the top." },
+          { text: "Or open the endpoint from Endpoints, go to its Data protection tab and scroll to Screen capture." },
+          { text: "Click the arrow on a day to list its screenshots; super admins also see the images and can download or delete them." },
         ],
       },
     ],

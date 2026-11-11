@@ -1675,6 +1675,16 @@ export interface ScreenCaptureReport {
   rows: ScreenCaptureReportRow[];
 }
 
+export interface PolicyScreenCaptureReport extends ScreenCaptureReport {
+  // Every endpoint with screenshots in the period (for the endpoint filter).
+  endpoints: { agentId: string; hostname: string | null }[];
+}
+
+// One endpoint's screenshots from every policy; the limits are the strictest of its policies.
+export interface EndpointScreenCaptureReport extends ScreenCaptureReport {
+  policies: { id: string; name: string; enabled: boolean }[];
+}
+
 export interface ScreenCaptureItem {
   id: string;
   source: ScreenCaptureSourceKey;
@@ -1879,4 +1889,22 @@ export interface CommandBlockPolicyEvent {
   matchedCommandLine: string;
   processName: string | null;
   action: "ALERTED" | "BLOCKED";
+}
+
+// ---- Alert bell (top bar): violations and matches from every module, grouped by kind.
+export interface NotificationGroup {
+  key: string;
+  module: string;
+  title: string;
+  path: string;
+  total: number; // last 7 days (requests: all still waiting)
+  newCount: number; // since the bell was last opened in this browser
+  endpoints: number | null;
+  latestAt: string | null;
+  tone: "crit" | "high" | "med";
+}
+
+export interface NotificationsView {
+  since: string;
+  groups: NotificationGroup[];
 }

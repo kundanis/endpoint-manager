@@ -1,7 +1,7 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { loginRequestSchema } from "@em/shared";
-import { InvalidCredentialsError, login } from "../services/auth.service";
+import { InvalidCredentialsError, login, SeatTakenError } from "../services/auth.service";
 import { adminAuthMiddleware } from "../middleware/adminAuth";
 import { verifyAdminJwt } from "../utils/jwt";
 import { revokeSession } from "../services/adminSession.service";
@@ -10,7 +10,13 @@ import { writeAudit } from "../services/adminAudit.service";
 
 export const authRouter = Router();
 
-function auditSignIn(req: import("express").Request, email: string, action: "LOGIN" | "LOGIN_FAILED" | "LOGIN_BLOCKED", summary: string, adminId: string | null = null) {
+function auditSignIn(
+  req: import("express").Request,
+  email: string,
+  action: "LOGIN" | "LOGIN_FAILED" | "LOGIN_BLOCKED" | "LOGIN_REFUSED",
+  summary: string,
+  adminId: string | null = null,
+) {
   void writeAudit({
     adminId,
     adminEmail: email,
@@ -21,7 +27,7 @@ function auditSignIn(req: import("express").Request, email: string, action: "LOG
     summary,
     method: "POST",
     path: "/api/auth/login",
-    statusCode: action === "LOGIN" ? 200 : action === "LOGIN_BLOCKED" ? 429 : 401,
+    statusCode: action === "LOGIN" ? 200 : action === "LOGIN_BLOCKED" ? 429 : action === "LOGIN_REFUSED" ? 409 : 401,
     success: action === "LOGIN",
   });
 }
@@ -84,6 +90,14 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
         recordFailure(key);
         auditSignIn(req, key, "LOGIN_FAILED", "Failed sign-in (wrong email or password)");
         return res.status(401).json({ error: "Invalid email or password" });
+      }
+      if (err instanceof SeatTakenError) {
+        // The password was right, so this isn't counted as a failed attempt.
+        const who = err.superAdmin ? "Another super admin" : "Another admin with the same access";
+        auditSignIn(req, key, "LOGIN_REFUSED", `Sign-in refused: ${err.holderEmail} (same rights) is signed in`);
+        return res.status(409).json({
+          error: `${who} (${err.holderEmail}) is signed in. Only one person with the same rights can use the console at a time. Try again after they sign out, or 30 minutes after they stop using it.`,
+        });
       }
       throw err;
     }

@@ -155,6 +155,9 @@ schtasks /end /tn $TaskName 2>$null | Out-Null
 schtasks /delete /tn $TaskName /f 2>$null | Out-Null
 schtasks /delete /tn $WatchdogTaskName /f 2>$null | Out-Null
 
+# The agent excluded its data folder from Microsoft Defender scanning; take that back.
+try { Remove-MpPreference -ExclusionPath (Join-Path $installDir "app\.state") -ErrorAction Stop } catch {}
+
 if (Test-Path $installDir) {
     # The agent runs as SYSTEM, so every file it wrote during normal operation (not just the
     # tamper-resistance lockdown on the folder itself) is SYSTEM-owned - an admin's own

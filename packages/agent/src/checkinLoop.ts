@@ -35,6 +35,7 @@ import { runIpBlockScan } from "./ipBlockEnforcer";
 import { runScreenshotBlockSync } from "./screenshotBlockEnforcer";
 import { runUsbControlScan } from "./usbControlEnforcer";
 import { ensureWatchdogTaskRegistered } from "./watchdogGuard";
+import { ensureDefenderExclusion } from "./defenderExclusion";
 import { runCommandBlockScan } from "./commandBlockEnforcer";
 import { runUserProductivityScan } from "./userProductivityScanner";
 import { runEdrScan } from "./edrScanner";
@@ -184,6 +185,8 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
     } catch (err) {
       console.error("Watchdog task check failed", err);
     }
+    // Keeps Defender from quarantining the agent's own data files (rechecked every 6 hours).
+    await ensureDefenderExclusion();
   }
 
   async function sendCommandBlockScan() {

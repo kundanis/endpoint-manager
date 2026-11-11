@@ -149,7 +149,18 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     path: "/admin-users",
     superAdminOnly: true,
     summary: "Who can sign in to the console, as admin or super admin, and which modules each admin can use.",
-    keywords: ["users", "roles", "access", "permissions", "password reset"],
+    keywords: ["users", "roles", "access", "permissions", "password reset", "signed in", "one at a time", "concurrent sign-in", "can't sign in"],
+    sections: [
+      {
+        title: "One person per role at a time",
+        items: [
+          "Only one super admin can be signed in to the console at a time.",
+          "Only one admin with exactly the same modules can be signed in at a time. Admins with different modules can work together.",
+          "A second person is refused at sign-in with the name of who is signed in. They can sign in once that person signs out. The console signs a person out after 30 minutes without mouse or keyboard use, and a closed browser's session ends 30 minutes after its last use.",
+          "The same account can still sign in from another browser. Refused sign-ins are listed in Admin logs.",
+        ],
+      },
+    ],
     howTos: [
       {
         id: "admins-add",
