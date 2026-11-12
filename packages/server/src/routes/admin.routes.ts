@@ -48,6 +48,7 @@ import {
   setAgentLifecycle,
   uninstallAgentRemotely,
   uninstallSoftwareOnAgent,
+  ProtectedSoftwareError,
   updateAssetDetails,
 } from "../services/agent.service";
 import { getLatestAgentUpdateTaskByAgent } from "../services/agentUpdate.service";
@@ -444,6 +445,7 @@ adminRouter.post("/agents/:id/uninstall-software", async (req, res, next) => {
     const result = await uninstallSoftwareOnAgent(req.params.id, payload.softwareName, req.adminId!);
     res.status(201).json(result);
   } catch (err) {
+    if (err instanceof ProtectedSoftwareError) return res.status(403).json({ error: err.message });
     next(err);
   }
 });

@@ -30,3 +30,24 @@ export function isSystemOrFreeSoftware(name: string, publisher: string | null): 
   if (!publisher && MICROSOFT_FREE_NAME.test(name)) return true;
   return FREE_APP_NAME.test(name);
 }
+
+// Microsoft software that is part of Windows or that Windows and other programs depend on.
+// User apps (Teams, OneDrive, VS Code, Power BI) are deliberately not here: they can be removed.
+const MICROSOFT_SYSTEM_NAME =
+  /^\s*(microsoft )?(edge|edge update|edge webview2|update health tools|policy platform|intune management extension|windows app runtime|gameinput|pc health check)\b|^\s*(microsoft )?windows\b|^\s*microsoft (\.net|asp\.net|visual c\+\+|odbc driver|ole db driver|defender|security client|monitoring agent|sql server (\d{4} )?(native client|management objects|t-sql language service|odbc|ole db|express localdb|compact|clr types|setup support files|browser|vss writer))/i;
+
+// This product's own agent: removed only with Uninstall agent (Manage tab), which asks for the
+// uninstall password.
+const OWN_AGENT_NAME = /^\s*(endpoint ?iq|endpoint ?pro)\b/i;
+
+// Software the console won't uninstall: Windows components, drivers, firmware tools, runtimes
+// (.NET, Visual C++, WebView2), OEM utilities, Microsoft Defender and the Endpoint IQ agent.
+// Removing these can break Windows, hardware or other programs. Free apps are not included.
+export function isProtectedSystemSoftware(name: string, publisher: string | null): boolean {
+  if (OWN_AGENT_NAME.test(name)) return true;
+  if (COMPONENT_NAME.test(name)) return true;
+  if (publisher && OEM_PUBLISHER.test(publisher)) return true;
+  if (/^\s*(intel|dell|hp|lenovo|realtek|nvidia|amd|qualcomm|synaptics)\b/i.test(name)) return true;
+  if ((!publisher || /microsoft/i.test(publisher)) && MICROSOFT_SYSTEM_NAME.test(name)) return true;
+  return false;
+}

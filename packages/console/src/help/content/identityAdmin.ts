@@ -97,6 +97,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
         title: "What you can do",
         items: [
           "Filter by admin, category, result and date, or search; expand an entry for its details.",
+          "Details show readable names, such as the endpoint, user, day and policy behind a view of screenshots. Internal record IDs are left out.",
           "Export to CSV.",
           "Set how long entries are kept (90 days minimum). Entries can't be edited or deleted one by one.",
         ],

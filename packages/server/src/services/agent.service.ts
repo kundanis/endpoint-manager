@@ -2,6 +2,7 @@ import { removeAgentImages } from "./screenCaptureImage.service";
 import type { UpdateAssetDetailsRequest } from "@em/shared";
 import { prisma } from "../db";
 import { createCommandJob } from "./command.service";
+import { isProtectedSystemSoftware } from "./softwareClassify.util";
 import { buildUninstallScript, UNINSTALL_TIMEOUT_SEC } from "./vulnerabilityRemediation.service";
 import { verifyUninstallPassword } from "./agentSecurity.service";
 import { incrementTotalAgentsUninstalled } from "./licenseActivation.service";
@@ -59,11 +60,28 @@ export async function getAgentCustomFieldValues(agentId: string) {
 // already dispatches (see vulnerabilityRemediation.service.ts's buildUninstallScript for
 // the MSI-vs-EXE/silent-uninstall caveats) — this is just that same mechanism reachable
 // from an arbitrary installed-software row, not only a CVE-flagged one.
+// System software (Windows components, drivers, runtimes, OEM tools, Defender, this agent) is
+// never uninstalled from the console: removing it can break Windows, hardware or other programs.
+export class ProtectedSoftwareError extends Error {
+  constructor(readonly softwareName: string) {
+    super(`${softwareName} is system software and can't be uninstalled from the console.`);
+  }
+}
+
+// Judged with the publisher the endpoint reported for that program, when it's in the inventory.
+async function isProtectedOnAgent(agentId: string, softwareName: string): Promise<boolean> {
+  const snapshot = await prisma.inventorySnapshot.findUnique({ where: { agentId }, select: { installedSoftware: true } });
+  const installed: { name: string; publisher: string | null }[] = snapshot ? JSON.parse(snapshot.installedSoftware) : [];
+  const entry = installed.find((s) => s.name === softwareName);
+  return isProtectedSystemSoftware(softwareName, entry?.publisher ?? null);
+}
+
 export async function uninstallSoftwareOnAgent(
   agentId: string,
   softwareName: string,
   createdByAdminId: string,
 ): Promise<{ jobId: string }> {
+  if (await isProtectedOnAgent(agentId, softwareName)) throw new ProtectedSoftwareError(softwareName);
   return createCommandJob({
     agentIds: [agentId],
     groupIds: [],

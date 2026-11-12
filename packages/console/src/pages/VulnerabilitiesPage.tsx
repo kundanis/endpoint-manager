@@ -67,13 +67,14 @@ function remediationSummaryText(result: VulnerabilityRemediationResult): string 
     `Dispatched ${result.jobIds.length} job(s) across ${result.agentsTargeted} agent(s) for ${result.softwareGroups} software title(s)` +
     `${result.skippedLowConfidence > 0 ? ` — ${result.skippedLowConfidence} finding(s) skipped (low confidence, review individually)` : ""}` +
     `${result.skippedNeedsUpdate > 0 ? ` — ${result.skippedNeedsUpdate} Microsoft finding(s) skipped: install the Microsoft update named in the finding (Patches) instead of uninstalling` : ""}` +
+    `${result.skippedSystem > 0 ? ` — ${result.skippedSystem} finding(s) on system software skipped (drivers, runtimes, Windows components are never uninstalled): update them instead` : ""}` +
     `. Check the Commands page for status; findings clear automatically once each agent's next inventory check-in confirms the software is gone (up to ~10 minutes).`
   );
 }
 
 function RemediationResultAlert({ result }: { result: VulnerabilityRemediationResult }) {
   return (
-    <Alert tone={result.skippedLowConfidence > 0 || result.skippedNeedsUpdate > 0 ? "warn" : "success"} title="Remediation dispatched">
+    <Alert tone={result.skippedLowConfidence > 0 || result.skippedNeedsUpdate > 0 || result.skippedSystem > 0 ? "warn" : "success"} title="Remediation dispatched">
       {remediationSummaryText(result)}
     </Alert>
   );

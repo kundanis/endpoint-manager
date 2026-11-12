@@ -24,6 +24,8 @@ export interface PromptOptions {
   confirmLabel: string;
   type?: "text" | "password";
   help?: string;
+  // Pre-filled value the admin can edit.
+  defaultValue?: string;
   // Return an error message to block submission, or null when the value is acceptable.
   validate?: (value: string) => string | null;
 }
@@ -67,7 +69,7 @@ function ConfirmDialog({ options, onDone }: { options: ConfirmOptions; onDone: (
 }
 
 function PromptDialog({ options, onDone }: { options: PromptOptions; onDone: (value: string | null) => void }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(options.defaultValue ?? "");
   const [error, setError] = useState<string | null>(null);
   const formId = useRef(`prompt-${Math.random().toString(36).slice(2)}`).current;
 

@@ -211,6 +211,16 @@ export interface LatestAgentUpdateTaskView {
   completedAt: string | null;
 }
 
+// Endpoint -> Software tab: unlicensed software blocked on this endpoint (an Application control
+// rule in the endpoint's "Unlicensed software: <hostname>" policy).
+export interface SoftwareBlock {
+  ruleId: string;
+  softwareName: string;
+  productName: string;
+  policyId: string;
+  policyEnabled: boolean;
+}
+
 export interface InstalledSoftwareEntry {
   name: string;
   version: string | null;
@@ -222,6 +232,9 @@ export interface InstalledSoftwareEntry {
   // LICENSED = a recorded licence matches; SYSTEM = driver / runtime / OS component / OEM
   // utility / free app that needs no licence; NONE = no licence recorded.
   licenseStatus: "LICENSED" | "SYSTEM" | "NONE";
+  // System software the console won't uninstall (Windows components, drivers, runtimes, OEM tools,
+  // Defender, the Endpoint IQ agent).
+  protected: boolean;
 }
 
 export interface MemModuleView {
@@ -536,6 +549,8 @@ export interface VulnerabilityRemediationResult {
   skippedLowConfidence: number;
   // Microsoft findings on software that can't update itself: fixed by a Microsoft update, not an uninstall.
   skippedNeedsUpdate: number;
+  // System software (drivers, runtimes, Windows components): never uninstalled.
+  skippedSystem: number;
 }
 
 export interface AgentVulnerabilityFinding {

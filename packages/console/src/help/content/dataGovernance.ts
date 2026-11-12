@@ -236,6 +236,7 @@ export const DATA_TOPICS: HelpTopic[] = [
           "Renamed copies (the original name is stored inside the program), other versions, and Product name or Publisher rules are closed the moment they start.",
           "Each block is listed on the policy's Events tab within about 20 seconds; select an endpoint to see every blocked program, its file and the rule that matched. Needs Windows agent 0.2.18 or later.",
           "Blocking the program doesn't block its website: add web.telegram.org (for example) under Web & email blocking too.",
+          "Policies named Unlicensed software: <endpoint> are created by Block on an endpoint's Software tab. Release there removes the rule, and the last release removes the policy.",
         ],
       },
       {

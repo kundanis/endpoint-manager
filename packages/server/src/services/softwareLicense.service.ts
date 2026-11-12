@@ -9,7 +9,7 @@ import type {
 import { SOFTWARE_LICENSE_CYCLES_PER_YEAR } from "@em/shared";
 import { prisma } from "../db";
 import { decryptFieldOrNull, encryptFieldOrNull } from "../utils/fieldEncryption";
-import { isSystemOrFreeSoftware } from "./softwareClassify.util";
+import { isProtectedSystemSoftware, isSystemOrFreeSoftware } from "./softwareClassify.util";
 import { GENERIC_MATCH_TOKENS, compact, normalizeName, tokenize } from "./softwareNameMatch.util";
 
 // Licence name -> matcher. A licence matches an installed program when the compacted names are
@@ -73,7 +73,7 @@ export type InstalledSoftwareLicenseStatus = "LICENSED" | "SYSTEM" | "NONE";
 // need no licence, otherwise NONE ("no licence recorded"). Fetches all licences once.
 export async function annotateWithLicenseStatus(
   installed: InstalledSoftwareEntry[],
-): Promise<Array<InstalledSoftwareEntry & { licensed: boolean; licenseStatus: InstalledSoftwareLicenseStatus }>> {
+): Promise<Array<InstalledSoftwareEntry & { licensed: boolean; licenseStatus: InstalledSoftwareLicenseStatus; protected: boolean }>> {
   const licenses = await prisma.softwareLicense.findMany({ select: { softwareName: true } });
   const matchers = licenses.map((l) => toMatcher(l.softwareName)).filter((m): m is LicenseMatcher => m !== null);
 
@@ -84,7 +84,8 @@ export async function annotateWithLicenseStatus(
       : isSystemOrFreeSoftware(entry.name, entry.publisher)
         ? "SYSTEM"
         : "NONE";
-    return { ...entry, licensed, licenseStatus };
+    // protected: system software the console won't uninstall (see isProtectedSystemSoftware).
+    return { ...entry, licensed, licenseStatus, protected: isProtectedSystemSoftware(entry.name, entry.publisher) };
   });
 }
 

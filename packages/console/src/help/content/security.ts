@@ -87,7 +87,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
         items: [
           "See CVEs by severity with CVSS score and the endpoints affected.",
           "Open a CVE to see the matched software per endpoint and how confident the match is.",
-          "Remediate by uninstalling the vulnerable software, for one CVE or whole severity levels.",
+          "Remediate by uninstalling the vulnerable software, for one CVE or whole severity levels. System software (drivers, runtimes, Windows components) is never uninstalled; those findings are skipped and need an update instead.",
           "Keep the CVE catalogue current with Sync now (from NVD and Microsoft's Security Update Guide) and rescan the fleet.",
           "Microsoft products (SQL Server, Edge, .NET, Visual Studio, VS Code, PowerShell) are checked against the build Microsoft says fixes each CVE. Fix those with the Microsoft update; they are never uninstalled.",
           "Findings marked Name only matched on the product name alone; the installed version couldn't be confirmed.",

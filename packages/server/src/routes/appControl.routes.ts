@@ -25,6 +25,7 @@ import {
 import { UnsafeRuleError } from "../services/appControlPolicy.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
+import { blockSoftware, listSoftwareBlocks, releaseSoftware, SoftwareBlockError } from "../services/softwareBlock.service";
 
 export const appControlRouter = Router();
 
@@ -49,6 +50,37 @@ appControlRouter.get("/agents/:agentId", async (req, res, next) => {
   try {
     res.json(await getEventsForAgent(req.params.agentId));
   } catch (err) {
+    next(err);
+  }
+});
+
+// Endpoint -> Software tab: Block / Release software with no licence recorded (softwareBlock.service).
+appControlRouter.get("/agents/:agentId/software-blocks", async (req, res, next) => {
+  try {
+    res.json(await listSoftwareBlocks(req.params.agentId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+appControlRouter.post("/agents/:agentId/software-blocks", async (req, res, next) => {
+  try {
+    const { softwareName, productName } = (req.body ?? {}) as { softwareName?: unknown; productName?: unknown };
+    if (typeof softwareName !== "string" || !softwareName.trim() || typeof productName !== "string" || productName.length > 500) {
+      return res.status(400).json({ error: "softwareName and productName are required" });
+    }
+    res.status(201).json(await blockSoftware(req.params.agentId, softwareName, productName, req.adminId!));
+  } catch (err) {
+    if (err instanceof SoftwareBlockError) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+appControlRouter.delete("/agents/:agentId/software-blocks/:ruleId", async (req, res, next) => {
+  try {
+    res.json(await releaseSoftware(req.params.agentId, req.params.ruleId));
+  } catch (err) {
+    if (err instanceof SoftwareBlockError) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });

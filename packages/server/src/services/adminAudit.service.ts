@@ -150,16 +150,83 @@ const VERBS: Record<string, string> = {
   "delete-images": "Deleted screenshot images",
 };
 
-// GET requests that read sensitive data - logged as views.
-const SENSITIVE_VIEWS: { pattern: RegExp; summary: (m: RegExpMatchArray) => string; module: string }[] = [
-  { pattern: /^\/user-risk\/users\/([^/]+)\/timeline$/, summary: (m) => `Viewed the activity timeline of ${decodeURIComponent(m[1])}`, module: "User risk" },
-  { pattern: /^\/user-risk\/users\/([^/]+)$/, summary: (m) => `Viewed the risk profile of ${decodeURIComponent(m[1])}`, module: "User risk" },
-  { pattern: /^\/user-risk\/alerts\/([^/]+)\/events$/, summary: () => "Viewed the activity behind a user risk alert", module: "User risk" },
-  { pattern: /^\/enrollment-tokens\/([^/]+)\/value$/, summary: () => "Revealed an enrollment token", module: "Enrollment tokens" },
-  { pattern: /^\/data-discovery\/agents\/([^/]+)$/, summary: () => "Viewed the personal-data findings of an endpoint", module: "Data discovery" },
-  { pattern: /^\/screen-capture\/([^/]+)\/captures$/, summary: () => "Viewed a user's screenshots (with the images, for a super admin)", module: "Screen capture" },
-  { pattern: /^\/screen-capture\/endpoints\/([^/]+)\/captures$/, summary: () => "Viewed a user's screenshots on an endpoint (with the images, for a super admin)", module: "Screen capture" },
-  { pattern: /^\/screen-capture\/images\/([^/]+)\/download$/, summary: () => "Downloaded a screenshot image", module: "Screen capture" },
+// GET requests that read sensitive data - logged as views. Each one is described with readable
+// names (endpoint, user, day, policy) looked up when it's logged, never with raw IDs.
+type ViewInfo = { summary: string; detail?: Record<string, string> };
+type ViewDescriber = (m: RegExpMatchArray, q: Record<string, string | undefined>) => ViewInfo | Promise<ViewInfo>;
+
+async function hostnameOf(id: string | undefined): Promise<string | undefined> {
+  if (!id) return undefined;
+  const a = await prisma.agent.findUnique({ where: { id }, select: { hostname: true } }).catch(() => null);
+  return a?.hostname ?? undefined;
+}
+
+async function screenPolicyName(id: string): Promise<string | undefined> {
+  const p = await prisma.screenCapturePolicy.findUnique({ where: { id }, select: { name: true } }).catch(() => null);
+  return p?.name ?? undefined;
+}
+
+async function screenshotOwner(eventId: string): Promise<{ user?: string; endpoint?: string; file?: string }> {
+  const e = await prisma.screenCaptureEvent
+    .findUnique({ where: { id: eventId }, select: { username: true, filePath: true, agent: { select: { hostname: true } } } })
+    .catch(() => null);
+  return e ? { user: e.username, endpoint: e.agent.hostname, file: e.filePath.split(/[\\/]/).pop() } : {};
+}
+
+// Drops empty values so the stored detail has only what's known.
+function fields(f: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(f).filter((e): e is [string, string] => !!e[1]));
+}
+
+const onEndpoint = (host?: string) => (host ? ` on ${host}` : "");
+const forDay = (day?: string) => (day ? ` for ${day}` : "");
+
+const SENSITIVE_VIEWS: { pattern: RegExp; describe: ViewDescriber; module: string }[] = [
+  { pattern: /^\/user-risk\/users\/([^/]+)\/timeline$/, describe: (m) => ({ summary: `Viewed the activity timeline of ${decodeURIComponent(m[1])}` }), module: "User risk" },
+  { pattern: /^\/user-risk\/users\/([^/]+)$/, describe: (m) => ({ summary: `Viewed the risk profile of ${decodeURIComponent(m[1])}` }), module: "User risk" },
+  { pattern: /^\/user-risk\/alerts\/([^/]+)\/events$/, describe: () => ({ summary: "Viewed the activity behind a user risk alert" }), module: "User risk" },
+  { pattern: /^\/enrollment-tokens\/([^/]+)\/value$/, describe: () => ({ summary: "Revealed an enrollment token" }), module: "Enrollment tokens" },
+  {
+    pattern: /^\/data-discovery\/agents\/([^/]+)$/,
+    describe: async (m) => {
+      const host = await hostnameOf(m[1]);
+      return { summary: `Viewed the personal-data findings${onEndpoint(host)}`, detail: fields({ Endpoint: host }) };
+    },
+    module: "Data discovery",
+  },
+  {
+    pattern: /^\/screen-capture\/([^/]+)\/captures$/,
+    describe: async (m, q) => {
+      const [host, policy] = await Promise.all([hostnameOf(q.agentId), screenPolicyName(m[1])]);
+      return {
+        summary: `Viewed the screenshots of ${q.username ?? "a user"}${onEndpoint(host)}${forDay(q.day)}`,
+        detail: fields({ User: q.username, Endpoint: host, Day: q.day, Policy: policy }),
+      };
+    },
+    module: "Screen capture",
+  },
+  {
+    pattern: /^\/screen-capture\/endpoints\/([^/]+)\/captures$/,
+    describe: async (m, q) => {
+      const host = await hostnameOf(m[1]);
+      return {
+        summary: `Viewed the screenshots of ${q.username ?? "a user"}${onEndpoint(host)}${forDay(q.day)}`,
+        detail: fields({ User: q.username, Endpoint: host, Day: q.day }),
+      };
+    },
+    module: "Screen capture",
+  },
+  {
+    pattern: /^\/screen-capture\/images\/([^/]+)\/download$/,
+    describe: async (m) => {
+      const o = await screenshotOwner(m[1]);
+      return {
+        summary: `Downloaded a screenshot${o.user ? ` of ${o.user}` : ""}${onEndpoint(o.endpoint)}`,
+        detail: fields({ User: o.user, Endpoint: o.endpoint, File: o.file }),
+      };
+    },
+    module: "Screen capture",
+  },
 ];
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^builtin:/i;
@@ -173,6 +240,15 @@ export function describe(method: string, path: string, body: unknown): { module:
   // A Command blocking protection is named by its title, not its key.
   const protection = b.ruleType === "PROTECTION" && typeof b.value === "string" ? commandProtection(b.value)?.title : undefined;
   const name = [protection, b.name, b.title, b.email, b.hostname, b.label, b.softwareName].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+
+  // Endpoint -> Software tab Block / Release (the console sends the names for this log).
+  if (last === "software-blocks" && (method === "POST" || method === "DELETE")) {
+    const sw = typeof b.softwareName === "string" && b.softwareName ? `"${b.softwareName}"` : "software";
+    const on = typeof b.hostname === "string" && b.hostname ? ` on ${b.hostname}` : " on an endpoint";
+    return method === "POST"
+      ? { module: mod.label, category: mod.category, action: "BLOCK_SOFTWARE", summary: `Blocked unlicensed software ${sw}${on}`, targetId }
+      : { module: mod.label, category: mod.category, action: "RELEASE_SOFTWARE", summary: `Released blocked software ${sw}${on}`, targetId };
+  }
 
   let action: string;
   let verb: string;
@@ -215,24 +291,32 @@ export function auditCapture(req: Request, res: Response, next: NextFunction) {
     if (!req.adminEmail) return; // never signed in (401) - nothing to attribute
     const ok = res.statusCode < 400;
     if (view) {
-      void writeAudit({
-        adminId: req.adminId,
-        adminEmail: req.adminEmail,
-        ipAddress: req.ip,
-        category: "Sensitive data",
-        action: "VIEW",
-        module: view.module,
-        summary: view.summary(path.match(view.pattern)!),
-        targetId: path.split("/").filter(Boolean).find((p) => ID.test(p)) ?? null,
-        method,
-        path: req.originalUrl.split("?")[0],
-        statusCode: res.statusCode,
-        success: ok,
-        detail: { query: req.query },
-      });
+      const q = Object.fromEntries(Object.entries(req.query).map(([k, v]) => [k, typeof v === "string" ? v : undefined]));
+      void Promise.resolve()
+        .then(() => view.describe(path.match(view.pattern)!, q))
+        .catch((): ViewInfo => ({ summary: `Viewed sensitive data (${view.module})` }))
+        .then((info) =>
+          writeAudit({
+            adminId: req.adminId,
+            adminEmail: req.adminEmail!,
+            ipAddress: req.ip,
+            category: "Sensitive data",
+            action: "VIEW",
+            module: view.module,
+            summary: ok ? info.summary : `${info.summary} - failed (${res.statusCode})`,
+            targetId: path.split("/").filter(Boolean).find((p) => ID.test(p)) ?? null,
+            method,
+            path: req.originalUrl.split("?")[0],
+            statusCode: res.statusCode,
+            success: ok,
+            detail: info.detail ?? {},
+          }),
+        );
       return;
     }
-    const d = describe(method, path, body);
+    // A DELETE carries its names in the query string (it has no body).
+    const sent = method === "DELETE" && Object.keys(req.query).length > 0 ? req.query : body;
+    const d = describe(method, path, sent);
     void writeAudit({
       adminId: req.adminId,
       adminEmail: req.adminEmail,
@@ -246,7 +330,7 @@ export function auditCapture(req: Request, res: Response, next: NextFunction) {
       path: req.originalUrl.split("?")[0],
       statusCode: res.statusCode,
       success: ok,
-      detail: { request: body ?? null },
+      detail: { request: sent ?? null },
     });
   });
   next();

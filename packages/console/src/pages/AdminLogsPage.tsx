@@ -40,17 +40,64 @@ function usefulDetail(e: AdminAuditEntry): unknown {
   return keys.length === 1 && (keys[0] === "request" || keys[0] === "query") ? d[keys[0]] : d;
 }
 
+// Internal record IDs mean nothing to a reader, so they're left out of the details.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function withoutIds(v: unknown): unknown {
+  if (typeof v === "string") return UUID.test(v) ? undefined : v;
+  if (Array.isArray(v)) {
+    const kept = v.map(withoutIds).filter((x) => x !== undefined);
+    return kept.length ? kept : undefined;
+  }
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const kept = withoutIds(val);
+      if (kept !== undefined) out[k] = kept;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return v;
+}
+
+// "softwareName" -> "Software name"; keys stored already readable ("Endpoint") stay as they are.
+function label(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function plain(v: unknown): string | null {
+  if (typeof v === "string" || typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v) && v.every((x) => typeof x !== "object")) return v.map((x) => plain(x)).join(", ");
+  return null;
+}
+
 function Detail({ e }: { e: AdminAuditEntry }) {
-  const detail = usefulDetail(e);
+  const detail = withoutIds(usefulDetail(e));
+  if (detail === undefined || detail === null) return <span className="app-muted">No further details.</span>;
+  const simple = plain(detail);
+  if (simple !== null) return <span>{simple}</span>;
   return (
-    <div className="app-stack-sm">
-      {e.targetId && <span className="app-muted ep-mono">Target {e.targetId}</span>}
-      {detail !== null && (
-        <pre className="ep-mono" style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflowY: "auto", fontSize: 12 }}>
-          {JSON.stringify(detail, null, 2)}
-        </pre>
-      )}
-    </div>
+    <dl className="app-stack-sm" style={{ margin: 0 }}>
+      {Object.entries(detail as Record<string, unknown>).map(([k, v]) => {
+        const text = plain(v);
+        return (
+          <div key={k} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <dt className="app-muted" style={{ minWidth: 120 }}>{label(k)}</dt>
+            <dd style={{ margin: 0, overflowWrap: "anywhere" }}>
+              {text !== null ? (
+                text
+              ) : (
+                <pre className="ep-mono" style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 240, overflowY: "auto", fontSize: 12 }}>
+                  {JSON.stringify(v, null, 2)}
+                </pre>
+              )}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 
@@ -138,7 +185,7 @@ export default function AdminLogsPage() {
       downloadCsv(
         "admin-logs.csv",
         ["When", "Admin", "IP address", "Category", "Module", "What happened", "Result", "Details"],
-        all.items.map((e) => [csvDate(e.at), e.adminEmail, e.ipAddress ?? "", e.category, e.module ?? "", e.summary, e.success ? "Success" : "Failed", (() => { const d = usefulDetail(e); return d === null ? "" : JSON.stringify(d); })()]),
+        all.items.map((e) => [csvDate(e.at), e.adminEmail, e.ipAddress ?? "", e.category, e.module ?? "", e.summary, e.success ? "Success" : "Failed", (() => { const d = withoutIds(usefulDetail(e)); return d === undefined || d === null ? "" : JSON.stringify(d); })()]),
       );
     } finally {
       setExporting(false);
@@ -214,7 +261,7 @@ export default function AdminLogsPage() {
                 </thead>
                 <tbody>
                   {data.items.map((e) => {
-                    const hasDetail = !!e.targetId || usefulDetail(e) !== null;
+                    const hasDetail = withoutIds(usefulDetail(e)) !== undefined;
                     const open = hasDetail && expanded === e.id;
                     return (
                       <Fragment key={e.id}>

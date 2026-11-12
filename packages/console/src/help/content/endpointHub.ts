@@ -114,13 +114,14 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     title: "Endpoint detail",
     path: "/endpoints/",
     summary: "Everything about one device, in seven tabs, plus remote actions.",
-    keywords: ["remote desktop", "rdp", "uninstall", "pause", "notes", "asset", "warranty", "history", "sync", "uninstalled apps"],
+    keywords: ["remote desktop", "rdp", "uninstall", "pause", "notes", "asset", "warranty", "history", "sync", "uninstalled apps", "system software"],
     sections: [
       {
         title: "Tabs",
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
-          "Software: installed applications with licence status; uninstall any of them remotely. Sync now fetches the current list from the device.",
+          "Software: installed applications with licence status; uninstall them remotely. System software (Windows components, drivers, runtimes such as .NET and Visual C++, OEM tools, Defender and the Endpoint IQ agent) shows System software instead of Uninstall and can't be removed from the console. Sync now fetches the current list from the device.",
+          "Block (software with no licence recorded): the endpoint closes the program whenever it starts and the user sees a message; it stays installed. Release lets it run again. Blocks are kept in an Application control policy named Unlicensed software: <endpoint>, and need access to Application control.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
           "Data protection: personal data found, DLP events, file movements, screenshots, blocked apps, commands and USB devices.",
           "Manage: asset details, custom fields, groups, Remote Desktop, pause and remote agent uninstall.",
@@ -145,8 +146,18 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Uninstall software from a device",
         steps: [
           { text: "Open the endpoint and go to the Software tab.", target: { kind: "tab", label: "Software" } },
-          { text: "Find the application and select Uninstall on its row. MSI installs are removed silently." },
+          { text: "Find the application and select Uninstall on its row. MSI installs are removed silently. Rows marked System software can't be uninstalled." },
           { text: "The list refreshes once the uninstall finishes; select Sync now to fetch it straight away. The removal is listed on the History tab.", target: { kind: "button", label: "Sync now" } },
+        ],
+      },
+      {
+        id: "detail-block-app",
+        title: "Block unlicensed software on a device",
+        steps: [
+          { text: "Open the endpoint and go to the Software tab.", target: { kind: "tab", label: "Software" } },
+          { text: "Set the licence filter to No licence recorded and select Block on the application's row." },
+          { text: "Check the product name (the one inside the program's .exe, under Properties, Details) and select Block. The endpoint applies it within about 20 seconds." },
+          { text: "To allow it again, filter by Blocked and select Release." },
         ],
       },
       {

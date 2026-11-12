@@ -78,6 +78,9 @@ import {
   useSetAssetDetails,
   useUninstallAgent,
   useUninstallSoftware,
+  useSoftwareBlocks,
+  useBlockSoftware,
+  useReleaseSoftware,
   useSyncInventory,
 } from "../api/hooks";
 
@@ -1105,10 +1108,40 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
  * Software
  * ---------------------------------------------------------------------------------------- */
 
-type LicenseFilter = "ALL" | InstalledSoftwareEntry["licenseStatus"];
+type LicenseFilter = "ALL" | "BLOCKED" | InstalledSoftwareEntry["licenseStatus"];
 
-function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId: string; software: InstalledSoftwareEntry[]; collectedAt: string | null }) {
+// Product name to block, guessed from the installed name: "WinRAR 6.24 (64-bit)" -> "WinRAR*".
+// The admin can change it; it must match the product name stored inside the program.
+function suggestedProductName(name: string): string {
+  const base = name
+    .replace(/\s*\([^)]*\)/g, " ")
+    .replace(/\s+(v(ersion)?\s*)?\d[\d.]*.*$/i, "")
+    .replace(/\s+(x64|x86|64-bit|32-bit)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${base || name.trim()}*`;
+}
+
+function InstalledSoftwareSection({
+  agentId,
+  hostname,
+  software,
+  collectedAt,
+}: {
+  agentId: string;
+  hostname: string;
+  software: InstalledSoftwareEntry[];
+  collectedAt: string | null;
+}) {
   const uninstall = useUninstallSoftware();
+  const blocks = useSoftwareBlocks(agentId);
+  const block = useBlockSoftware();
+  const release = useReleaseSoftware();
+  const prompt = usePrompt();
+  // No Application control access (403) or the module hidden: no Block / Release.
+  const epmHidden = useIsItemHidden("/epm");
+  const canBlock = !blocks.error && !epmHidden;
+  const blockedBy = new Map((blocks.data ?? []).map((b) => [b.softwareName, b]));
   const sync = useSyncInventory();
   const toast = useToast();
   const confirm = useConfirm();
@@ -1122,6 +1155,7 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
   const filtered = software.filter((s) => {
     if (nameFilter && !s.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
     if (publisherFilter && s.publisher !== publisherFilter) return false;
+    if (licenseFilter === "BLOCKED") return blockedBy.has(s.name);
     if (licenseFilter !== "ALL" && s.licenseStatus !== licenseFilter) return false;
     return true;
   });
@@ -1148,6 +1182,48 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
     if (!confirmed) return;
     setPendingName(name);
     uninstall.mutate({ agentId, softwareName: name }, { onSettled: () => setPendingName(null) });
+  }
+
+  async function handleBlock(name: string) {
+    const productName = await prompt({
+      title: `Block ${name} on ${hostname}?`,
+      body:
+        "The endpoint closes this program whenever it starts, within about 20 seconds, and the user sees a message. " +
+        "It stays installed. Blocked starts are listed on the Events tab of the endpoint's Unlicensed software policy in Application control.",
+      label: "Product name to block",
+      help: "Must match the product name inside the program (its .exe: Properties, Details, Product name). * matches anything.",
+      defaultValue: suggestedProductName(name),
+      confirmLabel: "Block",
+      validate: (v) => (v.replace(/[*?]/g, "").trim().length < 3 ? "Enter at least 3 letters." : null),
+    });
+    if (!productName) return;
+    setPendingName(name);
+    block.mutate(
+      { agentId, hostname, softwareName: name, productName: productName.trim() },
+      {
+        onSuccess: () => toast(`${name} is blocked on ${hostname}.`),
+        onError: (err) => toast(`Couldn't block ${name}: ${(err as Error).message}`),
+        onSettled: () => setPendingName(null),
+      },
+    );
+  }
+
+  async function handleRelease(name: string, ruleId: string) {
+    const ok = await confirm({
+      title: `Release ${name} on ${hostname}?`,
+      body: "The user can start it again within about 20 seconds.",
+      confirmLabel: "Release",
+    });
+    if (!ok) return;
+    setPendingName(name);
+    release.mutate(
+      { agentId, hostname, ruleId, softwareName: name },
+      {
+        onSuccess: () => toast(`${name} is released on ${hostname}.`),
+        onError: (err) => toast(`Couldn't release ${name}: ${(err as Error).message}`),
+        onSettled: () => setPendingName(null),
+      },
+    );
   }
 
   return (
@@ -1205,6 +1281,7 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
           <option value="LICENSED">Licensed</option>
           <option value="SYSTEM">System / free component</option>
           <option value="NONE">No licence recorded</option>
+          {canBlock && <option value="BLOCKED">Blocked</option>}
         </select>
       </Toolbar>
       <div className="ep-cb">
@@ -1261,12 +1338,40 @@ function InstalledSoftwareSection({ agentId, software, collectedAt }: { agentId:
                       ) : (
                         <Badge tone="neu">No licence recorded</Badge>
                       )}
+                      {blockedBy.has(s.name) && (
+                        <>
+                          {" "}
+                          <Badge tone={blockedBy.get(s.name)!.policyEnabled ? "crit" : "neu"}>
+                            {blockedBy.get(s.name)!.policyEnabled ? "Blocked" : "Block paused"}
+                          </Badge>
+                        </>
+                      )}
                     </td>
                     <td>
                       <div className="app-cell-actions">
-                        <Button variant="danger" size="sm" onClick={() => handleUninstall(s.name)} disabled={pendingName === s.name}>
-                          {pendingName === s.name ? "Dispatching…" : "Uninstall"}
-                        </Button>
+                        {s.protected ? (
+                          <span className="app-muted" title="Windows components, drivers, runtimes, OEM tools, Defender and the Endpoint IQ agent can't be uninstalled from the console">
+                            System software
+                          </span>
+                        ) : (
+                          <>
+                            {canBlock && blockedBy.has(s.name) ? (
+                              <Button size="sm" onClick={() => handleRelease(s.name, blockedBy.get(s.name)!.ruleId)} disabled={pendingName === s.name}>
+                                Release
+                              </Button>
+                            ) : (
+                              canBlock &&
+                              s.licenseStatus === "NONE" && (
+                                <Button size="sm" onClick={() => handleBlock(s.name)} disabled={pendingName === s.name}>
+                                  Block
+                                </Button>
+                              )
+                            )}
+                            <Button variant="danger" size="sm" onClick={() => handleUninstall(s.name)} disabled={pendingName === s.name}>
+                              {pendingName === s.name && uninstall.isPending ? "Dispatching…" : "Uninstall"}
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1963,7 +2068,7 @@ export default function AgentDetailPage() {
         </Row>
       )}
 
-      {activeTab === "software" && <InstalledSoftwareSection agentId={agent.id} software={inv?.installedSoftware ?? []} collectedAt={inv?.collectedAt ?? null} />}
+      {activeTab === "software" && <InstalledSoftwareSection agentId={agent.id} hostname={agent.hostname} software={inv?.installedSoftware ?? []} collectedAt={inv?.collectedAt ?? null} />}
 
       {activeTab === "data" && (
         <div className="app-stack">

@@ -166,6 +166,7 @@ import type {
   UserRiskSettings,
   UserRiskUserDetail,
   UserRiskUserRow,
+  SoftwareBlock,
 } from "./types";
 
 export function useMe() {
@@ -980,6 +981,46 @@ export function useUninstallSoftware() {
   return useMutation({
     mutationFn: ({ agentId, softwareName }: { agentId: string; softwareName: string }) =>
       api.post<{ jobId: string }>(`/admin/agents/${agentId}/uninstall-software`, { softwareName }),
+  });
+}
+
+// Software tab -> Block / Release unlicensed software (Application control rules). A 403 means
+// this admin can't use Application control, and the Software tab then hides the buttons.
+export function useSoftwareBlocks(agentId: string) {
+  return useQuery({
+    queryKey: ["softwareBlocks", agentId],
+    queryFn: () => api.get<SoftwareBlock[]>(`/admin/app-control/agents/${agentId}/software-blocks`),
+    retry: false,
+  });
+}
+
+export function useBlockSoftware() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { agentId: string; hostname: string; softwareName: string; productName: string }) =>
+      api.post<SoftwareBlock[]>(`/admin/app-control/agents/${v.agentId}/software-blocks`, {
+        softwareName: v.softwareName,
+        productName: v.productName,
+        hostname: v.hostname,
+      }),
+    onSuccess: (blocks, v) => {
+      qc.setQueryData(["softwareBlocks", v.agentId], blocks);
+      qc.invalidateQueries({ queryKey: ["appControlPolicies"] });
+    },
+  });
+}
+
+export function useReleaseSoftware() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { agentId: string; hostname: string; ruleId: string; softwareName: string }) =>
+      api.del<SoftwareBlock[]>(
+        `/admin/app-control/agents/${v.agentId}/software-blocks/${v.ruleId}?${new URLSearchParams({ softwareName: v.softwareName, hostname: v.hostname })}`,
+      ),
+    onSuccess: (blocks, v) => {
+      qc.setQueryData(["softwareBlocks", v.agentId], blocks);
+      qc.invalidateQueries({ queryKey: ["appControlPolicies"] });
+    },
   });
 }
 
