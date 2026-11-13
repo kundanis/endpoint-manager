@@ -132,6 +132,25 @@ if (Test-Path $srpDisallowedPath) {
 }
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers' -Name DefaultLevel -Value 262144 -Type DWord -ErrorAction SilentlyContinue
 
+# AppLocker rules added by advanced application control (description "Endpoint IQ managed"); the
+# device's other AppLocker rules stay. Same as REMOVE_APPLOCKER_RULES_PS in appControlPaths.ts.
+try {
+    $alx = [xml](Get-AppLockerPolicy -Local -Xml)
+    $alChanged = $false
+    foreach ($c in @($alx.AppLockerPolicy.RuleCollection)) {
+        if (-not $c) { continue }
+        $ours = @($c.ChildNodes | Where-Object { $_.Description -eq 'Endpoint IQ managed' })
+        foreach ($r in $ours) { [void]$c.RemoveChild($r); $alChanged = $true }
+        if ($ours.Count -gt 0 -and @($c.ChildNodes | Where-Object { $_.LocalName -like '*Rule' }).Count -eq 0) { $c.SetAttribute('EnforcementMode', 'NotConfigured') }
+    }
+    if ($alChanged) {
+        $alFile = Join-Path $env:TEMP ('eiq-applocker-' + [guid]::NewGuid().ToString('N') + '.xml')
+        $alx.Save($alFile)
+        Set-AppLockerPolicy -XmlPolicy $alFile
+        Remove-Item -LiteralPath $alFile -Force
+    }
+} catch {}
+
 # Best-effort self-report to the server so the Agent row - and its license seat - is freed
 # immediately instead of lingering forever as an unreachable "offline" row. $config/$state
 # are already loaded above if this install ever finished enrolling; any failure here

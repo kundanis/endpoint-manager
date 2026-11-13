@@ -62,6 +62,24 @@ export function appControlRuleProblem(ruleType: string, rawValue: string): strin
     }
     return null;
   }
+  if (ruleType === "DLL") {
+    const name = baseName(value);
+    if (!/\.(dll|ocx)$/.test(name)) return "Enter a DLL file name or path ending in .dll, for example evil.dll.";
+    if (!name.slice(0, name.lastIndexOf(".")).replace(/[*?]/g, "")) {
+      return "Name the DLL: a wildcard file name would block the libraries every program needs.";
+    }
+    if (PROTECTED_FOLDERS.some((f) => value.includes(f)) || /^[a-z]:\\windows($|\\)/.test(value) || value.includes("%system32%")) {
+      return "DLLs in the Windows folder and the Endpoint IQ agent can't be blocked: Windows or the agent would stop working.";
+    }
+    return null;
+  }
+  if (ruleType === "ALLOW_PATH") {
+    const stripped = value.replace(/[*?\\:.%]/g, "");
+    if (!stripped || /^[a-z]:\\?\*?$/.test(value) || /^%osdrive%\\?\*?$/.test(value)) {
+      return "That would allow everything on the drive, so no rule could block anything. Name a folder or file.";
+    }
+    return null;
+  }
   // EXECUTABLE: a file name or a path.
   const stripped = value.replace(/[*?\\:.]/g, "");
   if (!stripped) return "Wildcards would block every program on the device.";

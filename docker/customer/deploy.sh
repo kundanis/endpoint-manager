@@ -345,6 +345,8 @@ APP_PORT=${APP_PORT:-4000}
 LICENSE_ENFORCEMENT_ENABLED=false
 # Public IPs/CIDRs allowed to open the admin console (comma-separated). Private networks always are.
 ADMIN_ALLOWED_NETWORKS=${allowed}
+# Advanced application control (Windows AppLocker: DLL, PowerShell and batch blocking, Allow exceptions).
+ADVANCED_APP_CONTROL=${ADVANCED_APP_CONTROL:-false}
 APP_VERSION=${RELEASE_VERSION}
 EOF
   )
@@ -361,6 +363,12 @@ env_set APP_VERSION "$RELEASE_VERSION"
 if ! grep -qE '^ADMIN_ALLOWED_NETWORKS=' "$INSTALL_DIR/.env"; then
   printf '# Public IPs/CIDRs allowed to open the admin console (comma-separated). Private networks always are.\n' >> "$INSTALL_DIR/.env"
   env_set ADMIN_ALLOWED_NETWORKS "${ADMIN_ALLOWED_NETWORKS:-$(detect_ssh_public_ip)}"
+fi
+
+# Advanced application control is an optional extra: run deploy.sh with ADVANCED_APP_CONTROL=true
+# (or false) to switch it on (or off) for an existing install too. Without that, .env is left as is.
+if [ -n "${ADVANCED_APP_CONTROL:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
+  env_set ADVANCED_APP_CONTROL "$ADVANCED_APP_CONTROL"
 fi
 
 # Guard against the configured version drifting from the bundle (e.g. a variable clobbered by

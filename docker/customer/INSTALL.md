@@ -144,6 +144,13 @@ All commands run from `/opt/endpoint-one` with `sudo`:
 | Stop / start | `docker compose stop` / `docker compose start` |
 | Manual DB backup | `docker compose exec db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$(grep ^SA_PASSWORD= .env \| cut -d= -f2-)" -No -Q "BACKUP DATABASE [EndpointManagerDb] TO DISK='/var/opt/mssql/backup/manual.bak' WITH INIT"` then `docker compose cp db:/var/opt/mssql/backup/manual.bak backups/` |
 
+**Advanced application control (optional extra).** Off unless your supplier switched it on.
+It adds DLL blocking, PowerShell and batch script blocking (also from an open Command Prompt
+and scheduled tasks) and Allow exceptions, using Windows AppLocker. To switch it on: set
+`ADVANCED_APP_CONTROL=true` in `.env` and run `sudo docker compose up -d`, or install/upgrade
+with `sudo ADVANCED_APP_CONTROL=true ./deploy.sh`. Set it back to `false` to switch it off;
+agents then remove every AppLocker rule they added.
+
 Never run `docker compose down -v`: `-v` deletes the database and uploads.
 
 **Backups:** schedule the manual backup above (cron), copy `backups/` and `.env` off the server,

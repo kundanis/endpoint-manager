@@ -67,7 +67,7 @@ import { recordSafetyEvent } from "../services/safetyEvent.service";
 import { recordReport as recordScreenCaptureReport, resolveAssignedForAgent as resolveScreenCaptureForAgent } from "../services/screenCaptureEvent.service";
 import {
   recordScanResult as recordAppControlScanResult,
-  resolveAssignedRulesForAgent as resolveAssignedAppControlRulesForAgent,
+  resolveAssignedAppControlForAgent,
 } from "../services/appControlScan.service";
 import {
   recordSyncResult as recordWebBlockSyncResult,
@@ -413,7 +413,7 @@ agentRouter.post("/security-signals", async (req, res, next) => {
 
 agentRouter.get("/app-control/assigned", async (req, res, next) => {
   try {
-    res.json({ rules: await resolveAssignedAppControlRulesForAgent(req.agentId!) });
+    res.json(await resolveAssignedAppControlForAgent(req.agentId!));
   } catch (err) {
     next(err);
   }

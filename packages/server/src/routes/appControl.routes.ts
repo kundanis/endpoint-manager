@@ -25,6 +25,7 @@ import {
 import { UnsafeRuleError } from "../services/appControlPolicy.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
+import { config } from "../config";
 import { blockSoftware, listSoftwareBlocks, releaseSoftware, SoftwareBlockError } from "../services/softwareBlock.service";
 
 export const appControlRouter = Router();
@@ -36,6 +37,11 @@ appControlRouter.post("/", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// Whether this server offers advanced application control (ADVANCED_APP_CONTROL in .env).
+appControlRouter.get("/features", (_req, res) => {
+  res.json({ advanced: config.advancedAppControl });
 });
 
 appControlRouter.get("/", async (_req, res, next) => {

@@ -14,6 +14,18 @@ export const watcherRulesFile = () => path.join(agentConfig.stateDir, "app-contr
 // The Command blocking patterns the same watcher enforces (written by commandBlockEnforcer.ts).
 export const commandRulesFile = () => path.join(agentConfig.stateDir, "command-block-rules.json");
 
+// What advanced application control last put into AppLocker (appLockerEnforcer.ts); absent while
+// the agent has no AppLocker rules in place.
+export const appLockerStateFile = () => path.join(agentConfig.stateDir, "applocker-state.json");
+
+export function appLockerRulesActive(): boolean {
+  try {
+    return ((JSON.parse(fs.readFileSync(appLockerStateFile(), "utf8")) as { ruleCount?: number }).ruleCount ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function appControlRulesActive(): boolean {
   try {
     return (JSON.parse(fs.readFileSync(watcherRulesFile(), "utf8")) as unknown[]).length > 0;
@@ -31,10 +43,36 @@ export const IFEO_ROOTS = [
 ];
 export const IFEO_MARKER = "EndpointIQManaged";
 
+// Every AppLocker rule this agent adds (advanced application control) carries this description;
+// anything else in the device's AppLocker policy belongs to someone else and is never touched.
+export const APPLOCKER_MARKER = "Endpoint IQ managed";
+
+// PowerShell that removes this agent's AppLocker rules, and turns a rule collection back off when
+// nothing else is left in it.
+export const REMOVE_APPLOCKER_RULES_PS = `
+try {
+  $alx = [xml](Get-AppLockerPolicy -Local -Xml)
+  $alChanged = $false
+  foreach ($c in @($alx.AppLockerPolicy.RuleCollection)) {
+    if (-not $c) { continue }
+    $ours = @($c.ChildNodes | Where-Object { $_.Description -eq '${APPLOCKER_MARKER}' })
+    foreach ($r in $ours) { [void]$c.RemoveChild($r); $alChanged = $true }
+    if ($ours.Count -gt 0 -and @($c.ChildNodes | Where-Object { $_.LocalName -like '*Rule' }).Count -eq 0) { $c.SetAttribute('EnforcementMode', 'NotConfigured') }
+  }
+  if ($alChanged) {
+    $alFile = Join-Path $env:TEMP ('eiq-applocker-' + [guid]::NewGuid().ToString('N') + '.xml')
+    $alx.Save($alFile)
+    Set-AppLockerPolicy -XmlPolicy $alFile
+    Remove-Item -LiteralPath $alFile -Force
+  }
+} catch {}
+`;
+
 // PowerShell that removes every launch block this agent wrote (and the Software Restriction
-// Policy rules agents before 0.2.18 wrote).
+// Policy rules agents before 0.2.18 wrote), and its AppLocker rules.
 export const REMOVE_ALL_BLOCKS_PS = `
 $ErrorActionPreference = 'SilentlyContinue'
+${REMOVE_APPLOCKER_RULES_PS}
 Get-ChildItem -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers\\0\\Paths' |
   Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description).Description -like 'EM-managed:*' } |
   ForEach-Object { Remove-Item -Path $_.PSPath -Recurse -Force }

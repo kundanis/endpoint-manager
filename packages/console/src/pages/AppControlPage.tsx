@@ -7,6 +7,7 @@ import {
   useAppControlAgentBreakdown,
   useAppControlPolicyAgentEvents,
   useAppControlAssignments,
+  useAppControlFeatures,
   useAppControlPolicies,
   useAppControlPolicy,
   useAssignAppControlPolicy,
@@ -50,12 +51,16 @@ import { formatDateTime, pluralize } from "../format";
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
 const RULE_TYPES: AppControlRuleType[] = ["EXECUTABLE", "PRODUCT", "PUBLISHER", "EXTENSION"];
+// Advanced application control (Windows AppLocker) - offered only when the server has it on.
+const ADVANCED_RULE_TYPES: AppControlRuleType[] = ["DLL", "ALLOW_PATH"];
 
 const RULE_TYPE_LABEL: Record<AppControlRuleType, string> = {
   EXECUTABLE: "Program name / path",
   PRODUCT: "Product name",
   PUBLISHER: "Publisher",
   EXTENSION: "Script type",
+  DLL: "DLL file",
+  ALLOW_PATH: "Allow (exception)",
 };
 
 const RULE_TYPE_HINT: Record<AppControlRuleType, string> = {
@@ -63,20 +68,27 @@ const RULE_TYPE_HINT: Record<AppControlRuleType, string> = {
   PRODUCT: 'The product name stored in the program, e.g. "AnyDesk" or "Telegram Desktop" — catches renamed copies and new versions. * wildcards allowed.',
   PUBLISHER: 'The company that signs the program, e.g. "AnyDesk Software GmbH" — blocks every program from that publisher, whatever its name or version.',
   EXTENSION: 'A script type including the dot, e.g. ".vbs", ".hta" or ".jar" — stops Windows script hosts and Java from running files of that type.',
+  DLL: 'A DLL file name, e.g. "evil.dll" (blocked in any folder), or a path, e.g. "C:\\Users\\*\\AppData\\*\\evil.dll". DLLs in the Windows folder are never blocked.',
+  ALLOW_PATH: 'A folder or file that is never blocked by any rule on the endpoint, e.g. "C:\\IT\\Scripts" or "\\\\fileserver\\tools\\*". Use it for scripts and programs your IT team runs.',
 };
+
+const ADVANCED_EXTENSION_HINT =
+  'A file type including the dot, e.g. ".ps1", ".bat", ".cmd", ".vbs", ".js", ".hta", ".msi" or ".jar". PowerShell, batch, VBScript, JavaScript and installer files are also blocked by Windows AppLocker — from an open Command Prompt or PowerShell and in scheduled tasks too.';
 
 const RULE_TYPE_PLACEHOLDER: Record<AppControlRuleType, string> = {
   EXECUTABLE: 'e.g. "AnyDesk.exe, rustdesk.exe"',
   PRODUCT: 'e.g. "Telegram Desktop; AnyDesk"',
   PUBLISHER: 'e.g. "AnyDesk Software GmbH"',
   EXTENSION: 'e.g. ".vbs, .js, .hta"',
+  DLL: 'e.g. "evil.dll, C:\\Tools\\hook.dll"',
+  ALLOW_PATH: 'e.g. "C:\\IT\\Scripts; \\\\fileserver\\tools"',
 };
 
 const BLANK_RULE_FORM: AppControlRuleInput = { ruleType: "EXECUTABLE", value: "", label: "" };
 
 // Splits so a whole list can be pasted into the same field at once. Product and publisher names
 // can contain commas ("Example, Inc."), so those split on semicolons only.
-const SEMICOLON_ONLY = new Set<AppControlRuleType>(["PRODUCT", "PUBLISHER"]);
+const SEMICOLON_ONLY = new Set<AppControlRuleType>(["PRODUCT", "PUBLISHER", "ALLOW_PATH"]);
 function splitBulkValues(raw: string, ruleType: AppControlRuleType): string[] {
   return [...new Set(raw.split(SEMICOLON_ONLY.has(ruleType) ? /;/ : /[;,]/).map((v) => v.trim()).filter(Boolean))];
 }
@@ -86,6 +98,7 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
   const updateRule = useUpdateAppControlRule();
   const deleteRule = useDeleteAppControlRule();
   const confirmDelete = useConfirm();
+  const advanced = useAppControlFeatures().data?.advanced ?? false;
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [form, setForm] = useState<AppControlRuleInput>(BLANK_RULE_FORM);
@@ -159,7 +172,15 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
             <tbody>
               {policy.rules.map((r) => (
                 <tr key={r.id} className={r.id === editingRuleId ? "ep-sel" : undefined}>
-                  <td>{RULE_TYPE_LABEL[r.ruleType]}</td>
+                  <td>
+                    {RULE_TYPE_LABEL[r.ruleType]}
+                    {ADVANCED_RULE_TYPES.includes(r.ruleType) && !advanced && (
+                      <>
+                        {" "}
+                        <Badge tone="neu">Not enforced</Badge>
+                      </>
+                    )}
+                  </td>
                   <td className="ep-mono">{r.value}</td>
                   <td>{r.label ?? <span className="app-muted">—</span>}</td>
                   <td>
@@ -191,14 +212,18 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
       <form onSubmit={handleSubmit} className="app-inset-form">
         <span className="app-subhead">{isEditing ? "Edit rule" : "Add rule"}</span>
         <FormGrid>
-          <Field label="Rule type" htmlFor="appctl-rule-type" help={RULE_TYPE_HINT[form.ruleType]}>
+          <Field
+            label="Rule type"
+            htmlFor="appctl-rule-type"
+            help={advanced && form.ruleType === "EXTENSION" ? ADVANCED_EXTENSION_HINT : RULE_TYPE_HINT[form.ruleType]}
+          >
             <select
               id="appctl-rule-type"
               className="ep-select"
               value={form.ruleType}
               onChange={(e) => setForm((prev) => ({ ...prev, ruleType: e.target.value as AppControlRuleType, value: "" }))}
             >
-              {RULE_TYPES.map((t) => (
+              {[...RULE_TYPES, ...ADVANCED_RULE_TYPES.filter((t) => advanced || t === form.ruleType)].map((t) => (
                 <option key={t} value={t}>
                   {RULE_TYPE_LABEL[t]}
                 </option>

@@ -50,6 +50,13 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true"),
+  // Advanced application control (Windows AppLocker): DLL blocking, PowerShell / batch / script
+  // blocking that also covers an open Command Prompt and scheduled tasks, and Allow exceptions.
+  // Off by default - an optional extra a deployment is given or not.
+  ADVANCED_APP_CONTROL: z
+    .string()
+    .default("false")
+    .transform((v) => v.trim().toLowerCase() === "true"),
   // Extra (public) networks allowed to reach the admin console/login/admin API, on top of
   // private addresses - comma-separated IPs or CIDRs, e.g. "203.0.113.7,198.51.100.0/24".
   // Needed when the server is cloud-hosted (EC2) and admins connect from the internet; see
@@ -102,6 +109,7 @@ export const config = {
     ? path.resolve(process.cwd(), parsed.data.LICENSE_SERVER_CA_PATH)
     : undefined,
   licenseEnforcementEnabled: parsed.data.LICENSE_ENFORCEMENT_ENABLED,
+  advancedAppControl: parsed.data.ADVANCED_APP_CONTROL,
   trustedProxy: parsed.data.TRUSTED_PROXY,
   adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")
     .map((s) => s.trim())

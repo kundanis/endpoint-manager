@@ -24,6 +24,21 @@ test("application control product and publisher rules refuse Microsoft, Windows 
   }
 });
 
+test("advanced application control: DLL rules name a real DLL outside Windows, Allow rules name a folder", () => {
+  for (const v of ["*.dll", "*", "evil.exe", "C:\\Windows\\System32\\evil.dll", "%WINDIR%\\x.dll", "%SYSTEM32%\\x.dll", "C:\\ProgramData\\EndpointPro\\Agent\\x.dll", "?.dll"]) {
+    assert.ok(appControlRuleProblem("DLL", v), `DLL ${v} should be refused`);
+  }
+  for (const v of ["evil.dll", "C:\\Users\\*\\AppData\\*\\hook.dll", "C:\\Program Files\\Foo\\bar.ocx"]) {
+    assert.equal(appControlRuleProblem("DLL", v), null, `DLL ${v} should be allowed`);
+  }
+  for (const v of ["*", "C:\\", "C:\\*", "%OSDRIVE%\\*", "\\"]) {
+    assert.ok(appControlRuleProblem("ALLOW_PATH", v), `allow ${v} should be refused`);
+  }
+  for (const v of ["C:\\IT\\Scripts", "\\\\fileserver\\tools\\*", "C:\\Tools\\app.exe"]) {
+    assert.equal(appControlRuleProblem("ALLOW_PATH", v), null, `allow ${v} should be allowed`);
+  }
+});
+
 test("command blocking refuses patterns that match Windows, but allows real threats", () => {
   for (const p of [".*", "", "exe", "\\\\", "windows", "svchost", "explorer"]) {
     assert.ok(commandBlockRuleProblem("COMMAND_PATTERN", p), `pattern "${p}" should be refused`);

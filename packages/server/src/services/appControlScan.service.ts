@@ -1,4 +1,6 @@
-import type { AppControlRuleType, AppControlRuleWire, AppControlScanResultPayload } from "@em/shared";
+import type { AppControlRuleType, AppControlRuleWire, AssignedAppControlResponse, AppControlScanResultPayload } from "@em/shared";
+import { isAdvancedAppControlRuleType } from "@em/shared";
+import { config } from "../config";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
 import { isAgentPaused } from "./pause.service";
@@ -21,6 +23,15 @@ async function activePolicyIdsForAgent(agentId: string): Promise<{ policyIds: st
 
   const enabled = await prisma.appControlPolicy.findMany({ where: { id: { in: notExcepted }, enabled: true }, select: { id: true } });
   return { policyIds: enabled.map((p) => p.id), groupIds };
+}
+
+// What GET /api/agent/app-control/assigned returns. DLL and Allow rules travel separately, and only
+// while advanced application control is on: older agents read every entry of .rules as a block.
+export async function resolveAssignedAppControlForAgent(agentId: string): Promise<AssignedAppControlResponse> {
+  const all = await resolveAssignedRulesForAgent(agentId);
+  const rules = all.filter((r) => !isAdvancedAppControlRuleType(r.ruleType));
+  if (!config.advancedAppControl) return { rules };
+  return { rules, advanced: { rules: all.filter((r) => isAdvancedAppControlRuleType(r.ruleType)) } };
 }
 
 // Flat, deduped by (ruleType, value) across every policy this agent enforces — two policies

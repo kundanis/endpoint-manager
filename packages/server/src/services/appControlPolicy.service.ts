@@ -6,7 +6,8 @@ import type {
   UpdateAppControlPolicyRequest,
   UpdateAppControlRuleRequest,
 } from "@em/shared";
-import { appControlRuleProblem } from "@em/shared";
+import { appControlRuleProblem, isAdvancedAppControlRuleType } from "@em/shared";
+import { config } from "../config";
 import { prisma } from "../db";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
@@ -95,6 +96,9 @@ export class UnsafeRuleError extends Error {}
 
 // Refuses rules that would stop Windows itself (see @em/shared endpointSafety).
 function assertSafe(ruleType: string, value: string) {
+  if (isAdvancedAppControlRuleType(ruleType) && !config.advancedAppControl) {
+    throw new UnsafeRuleError("DLL and Allow rules need advanced application control, which isn't switched on for this server.");
+  }
   const problem = appControlRuleProblem(ruleType, value);
   if (problem) throw new UnsafeRuleError(problem);
 }

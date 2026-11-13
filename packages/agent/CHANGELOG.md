@@ -6,6 +6,15 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.27
+- Advanced application control (only where the server has it switched on): the agent turns DLL
+  rules, Allow (exception) rules and the script and installer file types (.ps1, .bat, .cmd, .vbs,
+  .js, .msi) into Windows AppLocker rules, so Windows itself blocks them, including when run from an
+  open Command Prompt or PowerShell window or from a scheduled task. Rules apply to signed-in users,
+  not to Windows services or the agent. A company's own AppLocker rules are kept. Blocks show on the
+  Events tab; if Windows can't enforce a rule, Sync status shows Failed with the reason. The desktop
+  safety net, emergency release, pause and uninstall remove the agent's AppLocker rules.
+
 ## 0.2.26
 - Microsoft Defender no longer quarantines the agent's own data files. Defender's machine-learning
   scan could flag the App Control rules file (a list of the programs your policies block) as a

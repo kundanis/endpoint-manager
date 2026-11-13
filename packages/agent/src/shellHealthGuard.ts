@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { SafetyEventPayload } from "@em/shared";
-import { appControlRulesActive, IFEO_MARKER, IFEO_ROOTS, REMOVE_ALL_BLOCKS_PS, watcherRulesFile } from "./appControlPaths";
+import { appControlRulesActive, appLockerRulesActive, IFEO_MARKER, IFEO_ROOTS, REMOVE_ALL_BLOCKS_PS, watcherRulesFile } from "./appControlPaths";
 import { agentConfig } from "./config";
 
 const execFileAsync = promisify(execFile);
@@ -105,7 +105,7 @@ async function check(client: AxiosInstance) {
 
   // Only the agent's own blocking rules can be undone here; with none in force there is
   // nothing to recover from.
-  const managed = data.Managed + (appControlRulesActive() ? 1 : 0);
+  const managed = data.Managed + (appControlRulesActive() ? 1 : 0) + (appLockerRulesActive() ? 1 : 0);
   if (managed === 0) return;
   const stuck = (data.Sessions ?? []).find((s) => !s.HasDesktop && now - (missingSince.get(s.Id) ?? now) >= GRACE_MS);
   if (!stuck) return;

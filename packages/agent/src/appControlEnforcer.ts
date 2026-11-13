@@ -12,6 +12,7 @@ import {
   CRITICAL_WINDOWS_PROCESSES,
 } from "@em/shared";
 import { APP_CONTROL_DIR, BLOCKER_EVENTS_DIR, BLOCKER_SCRIPT, commandRulesFile, IFEO_MARKER, IFEO_ROOTS, watcherRulesFile } from "./appControlPaths";
+import { allowPattern, syncAppLocker } from "./appLockerEnforcer";
 import { agentConfig } from "./config";
 import { isEnforcementSuspended } from "./shellHealthGuard";
 
@@ -193,6 +194,7 @@ $windowsDir = ($env:SystemRoot.TrimEnd('\\') + '\\').ToLowerInvariant()
 $protected = @(${psList(CRITICAL_WINDOWS_PROCESSES)})
 $scriptHosts = @(${psList(SCRIPT_HOSTS)})
 $script:rules = @()
+$script:allows = @()
 $script:rulesStamp = -1
 $script:needSigner = $false
 $script:closes = @()
@@ -207,7 +209,10 @@ function Load-Rules {
   if ($stamp -ne $script:rulesStamp) {
     $script:rulesStamp = $stamp
     $loaded = if ($item) { Get-Content -LiteralPath $rulesFile -Raw | ConvertFrom-Json } else { $null }
-    $script:rules = @($loaded | Where-Object { $_ -and $_.ruleId })
+    $all = @($loaded | Where-Object { $_ -and $_.ruleId })
+    # Allow rules (advanced application control): exceptions to every block below.
+    $script:allows = @($all | Where-Object { $_.ruleType -eq 'ALLOW_PATH' } | ForEach-Object { [Environment]::ExpandEnvironmentVariables([string]$_.value).ToLowerInvariant() })
+    $script:rules = @($all | Where-Object { $_.ruleType -ne 'ALLOW_PATH' })
     $script:needSigner = @($script:rules | Where-Object { $_.ruleType -eq 'PUBLISHER' }).Count -gt 0
     $info.Clear()
     $changed = $true
@@ -269,6 +274,7 @@ function Find-Rule($procId, $path, $sessionId) {
   $name = [IO.Path]::GetFileName($lower)
   if ($lower.Contains('\\endpointpro\\')) { return $null }
   if ($protected -contains $name) { return $null }
+  foreach ($a in $script:allows) { if ($lower -like $a) { return $null } }
   $inWindows = $lower.StartsWith($windowsDir)
   $isHost = $scriptHosts -contains $name
   if ($inWindows -and -not $isHost) { return $null }
@@ -302,6 +308,8 @@ function Find-Rule($procId, $path, $sessionId) {
       if ($null -eq $cmd) { $cmd = [string](Get-CimInstance Win32_Process -Filter "ProcessId=$procId").CommandLine }
       $ext = if ($v.StartsWith('.')) { $v } else { '.' + $v }
       $hit = $cmd -match ([regex]::Escape($ext) + '(["''\\s]|$)')
+      # A script in an allowed folder runs.
+      if ($hit) { $lc = $cmd.ToLowerInvariant(); foreach ($a in $script:allows) { if ($lc -like ('*' + $a + '*')) { $hit = $false; break } } }
     }
     if ($hit) { return $r }
   }
@@ -516,16 +524,22 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
       return !problem;
     });
     // While the desktop safety net has suspended enforcement, nothing is blocked.
-    const rules = isEnforcementSuspended() ? [] : safe;
+    const suspended = isEnforcementSuspended();
+    const rules = suspended ? [] : safe;
+    // Advanced application control (AppLocker), when the server offers it: DLL and Allow rules.
+    const advanced = suspended ? undefined : data.advanced?.rules;
+    const allows = (advanced ?? []).filter((r) => r.ruleType === "ALLOW_PATH" && !appControlRuleProblem(r.ruleType, r.value));
     const launchBlocks = new Map<string, string>();
-    for (const r of rules) {
+    // A launch block stops a program by name wherever it is, so it can't honour Allow rules:
+    // with any Allow rule in force, the process watcher alone closes blocked programs.
+    for (const r of allows.length > 0 ? [] : rules) {
       const name = launchBlockName(r);
       if (name && !CRITICAL_WINDOWS_PROCESSES.includes(name) && !launchBlocks.has(name)) launchBlocks.set(name, r.ruleId);
     }
 
     await fsp.mkdir(APP_CONTROL_DIR, { recursive: true });
     await ensureBlockerFiles();
-    await writeWatcherRules(rules);
+    await writeWatcherRules(rules.length > 0 ? [...rules, ...allows.map((a) => ({ ...a, value: allowPattern(a.value) }))] : []);
     if (rules.length > 0 || watcher) ensureWatcher();
 
     const { stdout } = await execFileAsync(
@@ -545,7 +559,8 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
       });
     }
 
-    const raw = [...watcherEvents.splice(0), ...fallback, ...(await collectBlockerEvents(launchBlocks))];
+    const appLocker = await syncAppLocker(advanced, rules);
+    const raw = [...watcherEvents.splice(0), ...fallback, ...(await collectBlockerEvents(launchBlocks)), ...appLocker.events];
     void notifyClosed(raw);
     const now = Date.now();
     const events: AppControlEventPayload[] = [];
@@ -564,12 +579,14 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
 
     // Launch blocks are in place either way; a watcher that isn't working shows as Failed on the
     // Sync status tab with its reason, since renamed copies are then only caught every sync.
-    payload = watcherDown
-      ? {
-          status: "FAILED",
-          errorMessage: `${watcherProblem ?? "The process watcher hasn't started"}. Programs named in rules are still stopped at launch; renamed copies are closed at each sync (about every 20 seconds) instead of at once.`.slice(0, 1000),
-          events: events.slice(-200),
-        }
+    const problems = [
+      ...(watcherDown
+        ? [`${watcherProblem ?? "The process watcher hasn't started"}. Programs named in rules are still stopped at launch; renamed copies are closed at each sync (about every 20 seconds) instead of at once.`]
+        : []),
+      ...(appLocker.problem ? [`Advanced (AppLocker): ${appLocker.problem}.`] : []),
+    ];
+    payload = problems.length
+      ? { status: "FAILED", errorMessage: problems.join(" ").slice(0, 1000), events: events.slice(-200) }
       : { status: "APPLIED", errorMessage: null, events: events.slice(-200) };
     if (events.length) console.log(`App Control: ${events.length} blocked program(s)`);
   } catch (err) {

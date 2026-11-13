@@ -227,8 +227,19 @@ export const DATA_TOPICS: HelpTopic[] = [
     title: "EPM: Application control",
     path: "/epm/app-control",
     summary: "Block applications by name, path, product or publisher, or script types such as .vbs. Everything else stays allowed.",
-    keywords: ["block app", "whitelist", "blacklist", "executable", "renamed", "publisher", "product", "anydesk", "telegram", "black screen", "emergency"],
+    keywords: ["block app", "whitelist", "blacklist", "executable", "renamed", "publisher", "product", "anydesk", "telegram", "black screen", "emergency", "applocker", "dll", "powershell", "ps1", "batch", "bat", "allow", "exception"],
     sections: [
+      {
+        title: "Advanced application control (optional)",
+        items: [
+          "Offered only when the server has it switched on (ADVANCED_APP_CONTROL=true in its .env). It uses Windows AppLocker; needs Windows agent 0.2.27 or later.",
+          "DLL file rules block a library by name (in any folder) or by path. DLLs in the Windows folder are never blocked.",
+          "Script type rules for .ps1, .bat, .cmd, .vbs, .js and .msi are also enforced by AppLocker, so they apply when run from an open Command Prompt or PowerShell, or by a scheduled task.",
+          "Allow (exception) rules name a folder or file that is never blocked by any rule on the endpoint, for example the folder your IT team's scripts run from.",
+          "A device that already has its own AppLocker policy keeps it; Endpoint IQ only adds its block rules. Blocks show on the Events tab like any other.",
+          "If Windows can't enforce a rule (for example the Application Identity service won't start), the endpoint shows Failed on the Sync status tab with the reason.",
+        ],
+      },
       {
         title: "How blocking works",
         items: [
@@ -262,6 +273,15 @@ export const DATA_TOPICS: HelpTopic[] = [
         id: "epm-app-block",
         title: "Block an application",
         steps: policySteps("/epm/app-control", "Rules", "On the Rules tab, add the program name (for example AnyDesk.exe); to catch renamed copies and new versions too, add its Product name or Publisher as well."),
+      },
+      {
+        id: "epm-app-scripts",
+        title: "Block PowerShell and batch scripts, except IT's own",
+        steps: policySteps(
+          "/epm/app-control",
+          "Rules",
+          "On the Rules tab (advanced application control must be on for this server), add Script type .ps1, .bat, .cmd, then add an Allow (exception) rule for the folder your IT scripts run from, for example C:\\IT\\Scripts.",
+        ),
       },
     ],
   },

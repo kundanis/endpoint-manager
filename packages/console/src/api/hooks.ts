@@ -2007,6 +2007,15 @@ export function useAppControlPolicies() {
   });
 }
 
+// Whether this server offers advanced application control (ADVANCED_APP_CONTROL in its .env).
+export function useAppControlFeatures() {
+  return useQuery({
+    queryKey: ["appControlFeatures"],
+    queryFn: () => api.get<{ advanced: boolean }>("/admin/app-control/features"),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useAppControlPolicy(id: string | undefined) {
   return useQuery({
     queryKey: ["appControlPolicies", id],
