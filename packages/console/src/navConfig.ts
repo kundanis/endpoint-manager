@@ -51,12 +51,6 @@ export const NAV_MODULES: NavModule[] = [
     items: [{ path: "/network-scan", label: "Network discovery" }],
   },
   {
-    key: "software",
-    label: "App Center",
-    licenseModule: "SOFTWARE_MANAGER",
-    items: [{ path: "/software-licenses", label: "Software licenses" }],
-  },
-  {
     key: "security",
     label: "Security Posture",
     licenseModule: "SECURITY_MANAGER",
@@ -103,6 +97,12 @@ export const NAV_MODULES: NavModule[] = [
       { path: "/user-risk", label: "User risk", permission: "USER_RISK" },
       { path: "/admin-logs", label: "Admin logs", superAdminOnly: true },
     ],
+  },
+  {
+    key: "software",
+    label: "App Center",
+    licenseModule: "SOFTWARE_MANAGER",
+    items: [{ path: "/software-licenses", label: "Software licenses" }],
   },
   {
     key: "licensing",

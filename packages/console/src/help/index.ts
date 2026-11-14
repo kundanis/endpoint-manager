@@ -11,11 +11,13 @@ export type { HelpStep, HelpTarget, HelpTopic, HowTo } from "./types";
 export const HELP_TOPICS: HelpTopic[] = [
   ...DASHBOARD_TOPICS,
   ...ENDPOINT_HUB_TOPICS,
-  ...NETWORK_APP_TOPICS,
+  // App Center topics follow Identity Governance, as in the sidebar.
+  ...NETWORK_APP_TOPICS.filter((t) => t.module !== "App Center"),
   ...SECURITY_TOPICS,
   ...DATA_TOPICS,
   ...THREAT_TOPICS,
   ...IDENTITY_TOPICS,
+  ...NETWORK_APP_TOPICS.filter((t) => t.module === "App Center"),
   ...ADMIN_TOPICS,
 ];
 
