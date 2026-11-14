@@ -248,6 +248,7 @@ export const DATA_TOPICS: HelpTopic[] = [
           "Each block is listed on the policy's Events tab within about 20 seconds; select an endpoint to see every blocked program, its file and the rule that matched. Needs Windows agent 0.2.18 or later.",
           "Blocking the program doesn't block its website: add web.telegram.org (for example) under Web & email blocking too.",
           "Policies named Unlicensed software: <endpoint> are created by Block on an endpoint's Software tab. Release there removes the rule, and the last release removes the policy.",
+          "Each rule holds one value. To add several, type them in one go separated by commas (for example .ps1, .bat, .vbs) and each becomes its own rule; editing a rule to a list does the same. A rule marked Not enforced that holds a list matches nothing: edit it and save to split it.",
         ],
       },
       {

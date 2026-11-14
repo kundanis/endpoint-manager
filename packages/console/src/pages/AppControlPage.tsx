@@ -93,6 +93,11 @@ function splitBulkValues(raw: string, ruleType: AppControlRuleType): string[] {
   return [...new Set(raw.split(SEMICOLON_ONLY.has(ruleType) ? /;/ : /[;,]/).map((v) => v.trim()).filter(Boolean))];
 }
 
+// A rule saved before lists were refused, e.g. ".ps1, .bat" as one value: it matches no file.
+function isListInOneRule(r: Pick<AppControlRuleView, "ruleType" | "value">): boolean {
+  return !SEMICOLON_ONLY.has(r.ruleType) && /[;,]/.test(r.value);
+}
+
 function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
   const addRule = useAddAppControlRule();
   const updateRule = useUpdateAppControlRule();
@@ -124,13 +129,24 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
     setBulkError(null);
     const label = (form.label ?? "").trim() || null;
 
-    if (editingRuleId) {
-      updateRule.mutate({ policyId: policy.id, ruleId: editingRuleId, ruleType: form.ruleType, value: form.value, label }, { onSuccess: cancelEdit });
-      return;
-    }
+    const allValues = splitBulkValues(form.value, form.ruleType);
+    if (allValues.length === 0) return;
 
-    const values = splitBulkValues(form.value, form.ruleType);
-    if (values.length === 0) return;
+    // Editing to a list ("…, …"): this rule keeps the first value and the rest become new rules.
+    let values = allValues;
+    if (editingRuleId) {
+      try {
+        await updateRule.mutateAsync({ policyId: policy.id, ruleId: editingRuleId, ruleType: form.ruleType, value: allValues[0], label });
+      } catch {
+        return; // shown under the form from updateRule.error
+      }
+      values = allValues.slice(1);
+      setEditingRuleId(null);
+      if (values.length === 0) {
+        setForm(BLANK_RULE_FORM);
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     const failures: string[] = [];
@@ -174,10 +190,12 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
                 <tr key={r.id} className={r.id === editingRuleId ? "ep-sel" : undefined}>
                   <td>
                     {RULE_TYPE_LABEL[r.ruleType]}
-                    {ADVANCED_RULE_TYPES.includes(r.ruleType) && !advanced && (
+                    {((ADVANCED_RULE_TYPES.includes(r.ruleType) && !advanced) || isListInOneRule(r)) && (
                       <>
                         {" "}
-                        <Badge tone="neu">Not enforced</Badge>
+                        <span title={isListInOneRule(r) ? "Several values saved in one rule match nothing. Edit the rule and save it to split it into one rule per value." : undefined}>
+                          <Badge tone="neu">Not enforced</Badge>
+                        </span>
                       </>
                     )}
                   </td>

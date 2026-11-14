@@ -10,6 +10,9 @@ test("application control refuses rules that would stop Windows", () => {
   for (const v of ["explorer.exe", "C:\\Windows\\explorer.exe", "userinit.exe", "C:\\Windows\\System32\\cmd.exe", "%WINDIR%\\notepad.exe", "C:\\", "C:\\*", "*", "*.exe", "*\\*", "sihost.exe", "node.exe", "C:\\ProgramData\\EndpointPro\\Agent\\node\\node.exe"]) {
     assert.ok(appControlRuleProblem("EXECUTABLE", v), `executable ${v} should be refused`);
   }
+  for (const [type, v] of [["EXTENSION", ".ps1, .bat, .cmd"], ["EXTENSION", ".ps1;.bat"], ["EXTENSION", ". ps1"], ["EXECUTABLE", "a.exe, b.exe"], ["DLL", "a.dll,b.dll"]]) {
+    assert.ok(appControlRuleProblem(type, v), `${type} "${v}" (a list in one rule) should be refused`);
+  }
   for (const [type, v] of [["EXTENSION", ".vbs"], ["EXTENSION", ".hta"], ["EXTENSION", ".jar"], ["EXECUTABLE", "AnyDesk.exe"], ["EXECUTABLE", "C:\\Program Files\\uTorrent\\uTorrent.exe"], ["EXECUTABLE", "UltraViewer_Desktop.exe"]]) {
     assert.equal(appControlRuleProblem(type, v), null, `${type} ${v} should be allowed`);
   }

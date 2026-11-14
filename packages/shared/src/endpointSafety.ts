@@ -52,7 +52,13 @@ export function appControlRuleProblem(ruleType: string, rawValue: string): strin
     if (UNBLOCKABLE_EXTENSIONS.includes(ext)) {
       return `Blocking ${ext} files would stop Windows itself (the desktop and sign-in) from running. Block specific applications by name instead.`;
     }
+    // One file type per rule: ".ps1, .bat" saved as one value would match no file at all.
+    if (!/^\.[a-z0-9_-]{1,16}$/.test(ext)) return "Enter one file type per rule, for example .ps1. To add several at once, add a new rule with them separated by commas.";
     return null;
+  }
+  // A list in one rule ("a.exe, b.exe") would match nothing; the add form splits lists into rules.
+  if ((ruleType === "EXECUTABLE" || ruleType === "DLL") && /[;,]/.test(value)) {
+    return "Enter one value per rule. To add several at once, add a new rule with them separated by commas.";
   }
   if (ruleType === "PRODUCT" || ruleType === "PUBLISHER") {
     const bare = value.replace(/[*?]/g, "").trim();
