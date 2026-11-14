@@ -35,7 +35,11 @@ export const startRemoteInstallRequestSchema = z.object({
   enrollmentToken: z.string().min(1).optional(),
   serverUrl: z.string().min(1),
   targets: z.array(z.string().min(1)).min(1).max(50),
-  username: z.string().min(1),
-  password: z.string().min(1),
+  // Both, or neither: leave them out to use the remote install account saved in Asset settings.
+  username: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+}).refine((d) => !!d.username === !!d.password, {
+  message: "Give both the admin username and password, or neither to use the saved remote install account",
+  path: ["username"],
 });
 export type StartRemoteInstallRequest = z.infer<typeof startRemoteInstallRequestSchema>;

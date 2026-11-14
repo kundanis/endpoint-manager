@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { Ban, ClipboardCheck, Copy, Download, KeyRound, Plus, Radar } from "lucide-react";
 import {
   useAgentConnectionSettings,
+  useAgentSecurityStatus,
   useAssetGroups,
+  useCreateAssetGroup,
   useCreateEnrollmentToken,
   useDownloadAgentInstaller,
   useDownloadAgentSetup,
@@ -257,6 +259,9 @@ function ServerConnectionPanel() {
 // while the browser still holds the token value.
 function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; token: string; serverUrl: string }) {
   const startInstall = useStartRemoteInstall();
+  // With a remote install account saved (Asset settings -> Remote install) the account is optional.
+  const { data: security } = useAgentSecurityStatus();
+  const savedAccount = security?.remoteInstallUsername ?? null;
   const [targetsText, setTargetsText] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -271,7 +276,7 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
       .filter(Boolean);
     if (targets.length === 0) return;
     startInstall.mutate(
-      { tokenId, enrollmentToken: token, serverUrl, targets, username, password },
+      { tokenId, enrollmentToken: token, serverUrl, targets, ...(username.trim() && password ? { username, password } : {}) },
       { onSuccess: (result) => setJobId(result.jobId) },
     );
   }
@@ -302,23 +307,33 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                required
+                placeholder={savedAccount ?? undefined}
+                required={!savedAccount}
               />
             </Field>
-            <Field label="Password" htmlFor="remote-password" required>
+            <Field label="Password" htmlFor="remote-password" required={!savedAccount}>
               <input
                 id="remote-password"
                 className="ep-input"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
+                required={!savedAccount || !!username.trim()}
               />
             </Field>
           </FormGrid>
           <Alert tone="info">
-            This credential is used once to reach the target machine(s) and is never stored — it isn't saved anywhere on
-            this server.
+            {savedAccount ? (
+              <>
+                Leave the account empty to use the saved remote install account ({savedAccount}). An account typed here is used
+                once and never stored.
+              </>
+            ) : (
+              <>
+                This credential is used once to reach the target machine(s) and is never stored. A super admin can save one in
+                Asset settings → Remote install so it isn't asked each time.
+              </>
+            )}
           </Alert>
           {startInstall.isError && <Alert tone="critical">{(startInstall.error as Error).message}</Alert>}
         </div>
@@ -333,7 +348,7 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
           type="submit"
           variant="primary"
           icon={Download}
-          disabled={startInstall.isPending || !targetsText.trim() || !username.trim() || !password}
+          disabled={startInstall.isPending || !targetsText.trim() || (savedAccount ? !!username.trim() !== !!password : !username.trim() || !password)}
         >
           {startInstall.isPending ? "Starting…" : "Install on endpoint(s)"}
         </Button>
@@ -516,6 +531,11 @@ export default function EnrollmentTokensPage() {
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [usesRemaining, setUsesRemaining] = useState(1);
   const [groupId, setGroupId] = useState("");
+  // "New group…" in the Target group list: name it here and it's created and selected.
+  const NEW_GROUP = "__new__";
+  const createGroup = useCreateAssetGroup();
+  const [newGroupName, setNewGroupName] = useState("");
+  const [createdGroup, setCreatedGroup] = useState<{ id: string; name: string } | null>(null);
   const [justCreated, setJustCreated] = useState<{
     id: string;
     label: string;
@@ -530,19 +550,37 @@ export default function EnrollmentTokensPage() {
 
   const paged = usePagedList(tokens ?? []);
 
+  function handleCreateGroup() {
+    const name = newGroupName.trim();
+    if (!name) return;
+    createGroup.mutate(
+      { name },
+      {
+        onSuccess: (g) => {
+          setCreatedGroup({ id: g.id, name: g.name });
+          setGroupId(g.id);
+          setNewGroupName("");
+          toast(`Group ${g.name} created.`);
+        },
+      },
+    );
+  }
+
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     createToken.mutate(
-      { label, expiresInDays, usesRemaining, groupId: groupId || undefined },
+      { label, expiresInDays, usesRemaining, groupId: groupId && groupId !== NEW_GROUP ? groupId : undefined },
       {
         onSuccess: (result) => {
-          const group = groups?.find((g) => g.id === groupId);
+          const group = groups?.find((g) => g.id === groupId) ?? (createdGroup?.id === groupId ? createdGroup : undefined);
           setJustCreated({ id: result.id, label, token: result.token, groupName: group?.name ?? null });
           setCopied(false);
           setLabel("");
           setExpiresInDays(7);
           setUsesRemaining(1);
           setGroupId("");
+          setNewGroupName("");
+          setCreatedGroup(null);
           setCreating(false);
         },
       },
@@ -782,7 +820,7 @@ export default function EnrollmentTokensPage() {
           footer={
             <>
               <Button onClick={() => setCreating(false)}>Cancel</Button>
-              <Button type="submit" form="create-token-form" variant="primary" disabled={createToken.isPending || !label.trim()}>
+              <Button type="submit" form="create-token-form" variant="primary" disabled={createToken.isPending || !label.trim() || groupId === NEW_GROUP}>
                 {createToken.isPending ? "Creating…" : "Create token"}
               </Button>
             </>
@@ -828,7 +866,9 @@ export default function EnrollmentTokensPage() {
                 label="Target group (optional)"
                 htmlFor="token-group"
                 span2
-                help={groupId ? "Every endpoint that enrolls with this token will automatically be added to this group." : undefined}
+                help={
+                  groupId && groupId !== NEW_GROUP ? "Every endpoint that enrolls with this token will automatically be added to this group." : undefined
+                }
               >
                 <select id="token-group" className="ep-select" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
                   <option value="">No group</option>
@@ -837,8 +877,35 @@ export default function EnrollmentTokensPage() {
                       {g.name}
                     </option>
                   ))}
+                  {createdGroup && !groups?.some((g) => g.id === createdGroup.id) && <option value={createdGroup.id}>{createdGroup.name}</option>}
+                  <option value={NEW_GROUP}>New group…</option>
                 </select>
               </Field>
+              {groupId === NEW_GROUP && (
+                <Field label="New group name" htmlFor="token-new-group" span2 help="The group is created now and selected for this token.">
+                  <div className="app-actions-row">
+                    <input
+                      id="token-new-group"
+                      className="ep-input"
+                      type="text"
+                      maxLength={200}
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleCreateGroup();
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <Button icon={Plus} onClick={handleCreateGroup} disabled={!newGroupName.trim() || createGroup.isPending}>
+                      {createGroup.isPending ? "Creating…" : "Create group"}
+                    </Button>
+                  </div>
+                </Field>
+              )}
+              {createGroup.isError && <Alert tone="critical">{(createGroup.error as Error).message}</Alert>}
             </FormGrid>
             {createToken.isError && <Alert tone="critical">{(createToken.error as Error).message}</Alert>}
           </form>

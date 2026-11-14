@@ -7,12 +7,13 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     title: "User productivity",
     path: "/user-productivity",
     summary: "Sign-in sessions and active versus idle time on every endpoint, tracked automatically with no policy to set up.",
-    keywords: ["idle", "active time", "login", "logout", "attendance"],
+    keywords: ["idle", "active time", "total active", "week", "month", "year", "login", "logout", "attendance"],
     sections: [
       {
         title: "What you can see",
         items: [
           "Endpoints reporting, signed-in users, and today's active and idle time.",
+          "Total active for the period you pick at the top: Today, This week (from Monday), This month (from the 1st) or This year (from 1 January). It shows as a tile and as a column in Endpoints, and the active versus idle chart follows the same period.",
           "Session history per endpoint: who signed in, when and for how long.",
           "Daily history per user for any date range.",
         ],
@@ -20,10 +21,18 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     ],
     howTos: [
       {
+        id: "up-period",
+        title: "See total active time this month",
+        steps: [
+          { route: "/user-productivity", text: "At the top of the page, select This month." },
+          { text: "Read Total active this month on the tile, or per endpoint in the Endpoints table." },
+        ],
+      },
+      {
         id: "up-history",
         title: "See one user's working hours last week",
         steps: [
-          { route: "/user-productivity", text: "Select the endpoint in Endpoints today." },
+          { route: "/user-productivity", text: "Select the endpoint in Endpoints." },
           { text: "Open Daily history and set the From and To dates." },
         ],
       },

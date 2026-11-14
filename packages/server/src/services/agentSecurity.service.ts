@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import type { AgentSecurityStatus } from "@em/shared";
 import { prisma } from "../db";
+import { decryptField, encryptField } from "../utils/fieldEncryption";
 
 const SINGLETON_ID = "singleton";
 
@@ -10,10 +11,52 @@ async function getSettings() {
 
 export async function getStatus(): Promise<AgentSecurityStatus> {
   const settings = await getSettings();
+  return statusOf(settings);
+}
+
+function statusOf(settings: Awaited<ReturnType<typeof getSettings>>): AgentSecurityStatus {
   return {
     uninstallProtectionEnabled: !!settings?.uninstallPasswordHash,
     updatedAt: settings?.updatedAt.toISOString() ?? null,
+    remoteInstallUsername: settings?.remoteInstallUsername && settings.remoteInstallPasswordEncrypted ? settings.remoteInstallUsername : null,
   };
+}
+
+export class RemoteInstallAccountError extends Error {}
+
+// Saves the remote install account. The password is kept encrypted and never returned; leaving
+// it out keeps the saved password (only allowed when one is saved).
+export async function setRemoteInstallAccount(username: string, password?: string): Promise<AgentSecurityStatus> {
+  const current = await getSettings();
+  if (!password && !current?.remoteInstallPasswordEncrypted) {
+    throw new RemoteInstallAccountError("Enter the password for this account.");
+  }
+  const data = {
+    remoteInstallUsername: username,
+    ...(password ? { remoteInstallPasswordEncrypted: encryptField(password) } : {}),
+  };
+  const settings = await prisma.agentSecuritySettings.upsert({
+    where: { id: SINGLETON_ID },
+    create: { id: SINGLETON_ID, ...data },
+    update: data,
+  });
+  return statusOf(settings);
+}
+
+export async function clearRemoteInstallAccount(): Promise<AgentSecurityStatus> {
+  const settings = await prisma.agentSecuritySettings.upsert({
+    where: { id: SINGLETON_ID },
+    create: { id: SINGLETON_ID },
+    update: { remoteInstallUsername: null, remoteInstallPasswordEncrypted: null },
+  });
+  return statusOf(settings);
+}
+
+// For remoteInstall.service only: the saved account in plain text, or null when none is saved.
+export async function getRemoteInstallCredential(): Promise<{ username: string; password: string } | null> {
+  const settings = await getSettings();
+  if (!settings?.remoteInstallUsername || !settings.remoteInstallPasswordEncrypted) return null;
+  return { username: settings.remoteInstallUsername, password: decryptField(settings.remoteInstallPasswordEncrypted) };
 }
 
 export async function setUninstallPassword(password: string): Promise<AgentSecurityStatus> {
@@ -23,7 +66,7 @@ export async function setUninstallPassword(password: string): Promise<AgentSecur
     create: { id: SINGLETON_ID, uninstallPasswordHash },
     update: { uninstallPasswordHash },
   });
-  return { uninstallProtectionEnabled: true, updatedAt: settings.updatedAt.toISOString() };
+  return statusOf(settings);
 }
 
 export async function clearUninstallPassword(): Promise<AgentSecurityStatus> {
@@ -32,7 +75,7 @@ export async function clearUninstallPassword(): Promise<AgentSecurityStatus> {
     create: { id: SINGLETON_ID, uninstallPasswordHash: null },
     update: { uninstallPasswordHash: null },
   });
-  return { uninstallProtectionEnabled: false, updatedAt: settings.updatedAt.toISOString() };
+  return statusOf(settings);
 }
 
 // No password configured at all => nothing to check against => allow (protection is

@@ -16,6 +16,7 @@ import {
 import type { NetworkScanRunDetail, NetworkScanRunListItem, NetworkVlanListItem } from "../api/types";
 import Collapsible from "../components/Collapsible";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
+import InstallAgentAction from "../components/InstallAgentAction";
 import {
   Alert,
   Button,
@@ -230,6 +231,9 @@ function DiscoveredHostsTable({ runDetail }: { runDetail: NetworkScanRunDetail }
                 </th>
                 <th scope="col">Status</th>
                 <th scope="col">User</th>
+                <th scope="col" style={{ textAlign: "right" }}>
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -255,6 +259,14 @@ function DiscoveredHostsTable({ runDetail }: { runDetail: NetworkScanRunDetail }
                     )}
                   </td>
                   <td>{host.matchedAgent?.lastLoggedOnUser ?? <span className="app-muted">—</span>}</td>
+                  <td>
+                    {/* Unmanaged devices: install the agent remotely (Windows admin account, WinRM). */}
+                    {!host.matchedAgent && (
+                      <div className="app-cell-actions">
+                        <InstallAgentAction hostname={host.hostname} ipAddress={host.ipAddress} />
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

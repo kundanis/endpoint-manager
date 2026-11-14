@@ -1,4 +1,4 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AppUsageKind,
   AppUsageRow,
@@ -105,6 +105,9 @@ import type {
   NetworkVlanListItem,
   UserProductivityDailyLogView,
   UserProductivitySummaryAgentView,
+  ProductivityPeriod,
+  VulnerabilityExceptionReason,
+  VulnerabilityExceptionView,
   UserSessionView,
   WebBlockAgentBreakdown,
   WebBlockAssignmentView,
@@ -356,8 +359,9 @@ export function useStartRemoteInstall() {
       enrollmentToken?: string;
       serverUrl: string;
       targets: string[];
-      username: string;
-      password: string;
+      // Both or neither: leave out to use the saved remote install account (Asset settings).
+      username?: string;
+      password?: string;
     }) => api.post<{ jobId: string }>("/admin/remote-install", body),
   });
 }
@@ -584,12 +588,19 @@ export function useDeleteDuplicateAgents() {
   });
 }
 
-export function usePatchSummary(groupId?: string) {
+// Patches page filter: a group (groupId) or one endpoint (agentId); neither = every endpoint.
+function patchScopeQs(groupId?: string, agentId?: string): string {
+  if (agentId) return `?agentId=${encodeURIComponent(agentId)}`;
+  if (groupId) return `?groupId=${encodeURIComponent(groupId)}`;
+  return "";
+}
+
+export function usePatchSummary(groupId?: string, agentId?: string) {
   return useQuery({
-    queryKey: ["patchSummary", groupId ?? null],
-    queryFn: () =>
-      api.get<PatchSummaryItem[]>(`/admin/patches${groupId ? `?groupId=${encodeURIComponent(groupId)}` : ""}`),
+    queryKey: ["patchSummary", groupId ?? null, agentId ?? null],
+    queryFn: () => api.get<PatchSummaryItem[]>(`/admin/patches${patchScopeQs(groupId, agentId)}`),
     refetchInterval: 10000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -599,10 +610,10 @@ export interface PatchMissingAgent {
   detectedAt: string;
 }
 
-export function useAgentsMissingPatch(patchDefinitionId: string | undefined) {
+export function useAgentsMissingPatch(patchDefinitionId: string | undefined, groupId?: string, agentId?: string) {
   return useQuery({
-    queryKey: ["patchMissingAgents", patchDefinitionId],
-    queryFn: () => api.get<PatchMissingAgent[]>(`/admin/patches/${patchDefinitionId}/agents`),
+    queryKey: ["patchMissingAgents", patchDefinitionId, groupId ?? null, agentId ?? null],
+    queryFn: () => api.get<PatchMissingAgent[]>(`/admin/patches/${patchDefinitionId}/agents${patchScopeQs(groupId, agentId)}`),
     enabled: !!patchDefinitionId,
     refetchInterval: 10000,
   });
@@ -668,11 +679,64 @@ export function useDeleteAutoPatchPolicy() {
   });
 }
 
-export function useVulnerabilitySummary() {
+// Vulnerabilities page filter: one endpoint or a group (both empty = the whole fleet).
+export interface VulnerabilityScope {
+  agentId?: string;
+  groupId?: string;
+}
+
+function scopeQs(scope?: VulnerabilityScope): string {
+  if (scope?.agentId) return `?agentId=${encodeURIComponent(scope.agentId)}`;
+  if (scope?.groupId) return `?groupId=${encodeURIComponent(scope.groupId)}`;
+  return "";
+}
+
+export function useVulnerabilitySummary(scope?: VulnerabilityScope) {
   return useQuery({
-    queryKey: ["vulnerabilitySummary"],
-    queryFn: () => api.get<VulnerabilitySummaryItem[]>("/admin/vulnerabilities"),
+    queryKey: ["vulnerabilitySummary", scope?.agentId ?? "", scope?.groupId ?? ""],
+    queryFn: () => api.get<VulnerabilitySummaryItem[]>(`/admin/vulnerabilities${scopeQs(scope)}`),
     refetchInterval: 10000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Vulnerability exceptions (Mark as False positive / Not applicable / Risk accepted).
+export function useVulnerabilityExceptions() {
+  return useQuery({
+    queryKey: ["vulnerabilityExceptions"],
+    queryFn: () => api.get<VulnerabilityExceptionView[]>("/admin/vulnerabilities/exceptions"),
+  });
+}
+
+function invalidateVulnerabilities(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["vulnerabilityExceptions"] });
+  qc.invalidateQueries({ queryKey: ["vulnerabilitySummary"] });
+  qc.invalidateQueries({ queryKey: ["vulnerabilityDetail"] });
+}
+
+export function useCreateVulnerabilityException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      vulnerabilityDefinitionId: string;
+      softwareName: string;
+      softwareVersion?: string | null;
+      scope: "ALL" | "GROUP" | "AGENT";
+      agentId?: string;
+      groupId?: string;
+      reason: VulnerabilityExceptionReason;
+      note: string;
+      expiresAt?: string | null;
+    }) => api.post<{ id: string }>("/admin/vulnerabilities/exceptions", body),
+    onSuccess: () => invalidateVulnerabilities(qc),
+  });
+}
+
+export function useDeleteVulnerabilityException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/vulnerabilities/exceptions/${id}`),
+    onSuccess: () => invalidateVulnerabilities(qc),
   });
 }
 
@@ -710,10 +774,10 @@ export function useTriggerVulnerabilityRescan() {
   });
 }
 
-export function useVulnerabilityDetail(vulnerabilityDefinitionId: string | undefined) {
+export function useVulnerabilityDetail(vulnerabilityDefinitionId: string | undefined, scope?: VulnerabilityScope) {
   return useQuery({
-    queryKey: ["vulnerabilityDetail", vulnerabilityDefinitionId],
-    queryFn: () => api.get<VulnerabilityDetail>(`/admin/vulnerabilities/${vulnerabilityDefinitionId}/agents`),
+    queryKey: ["vulnerabilityDetail", vulnerabilityDefinitionId, scope?.agentId ?? "", scope?.groupId ?? ""],
+    queryFn: () => api.get<VulnerabilityDetail>(`/admin/vulnerabilities/${vulnerabilityDefinitionId}/agents${scopeQs(scope)}`),
     enabled: !!vulnerabilityDefinitionId,
     // Poll while any endpoint's remediation is still queued or running.
     refetchInterval: (query) =>
@@ -740,8 +804,8 @@ export function useRemediateVulnerability() {
 export function useRemediateBySeverity() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (severities: string[]) =>
-      api.post<VulnerabilityRemediationResult>("/admin/vulnerabilities/remediate-by-severity", { severities }),
+    mutationFn: ({ severities, scope }: { severities: string[]; scope?: VulnerabilityScope }) =>
+      api.post<VulnerabilityRemediationResult>("/admin/vulnerabilities/remediate-by-severity", { severities, ...scope }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["vulnerabilitySummary"] }),
   });
 }
@@ -775,6 +839,25 @@ export function useClearUninstallPassword() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.del<AgentSecurityStatusView>("/admin/agent-security/uninstall-password"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agentSecurityStatus"] }),
+  });
+}
+
+// Remote install account (Asset settings -> Remote install; super admins). Leave password out to
+// keep the saved one.
+export function useSetRemoteInstallAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { username: string; password?: string }) =>
+      api.put<AgentSecurityStatusView>("/admin/agent-security/remote-install-account", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agentSecurityStatus"] }),
+  });
+}
+
+export function useClearRemoteInstallAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del<AgentSecurityStatusView>("/admin/agent-security/remote-install-account"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agentSecurityStatus"] }),
   });
 }
@@ -1471,6 +1554,46 @@ export function useAddZeroTrustCondition() {
   return useMutation({
     mutationFn: ({ policyId, ...body }: { policyId: string } & ZeroTrustConditionInput) =>
       api.post<ZeroTrustPolicyDetail>(`/admin/zero-trust/${policyId}/conditions`, body),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies", variables.policyId] });
+    },
+  });
+}
+
+// The built-in checks any Zero Trust policy can take (Conditions -> Add built-in check).
+// requiredSoftwareKeys: the conditions the Required software tab manages. Built-in checks and
+// those can be switched off but not deleted.
+export function useZeroTrustBuiltInConditions() {
+  return useQuery({
+    queryKey: ["zeroTrustBuiltInConditions"],
+    queryFn: () =>
+      api.get<{
+        conditions: { conditionKey: string; title: string; description: string; checkPowerShell: string; operator: SecurityRuleOperator; expectedValue: string }[];
+        requiredSoftwareKeys: string[];
+      }>("/admin/zero-trust/built-in-conditions"),
+    staleTime: Infinity,
+  });
+}
+
+// "Reset to built-in": an edited built-in check goes back to its shipped definition.
+export function useResetZeroTrustCondition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, conditionId }: { policyId: string; conditionId: string }) =>
+      api.post<ZeroTrustPolicyDetail>(`/admin/zero-trust/${policyId}/conditions/${conditionId}/reset`, {}),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] });
+      qc.invalidateQueries({ queryKey: ["zeroTrustPolicies", variables.policyId] });
+    },
+  });
+}
+
+export function useAddZeroTrustBuiltInConditions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, conditionKeys }: { policyId: string; conditionKeys: string[] }) =>
+      api.post<{ added: number; policy: ZeroTrustPolicyDetail }>(`/admin/zero-trust/${policyId}/built-in-conditions`, { conditionKeys }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["zeroTrustPolicies"] });
       qc.invalidateQueries({ queryKey: ["zeroTrustPolicies", variables.policyId] });
@@ -3308,10 +3431,11 @@ export function useVlanScanRuns(vlanId: string | undefined) {
   });
 }
 
-export function useUserProductivitySummary() {
+export function useUserProductivitySummary(period: ProductivityPeriod = "day") {
   return useQuery({
-    queryKey: ["userProductivitySummary"],
-    queryFn: () => api.get<UserProductivitySummaryAgentView[]>("/admin/user-productivity/summary"),
+    queryKey: ["userProductivitySummary", period],
+    queryFn: () => api.get<UserProductivitySummaryAgentView[]>(`/admin/user-productivity/summary?period=${period}`),
+    placeholderData: keepPreviousData,
     refetchInterval: 15000,
   });
 }
@@ -3867,12 +3991,15 @@ export function useThreatOverview() {
   return useQuery({ queryKey: ["threatOverview"], queryFn: () => api.get<ThreatOverview>("/admin/threat-protection/overview"), refetchInterval: 30000 });
 }
 
-export function useThreatDetections(status: "open" | "all", days: number, agentId?: string) {
+// enabled=false: nothing is fetched (e.g. the endpoint page when Threat Protection is hidden).
+export function useThreatDetections(status: "open" | "all", days: number, agentId?: string, enabled = true) {
   const qs = new URLSearchParams({ status, days: String(days), ...(agentId ? { agentId } : {}) });
   return useQuery({
     queryKey: ["threatDetections", status, days, agentId ?? ""],
     queryFn: () => api.get<ThreatDetectionView[]>(`/admin/threat-protection/threats?${qs.toString()}`),
     refetchInterval: 30000,
+    enabled,
+    retry: false,
   });
 }
 

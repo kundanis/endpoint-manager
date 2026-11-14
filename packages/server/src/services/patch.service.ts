@@ -65,12 +65,18 @@ export async function recordPatchScan(agentId: string, payload: PatchScanResultP
 // groupId scopes "missing across the fleet" down to one asset group (e.g. "Production" vs
 // "Test") - the environment-filtering this RFP clause actually asks for reuses the asset
 // groups that already exist rather than inventing a parallel "environment" concept.
-export async function getFleetPatchSummary(groupId?: string) {
-  const agentIdFilter = groupId
-    ? (await prisma.agentGroupMembership.findMany({ where: { groupId }, select: { agentId: true } })).map(
-        (m) => m.agentId,
-      )
-    : undefined;
+// Patches page filter: one endpoint, or a group's endpoints. undefined = every endpoint.
+export async function resolvePatchScope(filter: { agentId?: string; groupId?: string }): Promise<string[] | undefined> {
+  if (filter.agentId) return [filter.agentId];
+  if (filter.groupId) {
+    return (await prisma.agentGroupMembership.findMany({ where: { groupId: filter.groupId }, select: { agentId: true } })).map((m) => m.agentId);
+  }
+  return undefined;
+}
+
+export async function getFleetPatchSummary(groupId?: string, agentId?: string) {
+  const agentIdFilter = await resolvePatchScope({ agentId, groupId });
+  if (agentIdFilter && agentIdFilter.length === 0) return [];
 
   const grouped = await prisma.patchFinding.groupBy({
     by: ["patchDefinitionId"],
@@ -113,9 +119,9 @@ export async function getFleetPatchSummary(groupId?: string) {
 
 // The endpoints on which a specific patch is currently MISSING - drives the per-patch
 // drill-down on the Patches page so an admin can dispatch it to just the affected machines.
-export async function getAgentsMissingPatch(patchDefinitionId: string) {
+export async function getAgentsMissingPatch(patchDefinitionId: string, scope?: string[]) {
   const findings = await prisma.patchFinding.findMany({
-    where: { patchDefinitionId, status: "MISSING" },
+    where: { patchDefinitionId, status: "MISSING", ...(scope ? { agentId: { in: scope } } : {}) },
     include: { agent: { select: { id: true, hostname: true } } },
   });
   return findings

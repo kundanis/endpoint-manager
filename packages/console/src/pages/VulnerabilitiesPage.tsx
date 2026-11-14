@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Bug, History, RefreshCw, SearchX, ShieldAlert, Trash2, X } from "lucide-react";
 import {
+  useAgents,
+  useAssetGroups,
+  useCreateVulnerabilityException,
+  useDeleteVulnerabilityException,
   useRemediateBySeverity,
   useRemediateVulnerability,
   useTriggerVulnerabilityRescan,
   useTriggerVulnerabilitySync,
   useVulnerabilityDetail,
   useVulnerabilitySummary,
+  useVulnerabilityExceptions,
   useVulnerabilitySyncRuns,
 } from "../api/hooks";
-import type { VulnerabilityRemediationResult, VulnerabilitySyncRunView } from "../api/types";
+import type {
+  VulnerabilityExceptionReason,
+  VulnerabilityExceptionView,
+  VulnerabilityFindingView,
+  VulnerabilityRemediationResult,
+  VulnerabilitySyncRunView,
+} from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
 import RemediationStatus from "../components/RemediationStatus";
 import {
@@ -25,6 +37,8 @@ import {
   KeyValueList,
   Kpi,
   KpiStrip,
+  Modal,
+  FormGrid,
   PageHeader,
   Pagination,
   Pill,
@@ -33,6 +47,7 @@ import {
   Toolbar,
   useConfirm,
   usePagedList,
+  useToast,
 } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
 
@@ -80,8 +95,247 @@ function RemediationResultAlert({ result }: { result: VulnerabilityRemediationRe
   );
 }
 
+const EXCEPTION_REASON_LABELS: Record<VulnerabilityExceptionReason, string> = {
+  FALSE_POSITIVE: "False positive",
+  NOT_APPLICABLE: "Not applicable",
+  RISK_ACCEPTED: "Risk accepted",
+};
+
+// "Mark as…" on a CVE's endpoint row: a CVE + that software becomes an exception for this endpoint,
+// a group or every endpoint (optionally this version only). Covered findings leave the counts and
+// are never remediated; every rescan keeps them marked.
+function MarkExceptionDialog({
+  cveId,
+  vulnerabilityDefinitionId,
+  finding,
+  onClose,
+}: {
+  cveId: string;
+  vulnerabilityDefinitionId: string;
+  finding: VulnerabilityFindingView;
+  onClose: (message?: string) => void;
+}) {
+  const create = useCreateVulnerabilityException();
+  const { data: groups } = useAssetGroups();
+  const [reason, setReason] = useState<VulnerabilityExceptionReason>("FALSE_POSITIVE");
+  const [scope, setScope] = useState<"AGENT" | "GROUP" | "ALL">("AGENT");
+  const [groupId, setGroupId] = useState("");
+  const [versionOnly, setVersionOnly] = useState(false);
+  const [note, setNote] = useState("");
+  const [reviewDate, setReviewDate] = useState("");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    create.mutate(
+      {
+        vulnerabilityDefinitionId,
+        softwareName: finding.matchedSoftwareName,
+        softwareVersion: versionOnly ? finding.matchedSoftwareVersion : null,
+        scope,
+        ...(scope === "AGENT" ? { agentId: finding.agentId } : {}),
+        ...(scope === "GROUP" ? { groupId } : {}),
+        reason,
+        note: note.trim(),
+        expiresAt: reason === "RISK_ACCEPTED" && reviewDate ? new Date(`${reviewDate}T23:59:59`).toISOString() : null,
+      },
+      { onSuccess: () => onClose(`${cveId} on ${finding.matchedSoftwareName} marked ${EXCEPTION_REASON_LABELS[reason].toLowerCase()}.`) },
+    );
+  }
+
+  return (
+    <Modal
+      title={`Mark ${cveId} as…`}
+      description={`For ${finding.matchedSoftwareName}${finding.matchedSoftwareVersion ? ` ${finding.matchedSoftwareVersion}` : ""}. Marked findings leave the counts, are never uninstalled by Remediate, and stay marked after every sync and rescan. Remove the exception under Exceptions to undo it.`}
+      onClose={() => onClose()}
+      footer={
+        <>
+          <Button onClick={() => onClose()}>Cancel</Button>
+          <Button type="submit" form="vuln-exception-form" variant="primary" disabled={create.isPending || note.trim().length < 3 || (scope === "GROUP" && !groupId)}>
+            {create.isPending ? "Saving…" : "Mark"}
+          </Button>
+        </>
+      }
+    >
+      <form id="vuln-exception-form" onSubmit={handleSubmit} className="app-stack">
+        <FormGrid>
+          <Field label="Mark as" htmlFor="vex-reason" required>
+            <select id="vex-reason" className="ep-select" value={reason} onChange={(e) => setReason(e.target.value as VulnerabilityExceptionReason)}>
+              <option value="FALSE_POSITIVE">False positive — the software isn't affected</option>
+              <option value="NOT_APPLICABLE">Not applicable — the issue can't occur here</option>
+              <option value="RISK_ACCEPTED">Risk accepted — affected, but we accept it</option>
+            </select>
+          </Field>
+          <Field label="Applies to" htmlFor="vex-scope" required>
+            <select id="vex-scope" className="ep-select" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
+              <option value="AGENT">This endpoint ({finding.hostname})</option>
+              <option value="GROUP">A group</option>
+              <option value="ALL">Every endpoint</option>
+            </select>
+          </Field>
+          {scope === "GROUP" && (
+            <Field label="Group" htmlFor="vex-group" required span2>
+              <select id="vex-group" className="ep-select" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+                <option value="">Choose a group</option>
+                {(groups ?? []).map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {finding.matchedSoftwareVersion && (
+            <Field label="Version" htmlFor="vex-version" span2>
+              <Check
+                checked={versionOnly}
+                onChange={setVersionOnly}
+                label={`Only version ${finding.matchedSoftwareVersion}`}
+                hint="Another version of this software is flagged again."
+              />
+            </Field>
+          )}
+          <Field label="Why" htmlFor="vex-note" required span2 help="Others see this when they review the exception.">
+            <textarea id="vex-note" className="ep-textarea" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} required />
+          </Field>
+          {reason === "RISK_ACCEPTED" && (
+            <Field label="Review by (optional)" htmlFor="vex-review" help="After this date the findings come back as open.">
+              <input id="vex-review" className="ep-input" type="date" value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} />
+            </Field>
+          )}
+        </FormGrid>
+        {create.isError && <Alert tone="critical">{(create.error as Error).message}</Alert>}
+      </form>
+    </Modal>
+  );
+}
+
+// Every exception, with who set it and why; Remove puts its findings back to open.
+function ExceptionsCard({ onOpenCve }: { onOpenCve: (vulnerabilityDefinitionId: string) => void }) {
+  const { data, isLoading } = useVulnerabilityExceptions();
+  const remove = useDeleteVulnerabilityException();
+  const confirm = useConfirm();
+  const paged = usePagedList(data ?? [], 10);
+
+  async function handleRemove(x: VulnerabilityExceptionView) {
+    const ok = await confirm({
+      title: `Remove the exception for ${x.cveId}?`,
+      body: `${x.softwareName} findings it covered come back as open and can be remediated again.`,
+      confirmLabel: "Remove exception",
+      tone: "danger",
+    });
+    if (!ok) return;
+    remove.mutate(x.id);
+  }
+
+  return (
+    <Card flush title="Exceptions" hint={data ? `${data.length} marked false positive, not applicable or risk accepted` : undefined}>
+      {isLoading ? (
+        <div className="ep-cb">
+          <Skeleton />
+        </div>
+      ) : !data || data.length === 0 ? (
+        <EmptyState icon={ShieldAlert} title="No exceptions">
+          Open a CVE and use Mark as… on an endpoint row to mark it a false positive, not applicable or a risk accepted.
+        </EmptyState>
+      ) : (
+        <>
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">CVE</th>
+                  <th scope="col">Software</th>
+                  <th scope="col">Applies to</th>
+                  <th scope="col">Marked as</th>
+                  <th scope="col">Why</th>
+                  <th scope="col">By</th>
+                  <th scope="col">
+                    <span className="app-vh">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.pageItems.map((x) => (
+                  <tr key={x.id}>
+                    <td className="ep-mono" style={{ whiteSpace: "nowrap" }}>
+                      <button type="button" className="ep-link" onClick={() => onOpenCve(x.vulnerabilityDefinitionId)}>
+                        {x.cveId}
+                      </button>{" "}
+                      <SeverityBadge severity={x.cvssSeverity} />
+                    </td>
+                    <td>
+                      {x.softwareName}
+                      {x.softwareVersion && <span className="app-row-sub">version {x.softwareVersion} only</span>}
+                    </td>
+                    <td>{x.scope === "AGENT" ? (x.hostname ?? "Endpoint") : x.scope === "GROUP" ? `Group ${x.groupName ?? ""}` : "Every endpoint"}</td>
+                    <td>
+                      <Badge tone="neu">{EXCEPTION_REASON_LABELS[x.reason]}</Badge>
+                      {x.expiresAt && (
+                        <span className="app-row-sub">
+                          {x.expired ? <Badge tone="med">Review date passed</Badge> : `review by ${formatDate(x.expiresAt)}`}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ overflowWrap: "anywhere" }}>{x.note}</td>
+                    <td className="app-muted">
+                      {x.createdBy ?? "—"}
+                      <span className="app-row-sub">{formatDateTime(x.createdAt)}</span>
+                    </td>
+                    <td>
+                      <IconButton icon={Trash2} label={`Remove exception for ${x.cveId}`} onClick={() => handleRemove(x)} disabled={remove.isPending} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={paged.page}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            noun="exceptions"
+            onPageChange={paged.setPage}
+            onPageSizeChange={paged.setPageSize}
+          />
+        </>
+      )}
+      {remove.isError && (
+        <div className="ep-cb">
+          <Alert tone="critical">{(remove.error as Error).message}</Alert>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function VulnerabilitiesPage() {
-  const { data: summary, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = useVulnerabilitySummary();
+  // Endpoint / Group filter, kept in the address (?agent= / ?group=) so Security posture on an
+  // endpoint can link straight here. Neither set = the whole fleet, as before.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const agentFilter = searchParams.get("agent") ?? "";
+  const groupFilter = agentFilter ? "" : (searchParams.get("group") ?? "");
+  const scope = agentFilter ? { agentId: agentFilter } : groupFilter ? { groupId: groupFilter } : undefined;
+  const { data: agents } = useAgents();
+  const { data: groups } = useAssetGroups();
+  const scopeLabel = agentFilter
+    ? (agents?.find((a) => a.id === agentFilter)?.hostname ?? "this endpoint")
+    : groupFilter
+      ? `group ${groups?.find((g) => g.id === groupFilter)?.name ?? ""}`.trim()
+      : null;
+
+  function setScope(next: { agent?: string; group?: string }) {
+    const params = new URLSearchParams(searchParams);
+    params.delete("agent");
+    params.delete("group");
+    if (next.agent) params.set("agent", next.agent);
+    else if (next.group) params.set("group", next.group);
+    setSearchParams(params, { replace: true });
+    setSelectedDefId(undefined);
+    setSeverityResult(null);
+    setCveResult(null);
+  }
+
+  const { data: summary, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = useVulnerabilitySummary(scope);
   const { data: syncRuns, isLoading: syncRunsLoading } = useVulnerabilitySyncRuns();
   const triggerSync = useTriggerVulnerabilitySync();
   const triggerRescan = useTriggerVulnerabilityRescan();
@@ -117,7 +371,9 @@ export default function VulnerabilitiesPage() {
     return { severity: s, cves: items.length, matches: items.reduce((sum, item) => sum + item.affectedAgentCount, 0) };
   });
 
-  const { data: detail } = useVulnerabilityDetail(selectedDefId);
+  const { data: detail } = useVulnerabilityDetail(selectedDefId, scope);
+  const toast = useToast();
+  const [markingFinding, setMarkingFinding] = useState<VulnerabilityFindingView | null>(null);
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
   const detailPanelRef = useRef<HTMLDivElement>(null);
   const pagedFindings = usePagedList(detail?.findings ?? [], 25);
@@ -131,7 +387,7 @@ export default function VulnerabilitiesPage() {
 
   // "Select all" ticks every row, name-only matches included — the confirm dialog in
   // handleRemediateVulnerability spells out how many of the selection are name-only.
-  const allFindingIds = detail?.findings.map((f) => f.id) ?? [];
+  const allFindingIds = detail?.findings.filter((f) => f.status !== "EXCEPTED").map((f) => f.id) ?? [];
   const allSelected = allFindingIds.length > 0 && allFindingIds.every((id) => selectedFindingIds.includes(id));
   const selectedAgentCount = detail
     ? new Set(detail.findings.filter((f) => selectedFindingIds.includes(f.id)).map((f) => f.agentId)).size
@@ -166,7 +422,7 @@ export default function VulnerabilitiesPage() {
   async function handleRemediateSeverities() {
     if (selectedSeverities.length === 0) return;
     const confirmed = await confirm({
-      title: `Uninstall the vulnerable software for every OPEN ${selectedSeverities.join("/")} finding across the fleet?`,
+      title: `Uninstall the vulnerable software for every OPEN ${selectedSeverities.join("/")} finding ${scopeLabel ? `on ${scopeLabel}` : "across the fleet"}?`,
       body:
         "This dispatches a real uninstall command to every affected endpoint. Lower-confidence (name-only) matches " +
         "are skipped automatically.",
@@ -175,7 +431,7 @@ export default function VulnerabilitiesPage() {
     });
     if (!confirmed) return;
     setSeverityResult(null);
-    remediateSeverity.mutate(selectedSeverities, { onSuccess: (result) => setSeverityResult(result) });
+    remediateSeverity.mutate({ severities: selectedSeverities, scope }, { onSuccess: (result) => setSeverityResult(result) });
   }
 
   async function handleRemediateVulnerability() {
@@ -216,7 +472,7 @@ export default function VulnerabilitiesPage() {
     <>
       <PageHeader
         title="Vulnerabilities"
-        description="Possible CVE matches across the fleet, and uninstall-based remediation"
+        description={scopeLabel ? `Possible CVE matches on ${scopeLabel}, and uninstall-based remediation` : "Possible CVE matches across the fleet, and uninstall-based remediation"}
         actions={rescanButton()}
       />
 
@@ -257,7 +513,7 @@ export default function VulnerabilitiesPage() {
         <div className="app-stack">
           <p className="app-text">
             Uninstalls the vulnerable software (via the existing Commands dispatch) on every endpoint with an OPEN finding
-            at the selected severity.
+            at the selected severity{scopeLabel ? <> — only on {scopeLabel}, as filtered below</> : null}.
           </p>
           <div className="app-actions-row" style={{ gap: 16 }}>
             {SEVERITIES.map((s) => (
@@ -274,8 +530,45 @@ export default function VulnerabilitiesPage() {
         </div>
       </Card>
 
-      <Card flush title="Fleet findings" hint="possible matches">
-        <Toolbar>
+      <Card flush title={scopeLabel ? "Findings" : "Fleet findings"} hint={scopeLabel ? `possible matches on ${scopeLabel}` : "possible matches"}>
+        <Toolbar
+          right={
+            scope && (
+              <Button size="sm" onClick={() => setScope({})}>
+                Show all endpoints
+              </Button>
+            )
+          }
+        >
+          <select
+            className="ep-select"
+            aria-label="Endpoint"
+            value={agentFilter}
+            onChange={(e) => setScope({ agent: e.target.value })}
+          >
+            <option value="">Endpoint: All</option>
+            {agentFilter && !agents?.some((a) => a.id === agentFilter) && <option value={agentFilter}>This endpoint</option>}
+            {[...(agents ?? [])]
+              .sort((a, b) => a.hostname.localeCompare(b.hostname))
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.hostname}
+                </option>
+              ))}
+          </select>
+          <select
+            className="ep-select"
+            aria-label="Group"
+            value={groupFilter}
+            onChange={(e) => setScope({ group: e.target.value })}
+          >
+            <option value="">Group: All</option>
+            {(groups ?? []).map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
           <select
             className="ep-select"
             aria-label="Severity"
@@ -311,9 +604,21 @@ export default function VulnerabilitiesPage() {
             </Alert>
           </div>
         ) : !summary || summary.length === 0 ? (
-          <EmptyState icon={Bug} title="No possible matches found yet" action={rescanButton("sm")}>
-            Sync the CVE catalog below, then rescan the fleet.
-          </EmptyState>
+          scopeLabel ? (
+            <EmptyState
+              icon={SearchX}
+              title={`No possible matches on ${scopeLabel}`}
+              action={
+                <Button size="sm" onClick={() => setScope({})}>
+                  Show all endpoints
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState icon={Bug} title="No possible matches found yet" action={rescanButton("sm")}>
+              Sync the CVE catalog below, then rescan the fleet.
+            </EmptyState>
+          )
         ) : filteredSummary?.length === 0 ? (
           <EmptyState
             icon={SearchX}
@@ -427,7 +732,10 @@ export default function VulnerabilitiesPage() {
                     label: "Matched endpoints",
                     value: (
                       <span className="ep-num">
-                        {new Set(detail.findings.map((f) => f.agentId)).size} endpoints · {detail.findings.length} findings
+                        {new Set(detail.findings.filter((f) => f.status !== "EXCEPTED").map((f) => f.agentId)).size} endpoints ·{" "}
+                        {detail.findings.filter((f) => f.status !== "EXCEPTED").length} findings
+                        {detail.findings.some((f) => f.status === "EXCEPTED") &&
+                          ` · ${detail.findings.filter((f) => f.status === "EXCEPTED").length} marked as exceptions`}
                       </span>
                     ),
                   },
@@ -436,7 +744,8 @@ export default function VulnerabilitiesPage() {
               />
               <p className="app-text">
                 Tick the endpoints to remediate, or use the header checkbox to select all. Name-only matches (version not
-                confirmed) are uninstalled too if selected — check them before remediating.
+                confirmed) are uninstalled too if selected — check them before remediating. Use Mark as… for a false
+                positive, something that doesn't apply, or a risk you accept: it stays marked after every rescan.
               </p>
               {remediateVuln.isError && <Alert tone="critical">{(remediateVuln.error as Error).message}</Alert>}
               {cveResult && <RemediationResultAlert result={cveResult} />}
@@ -481,23 +790,28 @@ export default function VulnerabilitiesPage() {
                       <th scope="col">Confidence</th>
                       <th scope="col">CPE criteria</th>
                       <th scope="col">Remediation</th>
+                      <th scope="col">
+                        <span className="app-vh">Actions</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {pagedFindings.pageItems.map((f) => (
                       <tr
                         key={f.id}
-                        className={`app-clickable ${selectedFindingIds.includes(f.id) ? "ep-sel" : ""}`}
-                        onClick={() => toggleFinding(f.id)}
+                        className={f.status === "EXCEPTED" ? undefined : `app-clickable ${selectedFindingIds.includes(f.id) ? "ep-sel" : ""}`}
+                        onClick={f.status === "EXCEPTED" ? undefined : () => toggleFinding(f.id)}
                       >
                         <td className="ep-cb">
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${f.hostname}`}
-                            checked={selectedFindingIds.includes(f.id)}
-                            onChange={() => toggleFinding(f.id)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
+                          {f.status !== "EXCEPTED" && (
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${f.hostname}`}
+                              checked={selectedFindingIds.includes(f.id)}
+                              onChange={() => toggleFinding(f.id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
                         </td>
                         <td>
                           <EndpointLabel hostname={f.hostname} agentId={f.agentId} />
@@ -515,7 +829,20 @@ export default function VulnerabilitiesPage() {
                           {f.matchedCpeCriteria.startsWith("msrc:") ? `Microsoft: ${f.matchedCpeCriteria.slice(5)}` : f.matchedCpeCriteria}
                         </td>
                         <td>
-                          <RemediationStatus remediation={f.remediation} />
+                          {f.status === "EXCEPTED" ? <Badge tone="neu">Exception — not remediated</Badge> : <RemediationStatus remediation={f.remediation} />}
+                        </td>
+                        <td>
+                          {f.status !== "EXCEPTED" && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMarkingFinding(f);
+                              }}
+                            >
+                              Mark as…
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -535,6 +862,23 @@ export default function VulnerabilitiesPage() {
         </Card>
         </div>
       )}
+
+      {markingFinding && detail && (
+        <MarkExceptionDialog
+          cveId={detail.cveId}
+          vulnerabilityDefinitionId={detail.vulnerabilityDefinitionId}
+          finding={markingFinding}
+          onClose={(message) => {
+            setMarkingFinding(null);
+            if (message) {
+              toast(message);
+              setSelectedFindingIds([]);
+            }
+          }}
+        />
+      )}
+
+      <ExceptionsCard onOpenCve={openCve} />
 
       <Card title="CVE catalog" hint="synced from NVD and Microsoft's Security Update Guide">
         <div className="app-stack">

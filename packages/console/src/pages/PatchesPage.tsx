@@ -50,8 +50,20 @@ import { formatBytes, formatDate, formatDateTime } from "../format";
 
 // Per-patch drill-down: the endpoints this update is missing on, each selectable, with a
 // one-click dispatch of just this patch to the chosen machines.
-function MissingPatchEndpoints({ patchDefinitionId, updateId, title }: { patchDefinitionId: string; updateId: string; title: string }) {
-  const { data: missing } = useAgentsMissingPatch(patchDefinitionId);
+function MissingPatchEndpoints({
+  patchDefinitionId,
+  updateId,
+  title,
+  groupId,
+  agentId,
+}: {
+  patchDefinitionId: string;
+  updateId: string;
+  title: string;
+  groupId?: string;
+  agentId?: string;
+}) {
+  const { data: missing } = useAgentsMissingPatch(patchDefinitionId, groupId, agentId);
   const dispatch = useDispatchPatchJob();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [jobId, setJobId] = useState<string | null>(null);
@@ -336,9 +348,22 @@ function TaskStatus({ status, label }: { status: string; label?: string }) {
 }
 
 export default function PatchesPage() {
-  const [environmentFilter, setEnvironmentFilter] = useState("");
   // Severity filter - the dashboard's Patch status bars open this page pre-filtered.
+  // Endpoint (?agent=) and Group (?group=) filters: an endpoint's Security posture links here
+  // with its endpoint picked. Neither = every endpoint, as before.
   const [searchParams, setSearchParams] = useSearchParams();
+  const agentFilter = searchParams.get("agent") ?? "";
+  const environmentFilter = agentFilter ? "" : (searchParams.get("group") ?? "");
+  function setScope(next: { agent?: string; group?: string }) {
+    searchParams.delete("agent");
+    searchParams.delete("group");
+    if (next.agent) searchParams.set("agent", next.agent);
+    else if (next.group) searchParams.set("group", next.group);
+    setSearchParams(searchParams, { replace: true });
+    setSelectedUpdateIds([]);
+    setExpandedPatchId(null);
+  }
+  const setEnvironmentFilter = (groupId: string) => setScope({ group: groupId });
   const severityParam = searchParams.get("severity")?.toUpperCase() ?? "";
   const severityFilter = (NORMALIZED_SEVERITIES as string[]).includes(severityParam) ? (severityParam as NormalizedSeverity) : "";
   function setSeverityFilter(value: string) {
@@ -346,7 +371,10 @@ export default function PatchesPage() {
     else searchParams.delete("severity");
     setSearchParams(searchParams, { replace: true });
   }
-  const { data: summary, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = usePatchSummary(environmentFilter || undefined);
+  const { data: summary, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = usePatchSummary(
+    environmentFilter || undefined,
+    agentFilter || undefined,
+  );
   const { data: agents } = useAgents();
   const { data: groups } = useAssetGroups();
   const { data: jobs, isLoading: jobsLoading } = usePatchJobs();
@@ -372,6 +400,45 @@ export default function PatchesPage() {
   const scheduledJobCount = jobs?.filter((j) => j.scheduledAt).length ?? 0;
   const selectedUpdates = summary?.filter((item) => selectedUpdateIds.includes(item.updateId)) ?? [];
   const environmentName = groups?.find((g) => g.id === environmentFilter)?.name;
+  const agentName = agentFilter ? (agents?.find((a) => a.id === agentFilter)?.hostname ?? "this endpoint") : undefined;
+  const scopeName = agentName ?? (environmentName ? `group ${environmentName}` : undefined);
+  // Select all: every update in the current list (after the severity filter).
+  const allVisibleSelected = visibleSummary.length > 0 && visibleSummary.every((item) => selectedUpdateIds.includes(item.updateId));
+  function toggleAllUpdates() {
+    setSelectedUpdateIds(allVisibleSelected ? [] : visibleSummary.map((item) => item.updateId));
+  }
+
+  // "Install on <endpoint/group>": the ticked updates straight to the filtered endpoint or group.
+  async function installOnScope() {
+    if (!scopeName || selectedUpdateIds.length === 0) return;
+    const ok = await confirm({
+      title: `Install ${selectedUpdateIds.length} update(s) on ${scopeName}?`,
+      body: "Each endpoint installs them at its next check-in. Some updates need a reboot; the job below shows which.",
+      confirmLabel: "Install",
+    });
+    if (!ok) return;
+    dispatchPatch.mutate(
+      {
+        updateIds: selectedUpdateIds,
+        agentIds: agentFilter ? [agentFilter] : [],
+        groupIds: agentFilter ? [] : [environmentFilter],
+        scheduledAt: null,
+      },
+      {
+        onSuccess: (result) => {
+          setSelectedJobId(result.jobId);
+          setSelectedUpdateIds([]);
+        },
+      },
+    );
+  }
+
+  // "Choose targets" starts from the filtered endpoint or group.
+  function chooseTargets() {
+    if (agentFilter && !selectedAgentIds.includes(agentFilter)) setSelectedAgentIds((prev) => [...prev, agentFilter]);
+    if (environmentFilter && !selectedGroupIds.includes(environmentFilter)) setSelectedGroupIds((prev) => [...prev, environmentFilter]);
+    setTimeout(() => deployFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
 
   function toggleUpdate(updateId: string) {
     setSelectedUpdateIds((prev) => (prev.includes(updateId) ? prev.filter((id) => id !== updateId) : [...prev, updateId]));
@@ -416,14 +483,21 @@ export default function PatchesPage() {
 
   return (
     <>
-      <PageHeader title="Patches" description="Windows updates missing across the fleet, their deployment jobs and automatic mode" />
+      <PageHeader
+        title="Patches"
+        description={
+          scopeName
+            ? `Windows updates missing on ${scopeName}, their deployment jobs and automatic mode`
+            : "Windows updates missing across the fleet, their deployment jobs and automatic mode"
+        }
+      />
 
       <KpiStrip>
         <Kpi
           icon={PackageCheck}
           label="Missing updates"
           value={summary ? <span className="ep-num">{summary.length}</span> : "—"}
-          suffix={environmentName ? `in ${environmentName}` : "across the fleet"}
+          suffix={scopeName ? `on ${scopeName}` : "across the fleet"}
         />
         <Kpi
           label="Critical"
@@ -441,15 +515,34 @@ export default function PatchesPage() {
         />
       </KpiStrip>
 
-      <Card flush title="Missing across the fleet" hint="newest first">
-        <Toolbar>
+      <Card flush title={scopeName ? `Missing on ${scopeName}` : "Missing across the fleet"} hint="newest first">
+        <Toolbar
+          right={
+            (agentFilter || environmentFilter) && (
+              <Button size="sm" onClick={() => setScope({})}>
+                Show all endpoints
+              </Button>
+            )
+          }
+        >
+          <select className="ep-select" aria-label="Endpoint" value={agentFilter} onChange={(e) => setScope({ agent: e.target.value })}>
+            <option value="">Endpoint: All</option>
+            {agentFilter && !agents?.some((a) => a.id === agentFilter) && <option value={agentFilter}>This endpoint</option>}
+            {[...(agents ?? [])]
+              .sort((a, b) => a.hostname.localeCompare(b.hostname))
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.hostname}
+                </option>
+              ))}
+          </select>
           <select
             className="ep-select"
-            aria-label="Environment"
+            aria-label="Group"
             value={environmentFilter}
             onChange={(e) => setEnvironmentFilter(e.target.value)}
           >
-            <option value="">Environment: All endpoints</option>
+            <option value="">Group: All</option>
             {groups?.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
@@ -467,10 +560,20 @@ export default function PatchesPage() {
         </Toolbar>
 
         <BulkBar count={selectedUpdateIds.length} onClear={() => setSelectedUpdateIds([])}>
-          <Button size="sm" icon={Send} onClick={() => deployFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          {scopeName && (
+            <Button size="sm" variant="primary" icon={Send} onClick={installOnScope} disabled={dispatchPatch.isPending}>
+              {dispatchPatch.isPending ? "Dispatching…" : `Install on ${scopeName}`}
+            </Button>
+          )}
+          <Button size="sm" icon={Send} onClick={chooseTargets}>
             Choose targets
           </Button>
         </BulkBar>
+        {dispatchPatch.isError && !selectedUpdateIds.length && (
+          <div className="ep-cb">
+            <Alert tone="critical">{(dispatchPatch.error as Error).message}</Alert>
+          </div>
+        )}
 
         {summaryLoading ? (
           <div className="ep-cb">
@@ -491,13 +594,13 @@ export default function PatchesPage() {
             </Alert>
           </div>
         ) : !summary || summary.length === 0 ? (
-          environmentFilter ? (
+          scopeName ? (
             <EmptyState
               icon={SearchX}
-              title="No missing patches in this environment"
+              title={`No missing patches on ${scopeName}`}
               action={
-                <Button size="sm" onClick={() => setEnvironmentFilter("")}>
-                  Clear filter
+                <Button size="sm" onClick={() => setScope({})}>
+                  Show all endpoints
                 </Button>
               }
             >
@@ -515,7 +618,13 @@ export default function PatchesPage() {
                 <thead>
                   <tr>
                     <th className="ep-cb" scope="col">
-                      <span className="app-vh">Add to deployment</span>
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleAllUpdates}
+                        title="Select all updates"
+                        aria-label="Select all updates"
+                      />
                     </th>
                     <th scope="col">Title</th>
                     <th scope="col">Severity</th>
@@ -592,7 +701,13 @@ export default function PatchesPage() {
                         {isExpanded && (
                           <tr>
                             <td colSpan={7} style={{ background: "var(--ep-surface-2)" }}>
-                              <MissingPatchEndpoints patchDefinitionId={item.patchDefinitionId} updateId={item.updateId} title={item.title} />
+                              <MissingPatchEndpoints
+                                patchDefinitionId={item.patchDefinitionId}
+                                updateId={item.updateId}
+                                title={item.title}
+                                groupId={environmentFilter || undefined}
+                                agentId={agentFilter || undefined}
+                              />
                             </td>
                           </tr>
                         )}

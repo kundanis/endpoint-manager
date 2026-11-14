@@ -534,8 +534,34 @@ export interface VulnerabilityFindingView {
   matchedSoftwareVersion: string | null;
   matchedCpeCriteria: string;
   matchConfidence: "PRODUCT_AND_VERSION" | "PRODUCT_ONLY";
+  // EXCEPTED: covered by a vulnerability exception - shown, but not counted or remediated.
+  status: "OPEN" | "EXCEPTED";
   detectedAt: string;
   remediation: FindingRemediation | null;
+}
+
+export type VulnerabilityExceptionReason = "FALSE_POSITIVE" | "NOT_APPLICABLE" | "RISK_ACCEPTED";
+
+// Vulnerabilities -> Exceptions: a CVE + software marked False positive / Not applicable / Risk accepted.
+export interface VulnerabilityExceptionView {
+  id: string;
+  vulnerabilityDefinitionId: string;
+  cveId: string;
+  cvssSeverity: string | null;
+  cvssBaseScore: number | null;
+  softwareName: string;
+  softwareVersion: string | null;
+  scope: "ALL" | "GROUP" | "AGENT";
+  agentId: string | null;
+  hostname: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  reason: VulnerabilityExceptionReason;
+  note: string;
+  expiresAt: string | null;
+  expired: boolean;
+  createdBy: string | null;
+  createdAt: string;
 }
 
 export interface VulnerabilityDetail {
@@ -574,6 +600,8 @@ export interface AgentVulnerabilityFinding {
 export interface AgentSecurityStatusView {
   uninstallProtectionEnabled: boolean;
   updatedAt: string | null;
+  // The saved remote install account's username (the password is never sent); null when none.
+  remoteInstallUsername: string | null;
 }
 
 export interface AssetGroupListItem {
@@ -1592,7 +1620,12 @@ export interface UserProductivitySummaryAgentView {
   totalIdleSecondsToday: number;
   firstLoginAtToday: string | null;
   lastLogoutAtToday: string | null;
+  totalActiveSecondsPeriod: number;
+  totalIdleSecondsPeriod: number;
 }
+
+// User productivity "Total active" period: today, this week, this month or this year.
+export type ProductivityPeriod = "day" | "week" | "month" | "year";
 
 export interface UserSessionView {
   id: string;
@@ -1882,8 +1915,27 @@ export interface AgentAdminAction {
   success: boolean;
 }
 
+// Endpoint -> History tab: a command sent to this endpoint from the console. Security actions
+// (agent uninstall, quarantine, remote access) carry a label and no script or output.
+export interface AgentCommandHistoryItem {
+  id: string;
+  jobId: string;
+  sentAt: string;
+  shell: string;
+  script: string | null;
+  label: string | null;
+  status: string;
+  exitCode: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  dispatchedAt: string | null;
+  completedAt: string | null;
+  adminEmail: string | null; // super admins only
+}
+
 export interface AgentHistory {
   softwareChanges: AgentSoftwareChange[];
+  commands: AgentCommandHistoryItem[];
   adminActions: AgentAdminAction[] | null; // null for admins who aren't super admins
 }
 

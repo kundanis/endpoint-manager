@@ -1,15 +1,17 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, ListChecks, Pencil, Plus, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2 } from "lucide-react";
+import { RefreshCw, ListChecks, Pencil, Plus, RotateCcw, SearchX, ShieldCheck, ShieldQuestion, ShieldX, Trash2 } from "lucide-react";
 import type { SecurityRuleOperator } from "@em/shared";
 import EndpointLabel, { EndpointOption } from "../components/EndpointLabel";
 import {
+  useAddZeroTrustBuiltInConditions,
   useAddZeroTrustCondition,
   useAgents,
   useAssignZeroTrustPolicy,
   useCreateZeroTrustPolicy,
   useDeleteZeroTrustCondition,
   useDeleteZeroTrustPolicy,
+  useResetZeroTrustCondition,
   useForceComplyZeroTrust,
   useRevokeZeroTrustOverride,
   useUnassignZeroTrustPolicy,
@@ -17,6 +19,7 @@ import {
   useUpdateZeroTrustPolicy,
   useZeroTrustAgentBreakdowns,
   useZeroTrustAssignments,
+  useZeroTrustBuiltInConditions,
   useZeroTrustOverridableConditionKeys,
   useZeroTrustPolicies,
   useZeroTrustPolicy,
@@ -64,6 +67,10 @@ import {
 // Pattern A-lite (design-system/docs/PAGE_PATTERNS.md): KPI strip + per-endpoint trust table,
 // with the policy list → tabbed detail workflow (as WebBlockPage) underneath.
 
+// "Policy check override (bulk)" is hidden from the page for now; the server routes and any
+// overrides already in place are unchanged. Set to true to bring the panel back.
+const SHOW_BULK_OVERRIDE = false;
+
 const OPERATORS: SecurityRuleOperator[] = ["EQUALS", "NOT_EQUALS", "GTE", "LTE", "CONTAINS", "REGEX_MATCH"];
 
 const BLANK_CONDITION_FORM = {
@@ -75,11 +82,79 @@ const BLANK_CONDITION_FORM = {
   expectedValue: "",
 };
 
+// Built-in checks (OS build, firewall, BitLocker, patching, the Windows Security categories...)
+// any policy can take with a tick, instead of typing PowerShell. Only ones the policy doesn't
+// already have are offered.
+function BuiltInChecksForm({ policy }: { policy: ZeroTrustPolicyDetail }) {
+  const { data: builtIns } = useZeroTrustBuiltInConditions();
+  const choices = builtIns?.conditions;
+  const addBuiltIn = useAddZeroTrustBuiltInConditions();
+  const toast = useToast();
+  const [selected, setSelected] = useState<string[]>([]);
+
+  const have = new Set(policy.conditions.map((c) => c.conditionKey));
+  const available = (choices ?? []).filter((c) => !have.has(c.conditionKey));
+  if (available.length === 0) return null;
+
+  function toggle(key: string) {
+    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  function handleAdd() {
+    addBuiltIn.mutate(
+      { policyId: policy.id, conditionKeys: selected },
+      {
+        onSuccess: (r) => {
+          setSelected([]);
+          toast(`${r.added} ${r.added === 1 ? "check" : "checks"} added. Endpoints are checked on their next Zero Trust scan.`);
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="app-inset-form">
+      <span className="app-subhead">Add built-in check</span>
+      <div className="app-check-grid">
+        {available.map((c) => (
+          <Check key={c.conditionKey} checked={selected.includes(c.conditionKey)} onChange={() => toggle(c.conditionKey)} label={c.title} hint={c.description} />
+        ))}
+      </div>
+      {!!addBuiltIn.error && <Alert tone="critical">{(addBuiltIn.error as Error).message}</Alert>}
+      <div className="app-actions-row app-end">
+        <Button variant="primary" icon={Plus} onClick={handleAdd} disabled={selected.length === 0 || addBuiltIn.isPending}>
+          {addBuiltIn.isPending ? "Adding…" : selected.length > 1 ? `Add ${selected.length} checks` : "Add check"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
   const addCondition = useAddZeroTrustCondition();
   const updateCondition = useUpdateZeroTrustCondition();
   const deleteCondition = useDeleteZeroTrustCondition();
+  const resetCondition = useResetZeroTrustCondition();
+  const { data: builtIns } = useZeroTrustBuiltInConditions();
   const confirm = useConfirm();
+
+  // Built-in checks (and the two Required software conditions) can be switched off or edited,
+  // not deleted. A built-in check that differs from the current definition (edited, or saved by
+  // an older version) shows "Changed" and can be reset.
+  const builtInByKey = new Map((builtIns?.conditions ?? []).map((d) => [d.conditionKey, d]));
+  const requiredSoftwareKeys = new Set(builtIns?.requiredSoftwareKeys ?? []);
+  const isProtected = (key: string) => builtInByKey.has(key) || requiredSoftwareKeys.has(key);
+  function isEdited(c: ZeroTrustPolicyDetail["conditions"][number]): boolean {
+    const d = builtInByKey.get(c.conditionKey);
+    if (!d) return false;
+    return (
+      c.title !== d.title ||
+      (c.description ?? "") !== d.description ||
+      c.checkPowerShell !== d.checkPowerShell ||
+      c.operator !== d.operator ||
+      c.expectedValue !== d.expectedValue
+    );
+  }
 
   const [editingConditionId, setEditingConditionId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_CONDITION_FORM);
@@ -104,6 +179,16 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
       operator: c.operator,
       expectedValue: c.expectedValue,
     });
+  }
+
+  async function handleReset(conditionId: string, title: string) {
+    const confirmed = await confirm({
+      title: `Reset "${title}" to the built-in check?`,
+      body: "Its title, description, check and expected value are replaced with the current built-in version. Whether it's switched on stays as it is.",
+      confirmLabel: "Reset",
+    });
+    if (!confirmed) return;
+    resetCondition.mutate({ policyId: policy.id, conditionId });
   }
 
   function cancelEdit() {
@@ -144,9 +229,12 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
 
   return (
     <div className="app-stack">
+      {policy.conditions.some((c) => isProtected(c.conditionKey)) && (
+        <p className="app-muted">Built-in checks can be switched off or edited, but not deleted. One marked Changed differs from the current built-in version (edited, or saved by an older version) and can be reset.</p>
+      )}
       {policy.conditions.length === 0 ? (
         <EmptyState icon={ListChecks} title="No conditions yet">
-          Add one below. A device is trusted only once every enabled condition has been scanned and passes.
+          Add a built-in check or your own below. A device is trusted only once every enabled condition has been scanned and passes.
         </EmptyState>
       ) : (
         <div className="app-table-wrap">
@@ -177,6 +265,11 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
                   <td className="ep-mono">{c.conditionKey}</td>
                   <td>
                     {c.title}
+                    {requiredSoftwareKeys.has(c.conditionKey) ? (
+                      <> <Badge tone="neu">Required software</Badge></>
+                    ) : builtInByKey.has(c.conditionKey) ? (
+                      <> <Badge tone="neu">Built-in</Badge>{isEdited(c) && <> <Badge tone="med">Changed</Badge></>}</>
+                    ) : null}
                     {c.description && <span className="app-row-sub">{c.description}</span>}
                   </td>
                   <td className="ep-mono">
@@ -185,12 +278,22 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
                   <td>
                     <div className="app-cell-actions">
                       <IconButton icon={Pencil} label={`Edit ${c.title}`} onClick={() => startEdit(c.id)} />
-                      <IconButton
-                        icon={Trash2}
-                        label={`Delete ${c.title}`}
-                        onClick={() => handleDelete(c.id, c.title)}
-                        disabled={deleteCondition.isPending}
-                      />
+                      {isEdited(c) && (
+                        <IconButton
+                          icon={RotateCcw}
+                          label={`Reset ${c.title} to built-in`}
+                          onClick={() => handleReset(c.id, c.title)}
+                          disabled={resetCondition.isPending}
+                        />
+                      )}
+                      {!isProtected(c.conditionKey) && (
+                        <IconButton
+                          icon={Trash2}
+                          label={`Delete ${c.title}`}
+                          onClick={() => handleDelete(c.id, c.title)}
+                          disabled={deleteCondition.isPending}
+                        />
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -200,8 +303,10 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
         </div>
       )}
 
+      {!isEditing && <BuiltInChecksForm policy={policy} />}
+
       <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? `Edit condition: ${form.conditionKey}` : "Add condition"}</span>
+        <span className="app-subhead">{isEditing ? `Edit condition: ${form.conditionKey}` : "Add custom condition"}</span>
         <FormGrid>
           <Field label="Condition key" htmlFor="zt-cond-key" required>
             <input
@@ -210,6 +315,7 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
               type="text"
               value={form.conditionKey}
               onChange={(e) => setForm((prev) => ({ ...prev, conditionKey: e.target.value }))}
+              disabled={isEditing && isProtected(form.conditionKey)}
               required
             />
           </Field>
@@ -268,6 +374,9 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
           </Field>
         </FormGrid>
         {!!mutationError && <Alert tone="critical">{(mutationError as Error).message}</Alert>}
+        {!!(deleteCondition.error || resetCondition.error) && (
+          <Alert tone="critical">{((deleteCondition.error || resetCondition.error) as Error).message}</Alert>
+        )}
         <div className="app-actions-row app-end">
           {isEditing && <Button onClick={cancelEdit}>Cancel</Button>}
           <Button type="submit" variant="primary" disabled={pending}>
@@ -1076,7 +1185,7 @@ export default function ZeroTrustPage() {
         />
       )}
 
-      <OverridePanel />
+      {SHOW_BULK_OVERRIDE && <OverridePanel />}
 
       {installingBuiltIn && (
         <InstallBuiltInDialog

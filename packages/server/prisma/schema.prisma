@@ -180,6 +180,7 @@ model Agent {
   threatDetections           ThreatDetection[]
   threatScanTasks            ThreatScanTask[]
   threatActionTasks          ThreatActionTask[]
+  vulnerabilityExceptions    VulnerabilityException[]
   userActivityEvents       UserActivityEvent[]
   softwareChanges          AgentSoftwareChange[]
   screenCaptureAssignments ScreenCapturePolicyAssignment[]
@@ -450,6 +451,7 @@ model VulnerabilityDefinition {
   sourceLastSyncedAt DateTime                @default(now())
   cpeMatches         VulnerabilityCpeMatch[]
   findings           VulnerabilityFinding[]
+  exceptions         VulnerabilityException[]
 
   @@index([cvssSeverity])
   @@index([lastModifiedAt])
@@ -569,6 +571,7 @@ model AssetGroup {
   usbControlAssignments UsbControlPolicyAssignment[]
   screenshotBlockAssignments ScreenshotBlockPolicyAssignment[]
   threatProtectionAssignments ThreatProtectionPolicyAssignment[]
+  vulnerabilityExceptions VulnerabilityException[]
   enrollmentTokens   EnrollmentToken[]
 }
 
@@ -1865,6 +1868,10 @@ model PolicyAccessException {
 model AgentSecuritySettings {
   id                    String   @id @default("singleton")
   uninstallPasswordHash String?  @db.NVarChar(200)
+  // Remote install account (Asset settings): used by Install agent so admins don't type it
+  // each time. The password is stored encrypted (utils/fieldEncryption.ts) and never sent back.
+  remoteInstallUsername          String?  @db.NVarChar(200)
+  remoteInstallPasswordEncrypted String?  @db.NVarChar(1000)
   updatedAt             DateTime @updatedAt
 }
 
@@ -2140,4 +2147,27 @@ model ThreatActionTask {
   resultMessage      String?   @db.NVarChar(1000)
 
   @@index([agentId, status])
+}
+
+// Vulnerabilities -> Mark as False positive / Not applicable / Risk accepted. One CVE + the matched
+// software (optionally one version), for every endpoint, one group or one endpoint. Every scan
+// saves covered findings as status EXCEPTED instead of OPEN, so they leave counts and are never
+// remediated. Risk accepted can carry a review date; after it the exception stops applying.
+model VulnerabilityException {
+  id                        String                  @id @default(uuid())
+  vulnerabilityDefinitionId String
+  vulnerabilityDefinition   VulnerabilityDefinition @relation(fields: [vulnerabilityDefinitionId], references: [id], onDelete: Cascade)
+  softwareName              String                  @db.NVarChar(300)
+  softwareVersion           String?                 @db.NVarChar(100)
+  agentId                   String?
+  agent                     Agent?                  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId                   String?
+  group                     AssetGroup?             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  reason                    String                  @db.NVarChar(20) // FALSE_POSITIVE | NOT_APPLICABLE | RISK_ACCEPTED
+  note                      String                  @db.NVarChar(1000)
+  expiresAt                 DateTime?
+  createdByAdminId          String
+  createdAt                 DateTime                @default(now())
+
+  @@index([vulnerabilityDefinitionId])
 }

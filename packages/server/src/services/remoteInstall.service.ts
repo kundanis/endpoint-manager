@@ -6,7 +6,8 @@ import type { StartRemoteInstallRequest } from "@em/shared";
 import { config } from "../config";
 import { prisma } from "../db";
 import { logger } from "../logger";
-import { createEnrollmentToken } from "./enrollment.service";
+import { createEnrollmentToken, getUsableTokenPlaintext, InvalidEnrollmentTokenError } from "./enrollment.service";
+import { getRemoteInstallCredential, RemoteInstallAccountError } from "./agentSecurity.service";
 import { getAgentServerUrls } from "./agentConnection.service";
 
 const execFileAsync = promisify(execFile);
@@ -270,12 +271,33 @@ export async function startRemoteInstall(
   // Dedupe targets a careless paste might repeat - each still only needs one install attempt.
   const targets = Array.from(new Set(payload.targets.map((t) => t.trim()).filter(Boolean)));
 
+  // No account typed: use the remote install account saved in Asset settings. Checked before
+  // any token is minted, so a missing account doesn't leave a stray token behind.
+  let username = payload.username;
+  let password = payload.password;
+  if (!username || !password) {
+    const saved = await getRemoteInstallCredential();
+    if (!saved) {
+      throw new RemoteInstallAccountError(
+        "No remote install account is saved. Enter a Windows admin account, or ask a super admin to save one in Asset settings -> Remote install.",
+      );
+    }
+    ({ username, password } = saved);
+  }
+
   // Callers that already have a token in hand (Enrollment Tokens page, right after creating
   // one) pass its plaintext directly. A caller with no token at all (Network Scan's per-host
   // "Install agent" button) gets one minted here instead - single-use per target, short-lived,
   // and never surfaced back to the browser; it only ever exists to get this one install done.
   let tokenId = payload.tokenId;
   let enrollmentToken = payload.enrollmentToken;
+  // A token picked by id (Network discovery's "Install agent" -> Group): its value is looked up
+  // here, so the device joins that token's group. Revoked / expired / used-up tokens are refused.
+  if (!enrollmentToken && tokenId) {
+    const found = await getUsableTokenPlaintext(tokenId);
+    if (!found) throw new InvalidEnrollmentTokenError("Enrollment token not found");
+    enrollmentToken = found.token;
+  }
   if (!enrollmentToken) {
     const created = await createEnrollmentToken({
       label: `Remote install ${new Date().toISOString().slice(0, 10)} (${targets.length} host${targets.length === 1 ? "" : "s"})`,
@@ -304,7 +326,7 @@ export async function startRemoteInstall(
   // Deliberately not awaited - see runRemoteInstallJob's own comment. Errors inside it are
   // per-task (already caught and recorded in runOneTarget); nothing here can throw once the
   // job/tasks are created, but log defensively anyway so a truly unexpected failure isn't silent.
-  void runRemoteInstallJob(job.id, job.tasks, payload.username, payload.password, serverUrl, enrollmentToken).catch(
+  void runRemoteInstallJob(job.id, job.tasks, username, password, serverUrl, enrollmentToken).catch(
     (err) => logger.error({ err, jobId: job.id }, "Remote install job crashed unexpectedly"),
   );
 

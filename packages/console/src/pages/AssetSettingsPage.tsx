@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { FolderTree, ListPlus, Pencil, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import type { CustomFieldType } from "../api/types";
-import { useAgents } from "../api/hooks";
+import { useAgents, useClearRemoteInstallAccount, useMe, useSetRemoteInstallAccount } from "../api/hooks";
 import {
   useAddGroupMembers,
   useAgentSecurityStatus,
@@ -605,23 +605,167 @@ function CustomFieldsSection() {
   );
 }
 
-type SettingsTab = "tamper" | "groups" | "fields";
+// Remote install account: the Windows admin account Install agent uses (Network discovery,
+// Endpoints' unmanaged devices), so admins don't type it each time. Kept encrypted on the server;
+// the password is never shown again. Super admins save or remove it.
+function RemoteInstallSection() {
+  const { data: status } = useAgentSecurityStatus();
+  const { data: me } = useMe();
+  const isSuper = me?.role === "SUPER_ADMIN";
+  const save = useSetRemoteInstallAccount();
+  const clear = useClearRemoteInstallAccount();
+  const confirm = useConfirm();
+  const saved = status?.remoteInstallUsername ?? null;
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (saved) setUsername(saved);
+  }, [saved]);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    if (password !== confirmPassword) {
+      setFormError("Passwords don't match.");
+      return;
+    }
+    save.mutate(
+      { username: username.trim(), ...(password ? { password } : {}) },
+      {
+        onSuccess: () => {
+          setPassword("");
+          setConfirmPassword("");
+        },
+      },
+    );
+  }
+
+  async function handleRemove() {
+    const ok = await confirm({
+      title: "Remove the remote install account?",
+      body: "Install agent will ask for a Windows admin account each time again. The saved password is deleted from the server.",
+      confirmLabel: "Remove account",
+      tone: "danger",
+    });
+    if (!ok) return;
+    clear.mutate(undefined, { onSuccess: () => setUsername("") });
+  }
+
+  return (
+    <Row layout="21">
+      <form className="ep-card" onSubmit={handleSubmit}>
+        <FormSection
+          title="Remote install account"
+          description="The Windows administrator account Install agent uses to reach a device and install the agent, so nobody has to type it each time."
+        >
+          <div className="app-stack">
+            {status ? (
+              <KeyValueList
+                items={[
+                  { label: "Status", value: saved ? <Pill tone="ok">Saved</Pill> : <Pill tone="neutral">Not set</Pill> },
+                  { label: "Account", value: saved ? <span className="ep-mono">{saved}</span> : "—" },
+                ]}
+              />
+            ) : (
+              <Skeleton lines={2} />
+            )}
+            {isSuper ? (
+              <FormGrid>
+                <Field label="Admin username" htmlFor="ri-username" required span2 help="For example DOMAIN\installer or .\Administrator">
+                  <input
+                    id="ri-username"
+                    className="ep-input ep-mono"
+                    type="text"
+                    autoComplete="off"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    maxLength={200}
+                    required
+                  />
+                </Field>
+                <Field label={saved ? "New password" : "Password"} htmlFor="ri-password" required={!saved} help={saved ? "Leave empty to keep the saved password." : undefined}>
+                  <input
+                    id="ri-password"
+                    className="ep-input"
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required={!saved}
+                  />
+                </Field>
+                <Field label="Confirm password" htmlFor="ri-password-confirm" required={!saved || !!password} error={formError ?? undefined}>
+                  <input
+                    id="ri-password-confirm"
+                    className={`ep-input ${formError ? "ep-invalid" : ""}`}
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required={!saved || !!password}
+                    aria-invalid={formError ? true : undefined}
+                  />
+                </Field>
+              </FormGrid>
+            ) : (
+              <Alert tone="info">Only a super admin can save or change this account.</Alert>
+            )}
+            {save.isError && <Alert tone="critical">{(save.error as Error).message}</Alert>}
+            {clear.isError && <Alert tone="critical">{(clear.error as Error).message}</Alert>}
+          </div>
+        </FormSection>
+        {isSuper && (
+          <FormFooter>
+            {saved && (
+              <Button variant="danger" onClick={handleRemove} disabled={clear.isPending}>
+                {clear.isPending ? "Removing…" : "Remove account"}
+              </Button>
+            )}
+            <Button type="submit" variant="primary" disabled={save.isPending || !username.trim()}>
+              {save.isPending ? "Saving…" : saved ? "Save changes" : "Save account"}
+            </Button>
+          </FormFooter>
+        )}
+      </form>
+
+      <Card title="Good to know">
+        <p className="app-text">
+          With an account saved, Install agent on Network discovery and on Endpoints asks for no login, only an optional group. Anyone can still
+          type a different account for one device.
+        </p>
+        <p className="app-text">
+          Use a dedicated account that is a local administrator on workstations only, not a domain admin. The password is
+          stored encrypted on this server and is never shown again.
+        </p>
+        <p className="app-text">The device needs Windows Remote Management (WinRM) reachable from this server.</p>
+      </Card>
+    </Row>
+  );
+}
+
+type SettingsTab = "tamper" | "remote" | "groups" | "fields";
 
 export default function AssetSettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("tamper");
   return (
     <>
-      <PageHeader title="Asset settings" description="Tamper protection, asset groups and custom fields for every managed endpoint." />
+      <PageHeader title="Asset settings" description="Tamper protection, the remote install account, asset groups and custom fields for every managed endpoint." />
       <Tabs
         value={tab}
         onChange={(v) => setTab(v as SettingsTab)}
         items={[
           { value: "tamper", label: "Tamper protection" },
+          { value: "remote", label: "Remote install" },
           { value: "groups", label: "Asset groups" },
           { value: "fields", label: "Custom fields" },
         ]}
       />
       {tab === "tamper" && <TamperProtectionSection />}
+      {tab === "remote" && <RemoteInstallSection />}
       {tab === "groups" && <GroupsSection />}
       {tab === "fields" && <CustomFieldsSection />}
     </>

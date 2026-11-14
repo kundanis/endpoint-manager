@@ -9,6 +9,22 @@ export interface UserProductivitySummaryAgentView {
   totalIdleSecondsToday: number;
   firstLoginAtToday: string | null;
   lastLogoutAtToday: string | null;
+  // Totals for the chosen period (today, this week, this month or this year).
+  totalActiveSecondsPeriod: number;
+  totalIdleSecondsPeriod: number;
+}
+
+export const PRODUCTIVITY_PERIODS = ["day", "week", "month", "year"] as const;
+export type ProductivityPeriod = (typeof PRODUCTIVITY_PERIODS)[number];
+
+// First day of the period, by the calendar: today, Monday of this week, the 1st of this month,
+// 1 January this year.
+export function periodStart(period: ProductivityPeriod, now = new Date()): Date {
+  const d = startOfDay(now);
+  if (period === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  else if (period === "month") d.setDate(1);
+  else if (period === "year") d.setMonth(0, 1);
+  return d;
 }
 
 export interface UserSessionView {
@@ -166,8 +182,15 @@ export async function recordScanResult(agentId: string, payload: UserProductivit
 // full lifetime total into today's number. "Currently active" usernames still come from
 // UserSession (the daily log has no isActive concept), then unioned with whichever
 // agents have a daily log row for today.
-export async function getFleetSummary(): Promise<UserProductivitySummaryAgentView[]> {
+export async function getFleetSummary(period: ProductivityPeriod = "day"): Promise<UserProductivitySummaryAgentView[]> {
   const today = startOfDay(new Date());
+
+  // The period's totals per endpoint: summed in the database (a year is many daily rows).
+  const periodTotals = await prisma.userProductivityDailyLog.groupBy({
+    by: ["agentId"],
+    where: { logDate: { gte: periodStart(period), lte: today } },
+    _sum: { activeSecondsTotal: true, idleSecondsTotal: true },
+  });
 
   const [logs, activeSessions] = await Promise.all([
     prisma.userProductivityDailyLog.findMany({
@@ -197,6 +220,13 @@ export async function getFleetSummary(): Promise<UserProductivitySummaryAgentVie
     if (bucket) bucket.activeUsernames.add(s.username);
     else byAgent.set(s.agentId, { hostname: s.agent.hostname, logs: [], activeUsernames: new Set([s.username]) });
   }
+  // Endpoints with time in the period but none today are listed too.
+  const missing = periodTotals.filter((t) => !byAgent.has(t.agentId)).map((t) => t.agentId);
+  if (missing.length) {
+    const agents = await prisma.agent.findMany({ where: { id: { in: missing } }, select: { id: true, hostname: true } });
+    for (const a of agents) byAgent.set(a.id, { hostname: a.hostname, logs: [], activeUsernames: new Set() });
+  }
+  const totalsByAgent = new Map(periodTotals.map((t) => [t.agentId, t._sum]));
 
   return [...byAgent.entries()].map(([agentId, { hostname, logs: agentLogs, activeUsernames }]) => ({
     agentId,
@@ -218,6 +248,8 @@ export async function getFleetSummary(): Promise<UserProductivitySummaryAgentVie
             return !latest || iso > latest ? iso : latest;
           }, null)
         : null,
+    totalActiveSecondsPeriod: totalsByAgent.get(agentId)?.activeSecondsTotal ?? 0,
+    totalIdleSecondsPeriod: totalsByAgent.get(agentId)?.idleSecondsTotal ?? 0,
   }));
 }
 

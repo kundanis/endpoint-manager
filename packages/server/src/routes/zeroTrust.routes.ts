@@ -1,7 +1,12 @@
 import { Router } from "express";
 import {
+  addBuiltInConditions,
   ANTIVIRUS_PRODUCTS,
+  builtInConditionChoices,
   installBuiltInZeroTrustPolicy,
+  isProtectedConditionKey,
+  REQUIRED_SOFTWARE_KEYS,
+  resetBuiltInCondition,
   MANAGEMENT_AGENTS,
   setRequiredSoftware,
 } from "../services/builtInZeroTrust";
@@ -32,6 +37,7 @@ import {
 } from "../services/zeroTrustPolicy.service";
 import { applyForceComply, listOverridableConditionKeys, revokeOverride } from "../services/zeroTrustOverride.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
+import { z } from "zod";
 import { prisma } from "../db";
 import { requestScan } from "../services/scanRequests";
 
@@ -77,6 +83,12 @@ zeroTrustRouter.post("/built-in", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// The built-in checks any policy can take (Conditions -> Add built-in check).
+// requiredSoftwareKeys: managed on the Required software tab (also not deletable on Conditions).
+zeroTrustRouter.get("/built-in-conditions", (_req, res) => {
+  res.json({ conditions: builtInConditionChoices(), requiredSoftwareKeys: REQUIRED_SOFTWARE_KEYS });
 });
 
 // The antivirus and management-agent choices the console offers (plus "Other" - any name).
@@ -171,10 +183,45 @@ zeroTrustRouter.post("/:id/conditions", async (req, res, next) => {
   }
 });
 
+// Adds the chosen built-in checks to this policy; ones it already has are left unchanged.
+const addBuiltInConditionsSchema = z.object({ conditionKeys: z.array(z.string().min(1).max(100)).min(1).max(50) });
+zeroTrustRouter.post("/:id/built-in-conditions", async (req, res, next) => {
+  try {
+    const { conditionKeys } = addBuiltInConditionsSchema.parse(req.body);
+    const policy = await getPolicy(req.params.id);
+    if (!policy) return res.status(404).json({ error: "Policy not found" });
+    const added = await addBuiltInConditions(prisma, req.params.id, conditionKeys);
+    res.json({ added, policy: await getPolicy(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 zeroTrustRouter.patch("/:id/conditions/:conditionId", async (req, res, next) => {
   try {
     const payload = updateZeroTrustConditionRequestSchema.parse(req.body);
+    // A built-in check keeps its key - renaming it would quietly turn it into a deletable custom one.
+    if (payload.conditionKey !== undefined) {
+      const current = await prisma.zeroTrustCondition.findFirst({
+        where: { id: req.params.conditionId, policyId: req.params.id },
+        select: { conditionKey: true },
+      });
+      if (current && isProtectedConditionKey(current.conditionKey) && payload.conditionKey !== current.conditionKey) {
+        return res.status(400).json({ error: "A built-in check's key can't be changed." });
+      }
+    }
     res.json(await updateCondition(req.params.id, req.params.conditionId, payload));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Puts an edited built-in check back to its shipped definition.
+zeroTrustRouter.post("/:id/conditions/:conditionId/reset", async (req, res, next) => {
+  try {
+    const reset = await resetBuiltInCondition(prisma, req.params.id, req.params.conditionId);
+    if (!reset) return res.status(404).json({ error: "Built-in check not found" });
+    res.json(await getPolicy(req.params.id));
   } catch (err) {
     next(err);
   }
@@ -182,6 +229,18 @@ zeroTrustRouter.patch("/:id/conditions/:conditionId", async (req, res, next) => 
 
 zeroTrustRouter.delete("/:id/conditions/:conditionId", async (req, res, next) => {
   try {
+    // Built-in checks are switched off, not deleted (see isProtectedConditionKey).
+    const current = await prisma.zeroTrustCondition.findFirst({
+      where: { id: req.params.conditionId, policyId: req.params.id },
+      select: { conditionKey: true },
+    });
+    if (current && isProtectedConditionKey(current.conditionKey)) {
+      return res.status(409).json({
+        error: REQUIRED_SOFTWARE_KEYS.includes(current.conditionKey)
+          ? "This check is set on the Required software tab. Choose Don't check there to stop using it."
+          : "Built-in checks can't be deleted. Switch it off instead.",
+      });
+    }
     const deleted = await deleteCondition(req.params.id, req.params.conditionId);
     if (!deleted) return res.status(404).json({ error: "Condition not found" });
     res.status(204).send();

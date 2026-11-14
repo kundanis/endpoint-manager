@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { AppWindow, Clock, Coffee, Globe, History, Monitor, SearchX, UserCheck, X } from "lucide-react";
+import { AppWindow, CalendarRange, Clock, Coffee, Globe, History, Monitor, SearchX, UserCheck, X } from "lucide-react";
 import type { AppUsageKind } from "@em/shared";
 import { useAgentUserProductivityDailyLog, useAgentUserSessions, useAppUsage, useUserProductivitySummary } from "../api/hooks";
 import EndpointLabel from "../components/EndpointLabel";
+import type { ProductivityPeriod } from "../api/types";
 import {
   Alert,
   Badge,
@@ -42,6 +43,16 @@ function isToday(isoDate: string): boolean {
 function percent(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0;
 }
+
+// "Total active" covers the chosen period by the calendar: today, Monday to today, the 1st of
+// the month to today, 1 January to today. "Active today" figures stay as they are.
+const PERIOD_OPTIONS: { value: ProductivityPeriod; label: string }[] = [
+  { value: "day", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+];
+const PERIOD_TEXT: Record<ProductivityPeriod, string> = { day: "today", week: "this week", month: "this month", year: "this year" };
 
 // Rows shown in the "active vs idle" chart; the full list is in the table below it.
 const CHART_ROWS = 8;
@@ -153,7 +164,10 @@ function AppUsageCard({ agentId, hostname, from, to }: { agentId?: string; hostn
 }
 
 export default function UserProductivityPage() {
-  const { data: summary, isLoading, error, refetch } = useUserProductivitySummary();
+  const [period, setPeriod] = useState<ProductivityPeriod>("week");
+  const { data: summary, isLoading, error, refetch } = useUserProductivitySummary(period);
+  const periodText = PERIOD_TEXT[period];
+  const showPeriod = period !== "day";
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -180,10 +194,15 @@ export default function UserProductivityPage() {
 
   const totalActive = rows.reduce((sum, a) => sum + a.totalActiveSecondsToday, 0);
   const totalIdle = rows.reduce((sum, a) => sum + a.totalIdleSecondsToday, 0);
+  const periodActive = rows.reduce((sum, a) => sum + a.totalActiveSecondsPeriod, 0);
+  const periodIdle = rows.reduce((sum, a) => sum + a.totalIdleSecondsPeriod, 0);
+  // The list also holds endpoints with time earlier in the period; the "today" tiles count
+  // only endpoints with something today.
+  const todayRows = rows.filter((a) => a.activeUsernames.length > 0 || a.totalActiveSecondsToday + a.totalIdleSecondsToday > 0 || a.firstLoginAtToday);
   const activeUserCount = rows.reduce((sum, a) => sum + a.activeUsernames.length, 0);
   const endpointsWithUsers = rows.filter((a) => a.activeUsernames.length > 0).length;
   const chartRows = [...rows]
-    .map((a) => ({ ...a, total: a.totalActiveSecondsToday + a.totalIdleSecondsToday }))
+    .map((a) => ({ ...a, active: a.totalActiveSecondsPeriod, idle: a.totalIdleSecondsPeriod, total: a.totalActiveSecondsPeriod + a.totalIdleSecondsPeriod }))
     .sort((a, b) => b.total - a.total)
     .slice(0, CHART_ROWS);
 
@@ -224,15 +243,19 @@ export default function UserProductivityPage() {
 
   return (
     <>
-      <PageHeader title="User productivity" description={description} />
+      <PageHeader
+        title="User productivity"
+        description={description}
+        actions={<Segmented label="Total active for" value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />}
+      />
 
       <KpiStrip>
-        <Kpi icon={Monitor} label="Endpoints reporting" value={rows.length} suffix="today" />
+        <Kpi icon={Monitor} label="Endpoints reporting" value={todayRows.length} suffix="today" />
         <Kpi
           icon={UserCheck}
           label="Signed-in users"
           value={activeUserCount}
-          suffix={`on ${endpointsWithUsers} of ${rows.length} endpoints`}
+          suffix={`on ${endpointsWithUsers} of ${todayRows.length} endpoints`}
         />
         <Kpi
           icon={Clock}
@@ -245,10 +268,18 @@ export default function UserProductivityPage() {
           ]}
         />
         <Kpi icon={Coffee} label="Idle time today" value={formatDuration(totalIdle)} suffix={`${percent(totalIdle, totalActive + totalIdle)}%`} />
+        {showPeriod && (
+          <Kpi
+            icon={CalendarRange}
+            label={`Total active ${periodText}`}
+            value={formatDuration(periodActive)}
+            suffix={`${percent(periodActive, periodActive + periodIdle)}%`}
+          />
+        )}
       </KpiStrip>
 
       <Card
-        title="Active vs idle today"
+        title={`Active vs idle ${periodText}`}
         hint={rows.length > CHART_ROWS ? `top ${CHART_ROWS} endpoints by time signed in` : "time signed in per endpoint"}
         actions={
           <Legend
@@ -260,7 +291,7 @@ export default function UserProductivityPage() {
         }
       >
         {chartRows.every((a) => a.total === 0) ? (
-          <EmptyState icon={Clock} title="No session activity recorded yet today">
+          <EmptyState icon={Clock} title={`No session activity recorded ${periodText}`}>
             Endpoints report signed-in time every 5 minutes; check back once users sign in.
           </EmptyState>
         ) : (
@@ -287,18 +318,18 @@ export default function UserProductivityPage() {
                   <td>
                     {a.total > 0 ? (
                       <div className="ep-sbar">
-                        <i style={{ width: `${(a.totalActiveSecondsToday / a.total) * 100}%`, background: CHART_SEMANTIC.ok }} />
-                        <i style={{ width: `${(a.totalIdleSecondsToday / a.total) * 100}%`, background: CHART_SEMANTIC.neutral }} />
+                        <i style={{ width: `${(a.active / a.total) * 100}%`, background: CHART_SEMANTIC.ok }} />
+                        <i style={{ width: `${(a.idle / a.total) * 100}%`, background: CHART_SEMANTIC.neutral }} />
                       </div>
                     ) : (
-                      <span className="ep-nodata">No signed-in time today</span>
+                      <span className="ep-nodata">No signed-in time {periodText}</span>
                     )}
                   </td>
                   <td className="ep-t" style={{ width: 90 }}>
-                    {formatDuration(a.totalActiveSecondsToday)}
+                    {formatDuration(a.active)}
                   </td>
                   <td className="ep-t" style={{ width: 90 }}>
-                    {formatDuration(a.totalIdleSecondsToday)}
+                    {formatDuration(a.idle)}
                   </td>
                 </tr>
               ))}
@@ -309,12 +340,12 @@ export default function UserProductivityPage() {
 
       <AppUsageCard />
 
-      <Card flush title="Endpoints today" hint="select an endpoint to see its session and daily history">
+      <Card flush title="Endpoints" hint="select an endpoint to see its session and daily history">
         <Toolbar>
           <SearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search hostname or user…" />
         </Toolbar>
         {rows.length === 0 ? (
-          <EmptyState icon={Monitor} title="No session activity recorded yet today">
+          <EmptyState icon={Monitor} title={`No session activity recorded ${periodText}`}>
             Every enrolled endpoint reports automatically; rows appear after its first 5-minute scan.
           </EmptyState>
         ) : filteredRows.length === 0 ? (
@@ -341,6 +372,11 @@ export default function UserProductivityPage() {
                     <th scope="col" style={RIGHT}>
                       Idle time today
                     </th>
+                    {showPeriod && (
+                      <th scope="col" style={RIGHT}>
+                        Total active {periodText}
+                      </th>
+                    )}
                     <th scope="col">First login today</th>
                     <th scope="col">Last logout today</th>
                   </tr>
@@ -369,6 +405,11 @@ export default function UserProductivityPage() {
                       <td className="ep-num" style={RIGHT}>
                         {formatDuration(a.totalIdleSecondsToday)}
                       </td>
+                      {showPeriod && (
+                        <td className="ep-num" style={RIGHT}>
+                          {formatDuration(a.totalActiveSecondsPeriod)}
+                        </td>
+                      )}
                       <td className="app-muted">{formatTime(a.firstLoginAtToday)}</td>
                       <td className="app-muted">{formatTime(a.lastLogoutAtToday)}</td>
                     </tr>

@@ -90,9 +90,11 @@ const ZERO_TRUST_CONDITIONS: ZeroTrustSeedCondition[] = [
     conditionKey: "win-security-account-protection",
     title: "Account protection",
     description:
-      "Best-effort presence check for Windows Hello enrollment (PIN/biometric) via the per-machine NGC container folder Windows itself stores enrolled credentials in — not a live Microsoft Graph/MDM query.",
+      "Windows Hello (PIN, face or fingerprint) is set up for at least one user on the device. Read from the folder Windows keeps Hello credentials in, which only the agent (running as SYSTEM) can open.",
+    // The Ngc folder lives under the LocalService profile, not ProgramData (the old path never
+    // existed, so this check used to fail everywhere).
     checkPowerShell:
-      "$ngc = \"$env:ProgramData\\Microsoft\\Ngc\"; if ((Test-Path $ngc) -and (Get-ChildItem $ngc -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0) { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+      "$ngc = Join-Path $env:windir 'ServiceProfiles\\LocalService\\AppData\\Local\\Microsoft\\Ngc'; $n = 0; try { $n = @(Get-ChildItem -LiteralPath $ngc -Directory -Force -ErrorAction Stop).Count } catch {}; if ($n -gt 0) { 'COMPLIANT' } else { 'NONCOMPLIANT: Windows Hello (PIN, face or fingerprint) is not set up for any user' }",
     operator: "EQUALS",
     expectedValue: "COMPLIANT",
   },
@@ -109,9 +111,12 @@ const ZERO_TRUST_CONDITIONS: ZeroTrustSeedCondition[] = [
   {
     conditionKey: "win-security-app-browser-control",
     title: "App & browser control",
-    description: "SmartScreen for apps and files (Explorer\\SmartScreenEnabled) is turned on, not 'Off'.",
+    description:
+      "SmartScreen for apps and files is on, SmartScreen for Microsoft Edge isn't turned off by policy, and exploit protection (DEP, CFG) isn't switched off system-wide.",
+    // An absent SmartScreenEnabled value is Windows' default (on); only an explicit Off, or the
+    // EnableSmartScreen=0 policy, means it's off. The policy value wins over the user setting.
     checkPowerShell:
-      "$v = (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' -Name SmartScreenEnabled -ErrorAction SilentlyContinue).SmartScreenEnabled; if ($v -and $v -ne 'Off') { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+      "$r = @(); $p = (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' -Name EnableSmartScreen -ErrorAction SilentlyContinue).EnableSmartScreen; $e = (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' -Name SmartScreenEnabled -ErrorAction SilentlyContinue).SmartScreenEnabled; if ($p -eq 0 -or ($null -eq $p -and $e -eq 'Off')) { $r += 'SmartScreen for apps and files is off' }; $edge = (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge' -Name SmartScreenEnabled -ErrorAction SilentlyContinue).SmartScreenEnabled; if ($edge -eq 0) { $r += 'SmartScreen for Microsoft Edge is turned off by policy' }; try { $m = Get-ProcessMitigation -System -ErrorAction Stop; if ([string]$m.Dep.Enable -eq 'OFF') { $r += 'Exploit protection: DEP is off' }; if ([string]$m.Cfg.Enable -eq 'OFF') { $r += 'Exploit protection: CFG is off' } } catch {}; if ($r.Count) { 'NONCOMPLIANT: ' + ($r -join '; ') } else { 'COMPLIANT' }",
     operator: "EQUALS",
     expectedValue: "COMPLIANT",
   },
@@ -119,9 +124,10 @@ const ZERO_TRUST_CONDITIONS: ZeroTrustSeedCondition[] = [
     conditionKey: "win-security-device-security",
     title: "Device security",
     description:
-      "Core hardware-security floor: a present-and-ready TPM plus UEFI Secure Boot enabled. Confirm-SecureBootUEFI throws outright on legacy BIOS machines — caught and treated as 'no', which is the correct read (legacy BIOS can't have Secure Boot at all).",
+      "The device has a working TPM (security processor) and UEFI Secure Boot is on. Legacy BIOS devices can't use Secure Boot, so they don't pass.",
+    // Confirm-SecureBootUEFI throws on legacy BIOS - caught and read as off.
     checkPowerShell:
-      "$tpm = Get-Tpm -ErrorAction SilentlyContinue; $sb = $false; try { $sb = Confirm-SecureBootUEFI } catch {}; if ($tpm -and $tpm.TpmPresent -and $tpm.TpmReady -and $sb) { 'COMPLIANT' } else { 'NONCOMPLIANT' }",
+      "$r = @(); $tpm = $null; try { $tpm = Get-Tpm -ErrorAction Stop } catch {}; if (-not ($tpm -and $tpm.TpmPresent -and $tpm.TpmReady)) { $r += 'TPM is missing or not ready' }; $sb = $false; try { $sb = Confirm-SecureBootUEFI -ErrorAction Stop } catch {}; if (-not $sb) { $r += 'Secure Boot is off' }; if ($r.Count) { 'NONCOMPLIANT: ' + ($r -join '; ') } else { 'COMPLIANT' }",
     operator: "EQUALS",
     expectedValue: "COMPLIANT",
   },
@@ -266,6 +272,59 @@ export const DEFAULT_REQUIRED_SOFTWARE: RequiredSoftwareRequest = {
   antivirus: { name: ANTIVIRUS_PRODUCTS[0].label, match: ANTIVIRUS_PRODUCTS[0].match },
   managementAgent: null,
 };
+
+// The built-in checks an admin can add to any policy (Conditions -> Add built-in check), so a
+// renamed or self-made policy can still get e.g. the Windows Security checks without typing
+// PowerShell. Required software (antivirus / management agent) has its own tab, so it's not here.
+export function builtInConditionChoices(): ZeroTrustSeedCondition[] {
+  return ZERO_TRUST_CONDITIONS.map((c) => ({ ...c }));
+}
+
+// The two conditions the Required software tab writes (and removes, with "Don't check").
+export const REQUIRED_SOFTWARE_KEYS = ["antivirus-registered", "management-agent-installed"];
+
+// Built-in conditions can be switched off or edited, but not deleted: switching off keeps the
+// check one click away, and a deleted one used to be gone for good. Custom conditions an admin
+// adds under their own key stay deletable.
+export function isProtectedConditionKey(conditionKey: string): boolean {
+  return REQUIRED_SOFTWARE_KEYS.includes(conditionKey) || ZERO_TRUST_CONDITIONS.some((c) => c.conditionKey === conditionKey);
+}
+
+// "Reset to built-in": puts an edited built-in check back to its shipped definition (keeps its
+// on/off switch). Returns false when the condition isn't in this policy or isn't a resettable
+// built-in (required-software conditions are reset from their own tab).
+export async function resetBuiltInCondition(prisma: PrismaClient, policyId: string, conditionId: string): Promise<boolean> {
+  const row = await prisma.zeroTrustCondition.findFirst({ where: { id: conditionId, policyId }, select: { conditionKey: true } });
+  const def = row && ZERO_TRUST_CONDITIONS.find((c) => c.conditionKey === row.conditionKey);
+  if (!def) return false;
+  await prisma.zeroTrustCondition.update({
+    where: { id: conditionId },
+    data: {
+      title: def.title,
+      description: def.description,
+      checkPowerShell: def.checkPowerShell,
+      operator: def.operator,
+      expectedValue: def.expectedValue,
+    },
+  });
+  return true;
+}
+
+// Adds the chosen built-in checks the policy doesn't have yet; ones it already has are left as
+// they are (an admin may have edited them).
+export async function addBuiltInConditions(prisma: PrismaClient, policyId: string, conditionKeys: string[]): Promise<number> {
+  const wanted = ZERO_TRUST_CONDITIONS.filter((c) => conditionKeys.includes(c.conditionKey));
+  const existing = await prisma.zeroTrustCondition.findMany({
+    where: { policyId, conditionKey: { in: wanted.map((c) => c.conditionKey) } },
+    select: { conditionKey: true },
+  });
+  const have = new Set(existing.map((c) => c.conditionKey));
+  const missing = wanted.filter((c) => !have.has(c.conditionKey));
+  if (missing.length) {
+    await prisma.zeroTrustCondition.createMany({ data: missing.map((c) => ({ policyId, ...c })) });
+  }
+  return missing.length;
+}
 
 export async function installBuiltInZeroTrustPolicy(
   prisma: PrismaClient,

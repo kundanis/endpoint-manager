@@ -98,6 +98,75 @@ export async function getCommandJob(jobId: string) {
   };
 }
 
+// Endpoint -> History tab: commands sent to this endpoint from the console (Commands page,
+// Software tab uninstall, benchmark fixes, deployments and security actions), newest first.
+// Security actions (agent uninstall, quarantine, remote access: bypassesPause jobs) show what
+// they were but not their script. Output is trimmed; the full result is on the Commands page.
+const HISTORY_COMMANDS = 200;
+const HISTORY_OUTPUT_CHARS = 4000;
+
+function trimOutput(text: string | null | undefined): string | null {
+  if (text === undefined) return null;
+  if (!text) return text;
+  return text.length > HISTORY_OUTPUT_CHARS ? `${text.slice(0, HISTORY_OUTPUT_CHARS)}\n… (trimmed)` : text;
+}
+
+function securityActionLabel(script: string): string {
+  // Markers from the scripts agent.service / quarantine.service / remoteAccess.service build.
+  if (script.includes("EndpointProUninstallHelper")) return "Agent uninstall";
+  if (script.includes("Write-Output 'RELEASED'")) return "Quarantine release";
+  if (script.includes("pre-quarantine-")) return "Quarantine";
+  if (script.includes("REMOTE_ACCESS_DISABLED")) return "Remote access off";
+  if (script.includes("fDenyTSConnections")) return "Remote access on";
+  return "Security action";
+}
+
+export async function listAgentCommands(agentId: string, includeAdmin: boolean) {
+  const tasks = await prisma.commandTask.findMany({
+    where: { agentId },
+    orderBy: { job: { createdAt: "desc" } },
+    take: HISTORY_COMMANDS,
+    include: { job: { select: { id: true, shell: true, script: true, createdAt: true, createdByAdminId: true, bypassesPause: true } } },
+  });
+  const adminIds = includeAdmin ? [...new Set(tasks.map((t) => t.job.createdByAdminId))] : [];
+  const admins = adminIds.length ? await prisma.adminUser.findMany({ where: { id: { in: adminIds } }, select: { id: true, email: true } }) : [];
+  const emailById = new Map(admins.map((a) => [a.id, a.email]));
+
+  return tasks.map((t) => {
+    let script: string | null = null;
+    try {
+      script = decryptField(t.job.script);
+    } catch {
+      script = null;
+    }
+    const security = t.job.bypassesPause;
+    let stdout: string | null = null;
+    let stderr: string | null = null;
+    try {
+      stdout = trimOutput(decryptFieldOrNull(t.stdout));
+      stderr = trimOutput(decryptFieldOrNull(t.stderr));
+    } catch {
+      // unreadable output - shown as none
+    }
+    return {
+      id: t.id,
+      jobId: t.job.id,
+      sentAt: t.job.createdAt.toISOString(),
+      shell: t.job.shell,
+      // Security actions: a label only, never the script.
+      script: security ? null : script,
+      label: security ? securityActionLabel(script ?? "") : null,
+      status: t.status,
+      exitCode: t.exitCode,
+      stdout: security ? null : stdout,
+      stderr: security ? null : stderr,
+      dispatchedAt: t.dispatchedAt?.toISOString() ?? null,
+      completedAt: t.completedAt?.toISOString() ?? null,
+      adminEmail: includeAdmin ? (emailById.get(t.job.createdByAdminId) ?? null) : null,
+    };
+  });
+}
+
 export async function recordCommandResult(
   taskId: string,
   agentId: string,

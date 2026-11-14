@@ -120,12 +120,13 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Tabs",
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
+          "Security posture (on Overview): vulnerabilities, Zero Trust, patches, security configuration and, on Windows with Threat Protection, threats detected (open, and in the last 30 days). Select one to open that page for this endpoint.",
           "Software: installed applications with licence status; uninstall them remotely. System software (Windows components, drivers, runtimes such as .NET and Visual C++, OEM tools, Defender and the Endpoint IQ agent) shows System software instead of Uninstall and can't be removed from the console. Sync now fetches the current list from the device.",
           "Block (software with no licence recorded): the endpoint closes the program whenever it starts and the user sees a message; it stays installed. Release lets it run again. Blocks are kept in an Application control policy named Unlicensed software: <endpoint>, and need access to Application control.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
           "Data protection: personal data found, DLP events, file movements, screenshots, blocked apps, commands and USB devices.",
           "Manage: asset details, custom fields, groups, Remote Desktop, pause and remote agent uninstall.",
-          "History: applications installed, removed or updated on the device (and whether a removal came from the console), plus every admin action on it for super admins.",
+          "History: applications installed, removed or updated on the device (and whether a removal came from the console), every command sent to it from the console with its status and output (who sent it: super admins), plus every admin action on it for super admins.",
           "User Productivity: sign-in sessions with active and idle time.",
         ],
       },
@@ -181,7 +182,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       {
         title: "What you can do",
         items: [
-          "Create a token with an expiry, a usage limit and a group new devices join automatically.",
+          "Create a token with an expiry, a usage limit and a group new devices join automatically. Choose New group… in Target group to create one there.",
           "Download a ready-to-run Windows setup file for a token: nothing to type on the device.",
           "Push-install the agent to Windows machines over the network with admin credentials (never stored).",
           "Download the macOS or Linux agent and copy its install command.",
@@ -196,7 +197,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Install the agent on a Windows PC",
         steps: [
           { route: "/enrollment-tokens", text: "Select Create token.", target: { kind: "button", label: "Create token" } },
-          { text: "Give it a label, choose how long it's valid and how many devices may use it, and optionally a group. Create it." },
+          { text: "Give it a label, choose how long it's valid and how many devices may use it, and optionally a group. To make a new group, choose New group…, type its name and select Create group. Create the token." },
           { text: "Select Download setup for this token and run the file on the PC as an administrator." },
           { text: "The PC appears under Endpoints within a minute." },
         ],
@@ -345,12 +346,13 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     title: "Asset settings",
     path: "/asset-settings",
     summary: "Tamper protection, asset groups and custom fields for every managed endpoint.",
-    keywords: ["groups", "uninstall password", "tamper", "custom field"],
+    keywords: ["groups", "uninstall password", "tamper", "custom field", "remote install", "install account", "winrm"],
     sections: [
       {
         title: "Tabs",
         items: [
           "Tamper protection: an uninstall password, checked by the server, that stops users removing the agent.",
+          "Remote install: save the Windows admin account Install agent uses, so it isn't asked each time (super admins). The password is stored encrypted and never shown again.",
           "Asset groups: group endpoints by team, site or role to target policies, packages and updates.",
           "Custom fields: add your own text, number, date or list fields to every endpoint.",
         ],
@@ -372,6 +374,15 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         steps: [
           { route: "/asset-settings", text: "Open the Tamper protection tab.", target: { kind: "tab", label: "Tamper protection" } },
           { text: "Select Set password and enter an uninstall password. Uninstalling then requires it, including from this console." },
+        ],
+      },
+      {
+        id: "assets-remote-install",
+        title: "Install the agent without typing an admin account",
+        steps: [
+          { route: "/asset-settings", text: "Open the Remote install tab.", target: { kind: "tab", label: "Remote install" } },
+          { text: "As a super admin, enter a Windows account that is a local administrator on the workstations, and its password. Select Save account." },
+          { text: "Install agent on Network discovery and Endpoints no longer asks for a login: pick a group if you want one and select Install. Use another account still lets you type one for a single device." },
         ],
       },
       {

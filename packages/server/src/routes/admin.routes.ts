@@ -1,3 +1,5 @@
+import { listAgentCommands } from "../services/command.service";
+import { RemoteInstallAccountError } from "../services/agentSecurity.service";
 import { removeAgentImages } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
 import { Router, type Response } from "express";
@@ -190,7 +192,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
     });
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     const customFieldValues = await getAgentCustomFieldValues(agent.id);
-    const [openVulnerabilityCount, nonCompliantZtFindingsRaw, lastPatchInstalledByAgent, latestUpdateTaskByAgent, latestAvailablePatch] =
+    const [openVulnerabilityCount, nonCompliantZtFindingsRaw, lastPatchInstalledByAgent, latestUpdateTaskByAgent, latestAvailablePatch, missingPatchCount] =
       await Promise.all([
         prisma.vulnerabilityFinding.count({ where: { agentId: agent.id, status: "OPEN" } }),
         prisma.zeroTrustFinding.findMany({
@@ -200,6 +202,10 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
         getLastPatchInstalledAtByAgent(agent.id),
         getLatestAgentUpdateTaskByAgent([agent.id]),
         getLatestMissingPatchByAgent(agent.id),
+        // Same rule as "Latest available patch" (status MISSING), so Security posture's
+        // "Patches available" agrees with it. It was missing from this response, so the
+        // endpoint page always showed "Up to date".
+        prisma.patchFinding.count({ where: { agentId: agent.id, status: "MISSING" } }),
       ]);
     const overriddenForThisAgent = await getOverriddenKeysByAgent([agent.id]);
     const zeroTrustNonCompliantCount = excludeOverriddenFailures(
@@ -241,6 +247,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       lastPatchInstalledAt: lastPatchInstalledByAgent.get(agent.id)?.toISOString() ?? null,
       latestUpdateTask: latestUpdateTaskByAgent.get(agent.id) ?? null,
       latestAvailablePatch,
+      missingPatchCount,
       lastCheckinAt: effectiveLastCheckin(agent.id, agent.lastCheckinAt)?.toISOString() ?? null,
       status: computeStatus(effectiveLastCheckin(agent.id, agent.lastCheckinAt)),
       createdAt: agent.createdAt.toISOString(),
@@ -391,13 +398,15 @@ adminRouter.get("/agents/:id/history", async (req, res, next) => {
   try {
     const agentId = req.params.id;
     const isSuper = req.adminRole === "SUPER_ADMIN";
-    const [changes, audit] = await Promise.all([
+    const [changes, audit, commands] = await Promise.all([
       prisma.agentSoftwareChange.findMany({ where: { agentId }, orderBy: { detectedAt: "desc" }, take: 500 }),
       prisma.adminAuditLog.findMany({
         where: { OR: [{ targetId: agentId }, { path: { contains: agentId } }] },
         orderBy: { at: "desc" },
         take: 500,
       }),
+      // Commands sent to this endpoint (every admin who can open it; who sent it: super admins).
+      listAgentCommands(agentId, isSuper),
     ]);
     // A removal that follows a console Uninstall of the same name is credited to it.
     const uninstalls = audit
@@ -430,6 +439,7 @@ adminRouter.get("/agents/:id/history", async (req, res, next) => {
           byAdmin: by && isSuper ? by.adminEmail : null,
         };
       }),
+      commands,
       adminActions: isSuper
         ? audit.map((a) => ({ id: a.id, at: a.at, adminEmail: a.adminEmail, category: a.category, summary: a.summary, success: a.success }))
         : null,
@@ -730,7 +740,9 @@ adminRouter.post("/remote-install", async (req, res, next) => {
     const result = await startRemoteInstall(payload, req.adminId!);
     res.status(201).json(result);
   } catch (err) {
-    next(err);
+    // A picked token that's revoked, expired or used up, or no saved account: a readable 400.
+    if (err instanceof RemoteInstallAccountError) return res.status(400).json({ error: err.message });
+    if (!sendTokenError(res, err)) next(err);
   }
 });
 

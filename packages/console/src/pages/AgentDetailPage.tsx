@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   AppWindow,
@@ -45,11 +45,12 @@ import {
   useToast,
   type BadgeTone,
   type TabItem,
+  TaskStatus,
 } from "../components/ui";
 import { formatBytes, formatDate, formatDateTime, formatRelative } from "../format";
 import DataMovementEventTable from "../components/DataMovementEventTable";
 import EndpointScreenCaptures from "../components/EndpointScreenCaptures";
-import type { AgentDetail, InstalledSoftwareEntry, LifecycleStatus, NormalizedSeverity } from "../api/types";
+import type { AgentDetail, AgentHistory, InstalledSoftwareEntry, LifecycleStatus, NormalizedSeverity } from "../api/types";
 import {
   useAddAgentNote,
   useAgent,
@@ -70,6 +71,7 @@ import {
   useDispatchAgentUpdate,
   useEnableRemoteAccess,
   useIsItemHidden,
+  useThreatDetections,
   usePauseAgent,
   useResumeAgent,
   useSetAgentCustomFields,
@@ -446,6 +448,12 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
   const patchesHidden = useIsItemHidden("/patches");
   const securityConfigHidden = useIsItemHidden("/security-config");
   const { data: findings, isLoading: findingsLoading } = useAgentSecurityFindings(securityConfigHidden ? undefined : agent.id);
+  // Threat Protection (Windows, Microsoft Defender): open threats and those seen in 30 days. Left
+  // out when the module is hidden, or the licence or the admin's access doesn't include it.
+  const threatsHidden = useIsItemHidden("/threat-protection/threats");
+  const showThreats = !threatsHidden && agent.osPlatform === "win32";
+  const openThreats = useThreatDetections("open", 30, agent.id, showThreats);
+  const recentThreats = useThreatDetections("all", 30, agent.id, showThreats);
 
   // Compliance across every benchmark rule assessed on this endpoint.
   const assessed = findings ?? [];
@@ -466,7 +474,7 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
     items.push({
       label: "Vulnerabilities",
       value: (
-        <Link className="ep-link" to="/vulnerabilities">
+        <Link className="ep-link" to={`/vulnerabilities?agent=${encodeURIComponent(agent.id)}`}>
           {agent.openVulnerabilityCount > 0 ? (
             <Badge tone="high">
               <span className="ep-num">{agent.openVulnerabilityCount}</span> open
@@ -498,7 +506,7 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
     items.push({
       label: "Patches available",
       value: (
-        <Link className="ep-link" to="/patches">
+        <Link className="ep-link" to={`/patches?agent=${encodeURIComponent(agent.id)}`}>
           {agent.missingPatchCount > 0 ? (
             <Badge tone="med">
               <span className="ep-num">{agent.missingPatchCount}</span> available
@@ -526,6 +534,33 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
               </Badge>{" "}
               <span className="app-muted">
                 (<span className="ep-num">{passed}</span> of <span className="ep-num">{assessed.length}</span> rules)
+              </span>
+            </>
+          )}
+        </Link>
+      ),
+    });
+  }
+  if (showThreats && !openThreats.error && !recentThreats.error) {
+    const open = openThreats.data?.length ?? 0;
+    const recent = recentThreats.data?.length ?? 0;
+    items.push({
+      label: "Threats detected",
+      value: (
+        <Link className="ep-link" to={`/threat-protection/threats?agent=${encodeURIComponent(agent.id)}`}>
+          {openThreats.isLoading || recentThreats.isLoading ? (
+            "…"
+          ) : (
+            <>
+              {open > 0 ? (
+                <Badge tone="crit">
+                  <span className="ep-num">{open}</span> open
+                </Badge>
+              ) : (
+                <Badge tone="ok">None open</Badge>
+              )}{" "}
+              <span className="app-muted">
+                (<span className="ep-num">{recent}</span> in the last 30 days)
               </span>
             </>
           )}
@@ -1830,6 +1865,109 @@ function UserSessionsSection({ agentId }: { agentId: string }) {
  * History: software changes (by anyone) and admin actions on this endpoint (super admins)
  * ---------------------------------------------------------------------------------------- */
 
+// Commands sent to this endpoint from the console: Commands page, Software tab uninstall,
+// benchmark fixes, deployments and security actions. Who sent each is shown to super admins.
+function CommandHistoryCard({ commands, showAdmin }: { commands: AgentHistory["commands"]; showAdmin: boolean }) {
+  const paged = usePagedList(commands);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const firstLine = (script: string) => {
+    const line = script.split(/\r?\n/).find((l) => l.trim()) ?? "";
+    return line.length > 120 ? `${line.slice(0, 120)}…` : line;
+  };
+  const cols = showAdmin ? 6 : 5;
+
+  return (
+    <Card flush title="Commands" hint={`${commands.length} ${plural(commands.length, "command")} sent from the console`}>
+      {commands.length === 0 ? (
+        <EmptyState icon={Terminal} title="No commands sent to this endpoint">
+          Commands run from the Commands page, uninstalls from the Software tab, fixes and deployments appear here with their result.
+        </EmptyState>
+      ) : (
+        <>
+          <div className="app-table-scroll">
+            <table className="ep-tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Sent</th>
+                  <th scope="col">Command</th>
+                  {showAdmin && <th scope="col">Sent by</th>}
+                  <th scope="col">Status</th>
+                  <th scope="col" style={{ textAlign: "right" }}>
+                    Exit code
+                  </th>
+                  <th scope="col">
+                    <span className="app-vh">Output</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.pageItems.map((c) => {
+                  const open = openId === c.id;
+                  const hasDetail = !!(c.script || c.stdout || c.stderr);
+                  return (
+                    <Fragment key={c.id}>
+                      <tr className={open ? "ep-sel" : undefined}>
+                        <td className="app-muted" style={{ whiteSpace: "nowrap" }}>
+                          {formatDateTime(c.sentAt)}
+                        </td>
+                        <td style={{ overflowWrap: "anywhere" }}>
+                          {c.label ? <Badge tone="neu">{c.label}</Badge> : <span className="ep-mono">{firstLine(c.script ?? "")}</span>}
+                        </td>
+                        {showAdmin && <td>{c.adminEmail ?? "—"}</td>}
+                        <td>
+                          <TaskStatus status={c.status} />
+                        </td>
+                        <td className="ep-mono" style={{ textAlign: "right" }}>
+                          {c.exitCode ?? <span className="app-muted">—</span>}
+                        </td>
+                        <td>
+                          {hasDetail && (
+                            <Button size="sm" onClick={() => setOpenId(open ? null : c.id)} aria-expanded={open}>
+                              {open ? "Hide" : "Show"}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr>
+                          <td colSpan={cols}>
+                            <div className="app-stack-sm">
+                              {c.script && (
+                                <>
+                                  <span className="app-subhead">Script ({c.shell})</span>
+                                  <pre className="app-pre">{c.script}</pre>
+                                </>
+                              )}
+                              {c.stdout && (
+                                <>
+                                  <span className="app-subhead">Output</span>
+                                  <pre className="app-pre">{c.stdout}</pre>
+                                </>
+                              )}
+                              {c.stderr && (
+                                <>
+                                  <span className="app-subhead">Error output</span>
+                                  <pre className="app-pre app-pre-error">{c.stderr}</pre>
+                                </>
+                              )}
+                              {!c.stdout && !c.stderr && <span className="app-muted">No output yet.</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <ListPager paged={paged} noun="commands" />
+        </>
+      )}
+    </Card>
+  );
+}
+
 const CHANGE_LABEL = { INSTALLED: "Installed", REMOVED: "Removed", UPDATED: "Updated" } as const;
 const CHANGE_TONE: Record<"INSTALLED" | "REMOVED" | "UPDATED", BadgeTone> = { INSTALLED: "ok", REMOVED: "high", UPDATED: "neu" };
 
@@ -1905,6 +2043,8 @@ function HistorySection({ agentId }: { agentId: string }) {
           </>
         )}
       </Card>
+
+      <CommandHistoryCard commands={data.commands ?? []} showAdmin={!!data.adminActions} />
 
       {data.adminActions && (
         <Card flush title="Admin actions on this endpoint" hint={`${data.adminActions.length} ${plural(data.adminActions.length, "action")} · super admins only`}>

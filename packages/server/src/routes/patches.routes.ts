@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { createAutoPatchPolicyRequestSchema, dispatchPatchJobRequestSchema, updateAutoPatchPolicyRequestSchema } from "@em/shared";
 import { prisma } from "../db";
-import { createPatchJob, getAgentsMissingPatch, getFleetPatchSummary, getPatchJob, listPatchJobs } from "../services/patch.service";
+import { createPatchJob, getAgentsMissingPatch,
+  resolvePatchScope, getFleetPatchSummary, getPatchJob, listPatchJobs } from "../services/patch.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import {
   AutoPatchPolicyNotFoundError,
@@ -15,8 +16,10 @@ export const patchesRouter = Router();
 
 patchesRouter.get("/", async (req, res, next) => {
   try {
-    const groupId = typeof req.query.groupId === "string" ? req.query.groupId : undefined;
-    res.json(await getFleetPatchSummary(groupId));
+    // ?groupId= or ?agentId= (the page's Group / Endpoint filter).
+    const groupId = typeof req.query.groupId === "string" && req.query.groupId ? req.query.groupId : undefined;
+    const agentId = typeof req.query.agentId === "string" && req.query.agentId ? req.query.agentId : undefined;
+    res.json(await getFleetPatchSummary(agentId ? undefined : groupId, agentId));
   } catch (err) {
     next(err);
   }
@@ -27,7 +30,9 @@ patchesRouter.get("/", async (req, res, next) => {
 // since the second segment must be the literal "agents".
 patchesRouter.get("/:patchDefinitionId/agents", async (req, res, next) => {
   try {
-    res.json(await getAgentsMissingPatch(req.params.patchDefinitionId));
+    const groupId = typeof req.query.groupId === "string" && req.query.groupId ? req.query.groupId : undefined;
+    const agentId = typeof req.query.agentId === "string" && req.query.agentId ? req.query.agentId : undefined;
+    res.json(await getAgentsMissingPatch(req.params.patchDefinitionId, await resolvePatchScope({ agentId, groupId })));
   } catch (err) {
     next(err);
   }

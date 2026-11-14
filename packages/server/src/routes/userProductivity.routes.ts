@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAgentSessions, getAppUsage, getDailyLogs, getFleetSummary } from "../services/userProductivity.service";
+import { getAgentSessions, getAppUsage, getDailyLogs, getFleetSummary, PRODUCTIVITY_PERIODS } from "../services/userProductivity.service";
 
 export const userProductivityRouter = Router();
 
@@ -13,9 +13,11 @@ function parseDateParam(value: unknown): Date | undefined {
   return new Date(y, m - 1, d);
 }
 
-userProductivityRouter.get("/summary", async (_req, res, next) => {
+// ?period=day|week|month|year (default day): the period the "Total active" figures cover.
+userProductivityRouter.get("/summary", async (req, res, next) => {
   try {
-    res.json(await getFleetSummary());
+    const period = PRODUCTIVITY_PERIODS.find((p) => p === req.query.period) ?? "day";
+    res.json(await getFleetSummary(period));
   } catch (err) {
     next(err);
   }
