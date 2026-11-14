@@ -18,7 +18,6 @@ import {
 import type {
   VulnerabilityExceptionReason,
   VulnerabilityExceptionView,
-  VulnerabilityFindingView,
   VulnerabilityRemediationResult,
   VulnerabilitySyncRunView,
 } from "../api/types";
@@ -101,51 +100,59 @@ const EXCEPTION_REASON_LABELS: Record<VulnerabilityExceptionReason, string> = {
   RISK_ACCEPTED: "Risk accepted",
 };
 
-// "Mark as…" on a CVE's endpoint row: a CVE + that software becomes an exception for this endpoint,
-// a group or every endpoint (optionally this version only). Covered findings leave the counts and
-// are never remediated; every rescan keeps them marked.
+// "Mark as…" on a CVE in the findings list: the vulnerability itself is a false positive, not
+// applicable here, or a risk accepted - for all the software matched to it, on every endpoint, a
+// group, or the endpoint the page is filtered to. Covered findings leave the counts and are never
+// remediated; every rescan keeps them marked.
 function MarkExceptionDialog({
   cveId,
   vulnerabilityDefinitionId,
-  finding,
+  affectedAgentCount,
+  filterAgent,
+  filterGroupId,
   onClose,
 }: {
   cveId: string;
   vulnerabilityDefinitionId: string;
-  finding: VulnerabilityFindingView;
+  affectedAgentCount: number;
+  filterAgent?: { id: string; hostname: string };
+  filterGroupId?: string;
   onClose: (message?: string) => void;
 }) {
   const create = useCreateVulnerabilityException();
   const { data: groups } = useAssetGroups();
   const [reason, setReason] = useState<VulnerabilityExceptionReason>("FALSE_POSITIVE");
-  const [scope, setScope] = useState<"AGENT" | "GROUP" | "ALL">("AGENT");
-  const [groupId, setGroupId] = useState("");
-  const [versionOnly, setVersionOnly] = useState(false);
+  const [scope, setScope] = useState<"AGENT" | "GROUP" | "ALL">(filterAgent ? "AGENT" : filterGroupId ? "GROUP" : "ALL");
+  const [groupId, setGroupId] = useState(filterGroupId ?? "");
   const [note, setNote] = useState("");
   const [reviewDate, setReviewDate] = useState("");
+
+  const where =
+    scope === "AGENT" ? filterAgent?.hostname ?? "this endpoint" : scope === "GROUP" ? `group ${groups?.find((g) => g.id === groupId)?.name ?? ""}`.trim() : "every endpoint";
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     create.mutate(
       {
         vulnerabilityDefinitionId,
-        softwareName: finding.matchedSoftwareName,
-        softwareVersion: versionOnly ? finding.matchedSoftwareVersion : null,
+        // "*": every piece of software matched to this CVE.
+        softwareName: "*",
+        softwareVersion: null,
         scope,
-        ...(scope === "AGENT" ? { agentId: finding.agentId } : {}),
+        ...(scope === "AGENT" && filterAgent ? { agentId: filterAgent.id } : {}),
         ...(scope === "GROUP" ? { groupId } : {}),
         reason,
         note: note.trim(),
         expiresAt: reason === "RISK_ACCEPTED" && reviewDate ? new Date(`${reviewDate}T23:59:59`).toISOString() : null,
       },
-      { onSuccess: () => onClose(`${cveId} on ${finding.matchedSoftwareName} marked ${EXCEPTION_REASON_LABELS[reason].toLowerCase()}.`) },
+      { onSuccess: () => onClose(`${cveId} marked ${EXCEPTION_REASON_LABELS[reason].toLowerCase()} on ${where}.`) },
     );
   }
 
   return (
     <Modal
       title={`Mark ${cveId} as…`}
-      description={`For ${finding.matchedSoftwareName}${finding.matchedSoftwareVersion ? ` ${finding.matchedSoftwareVersion}` : ""}. Marked findings leave the counts, are never uninstalled by Remediate, and stay marked after every sync and rescan. Remove the exception under Exceptions to undo it.`}
+      description={`Currently matched on ${affectedAgentCount} endpoint${affectedAgentCount === 1 ? "" : "s"}${filterAgent || filterGroupId ? " in this filter" : ""}. Marked findings leave the counts, are never uninstalled by Remediate, and stay marked after every sync and rescan. Remove the exception under Exceptions to undo it.`}
       onClose={() => onClose()}
       footer={
         <>
@@ -160,16 +167,16 @@ function MarkExceptionDialog({
         <FormGrid>
           <Field label="Mark as" htmlFor="vex-reason" required>
             <select id="vex-reason" className="ep-select" value={reason} onChange={(e) => setReason(e.target.value as VulnerabilityExceptionReason)}>
-              <option value="FALSE_POSITIVE">False positive — the software isn't affected</option>
+              <option value="FALSE_POSITIVE">False positive — not actually affected</option>
               <option value="NOT_APPLICABLE">Not applicable — the issue can't occur here</option>
               <option value="RISK_ACCEPTED">Risk accepted — affected, but we accept it</option>
             </select>
           </Field>
           <Field label="Applies to" htmlFor="vex-scope" required>
             <select id="vex-scope" className="ep-select" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
-              <option value="AGENT">This endpoint ({finding.hostname})</option>
-              <option value="GROUP">A group</option>
               <option value="ALL">Every endpoint</option>
+              <option value="GROUP">A group</option>
+              {filterAgent && <option value="AGENT">This endpoint ({filterAgent.hostname})</option>}
             </select>
           </Field>
           {scope === "GROUP" && (
@@ -182,16 +189,6 @@ function MarkExceptionDialog({
                   </option>
                 ))}
               </select>
-            </Field>
-          )}
-          {finding.matchedSoftwareVersion && (
-            <Field label="Version" htmlFor="vex-version" span2>
-              <Check
-                checked={versionOnly}
-                onChange={setVersionOnly}
-                label={`Only version ${finding.matchedSoftwareVersion}`}
-                hint="Another version of this software is flagged again."
-              />
             </Field>
           )}
           <Field label="Why" htmlFor="vex-note" required span2 help="Others see this when they review the exception.">
@@ -219,7 +216,7 @@ function ExceptionsCard({ onOpenCve }: { onOpenCve: (vulnerabilityDefinitionId: 
   async function handleRemove(x: VulnerabilityExceptionView) {
     const ok = await confirm({
       title: `Remove the exception for ${x.cveId}?`,
-      body: `${x.softwareName} findings it covered come back as open and can be remediated again.`,
+      body: "The findings it covered come back as open and can be remediated again.",
       confirmLabel: "Remove exception",
       tone: "danger",
     });
@@ -235,7 +232,7 @@ function ExceptionsCard({ onOpenCve }: { onOpenCve: (vulnerabilityDefinitionId: 
         </div>
       ) : !data || data.length === 0 ? (
         <EmptyState icon={ShieldAlert} title="No exceptions">
-          Open a CVE and use Mark as… on an endpoint row to mark it a false positive, not applicable or a risk accepted.
+          Use Mark as… on a CVE in the findings list to mark it a false positive, not applicable or a risk accepted.
         </EmptyState>
       ) : (
         <>
@@ -264,7 +261,7 @@ function ExceptionsCard({ onOpenCve }: { onOpenCve: (vulnerabilityDefinitionId: 
                       <SeverityBadge severity={x.cvssSeverity} />
                     </td>
                     <td>
-                      {x.softwareName}
+                      {x.softwareName === "*" ? <span className="app-muted">All matched software</span> : x.softwareName}
                       {x.softwareVersion && <span className="app-row-sub">version {x.softwareVersion} only</span>}
                     </td>
                     <td>{x.scope === "AGENT" ? (x.hostname ?? "Endpoint") : x.scope === "GROUP" ? `Group ${x.groupName ?? ""}` : "Every endpoint"}</td>
@@ -373,7 +370,7 @@ export default function VulnerabilitiesPage() {
 
   const { data: detail } = useVulnerabilityDetail(selectedDefId, scope);
   const toast = useToast();
-  const [markingFinding, setMarkingFinding] = useState<VulnerabilityFindingView | null>(null);
+  const [markingCve, setMarkingCve] = useState<{ id: string; cveId: string; affected: number } | null>(null);
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
   const detailPanelRef = useRef<HTMLDivElement>(null);
   const pagedFindings = usePagedList(detail?.findings ?? [], 25);
@@ -646,6 +643,9 @@ export default function VulnerabilitiesPage() {
                     <th scope="col" style={{ textAlign: "right" }}>
                       Affected endpoints
                     </th>
+                    <th scope="col">
+                      <span className="app-vh">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -682,6 +682,18 @@ export default function VulnerabilitiesPage() {
                       </td>
                       <td className="ep-num" style={{ textAlign: "right" }}>
                         {item.affectedAgentCount}
+                      </td>
+                      <td>
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMarkingCve({ id: item.vulnerabilityDefinitionId, cveId: item.cveId, affected: item.affectedAgentCount });
+                          }}
+                          title="False positive, not applicable or risk accepted"
+                        >
+                          Mark as…
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -744,8 +756,8 @@ export default function VulnerabilitiesPage() {
               />
               <p className="app-text">
                 Tick the endpoints to remediate, or use the header checkbox to select all. Name-only matches (version not
-                confirmed) are uninstalled too if selected — check them before remediating. Use Mark as… for a false
-                positive, something that doesn't apply, or a risk you accept: it stays marked after every rescan.
+                confirmed) are uninstalled too if selected — check them before remediating. To mark this CVE a false
+                positive, not applicable or a risk accepted, use Mark as… on its row in the findings list.
               </p>
               {remediateVuln.isError && <Alert tone="critical">{(remediateVuln.error as Error).message}</Alert>}
               {cveResult && <RemediationResultAlert result={cveResult} />}
@@ -790,9 +802,6 @@ export default function VulnerabilitiesPage() {
                       <th scope="col">Confidence</th>
                       <th scope="col">CPE criteria</th>
                       <th scope="col">Remediation</th>
-                      <th scope="col">
-                        <span className="app-vh">Actions</span>
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -831,19 +840,6 @@ export default function VulnerabilitiesPage() {
                         <td>
                           {f.status === "EXCEPTED" ? <Badge tone="neu">Exception — not remediated</Badge> : <RemediationStatus remediation={f.remediation} />}
                         </td>
-                        <td>
-                          {f.status !== "EXCEPTED" && (
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMarkingFinding(f);
-                              }}
-                            >
-                              Mark as…
-                            </Button>
-                          )}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -863,13 +859,15 @@ export default function VulnerabilitiesPage() {
         </div>
       )}
 
-      {markingFinding && detail && (
+      {markingCve && (
         <MarkExceptionDialog
-          cveId={detail.cveId}
-          vulnerabilityDefinitionId={detail.vulnerabilityDefinitionId}
-          finding={markingFinding}
+          cveId={markingCve.cveId}
+          vulnerabilityDefinitionId={markingCve.id}
+          affectedAgentCount={markingCve.affected}
+          filterAgent={agentFilter ? { id: agentFilter, hostname: scopeLabel ?? "this endpoint" } : undefined}
+          filterGroupId={groupFilter || undefined}
           onClose={(message) => {
-            setMarkingFinding(null);
+            setMarkingCve(null);
             if (message) {
               toast(message);
               setSelectedFindingIds([]);
