@@ -64,11 +64,12 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
   // Never opened (or longer ago than the window): everything in the window counts as new.
   const since = sinceParam && sinceParam > windowStart ? sinceParam : windowStart;
 
-  const [data, security, users, userRisk] = await Promise.all([
+  const [data, security, users, userRisk, threats] = await Promise.all([
     canOpen(viewer, "DATA_MANAGER"),
     canOpen(viewer, "SECURITY_MANAGER"),
     canOpen(viewer, "USER_MANAGER"),
     canOpen(viewer, "USER_MANAGER", "USER_RISK"),
+    canOpen(viewer, "THREAT_PROTECTION"),
   ]);
 
   const jobs: Promise<NotificationGroup | null>[] = [];
@@ -111,6 +112,12 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
     add(
       { key: "edr", module: "EDR", title: "High and critical threat detections", path: "/edr", tone: "crit" },
       eventGroup(prisma.edrEvent, "detectedAt", { severity: { in: ["HIGH", "CRITICAL"] } }, windowStart, since),
+    );
+  }
+  if (threats) {
+    add(
+      { key: "threats", module: "Threat Protection", title: "Threats found on endpoints", path: "/threat-protection/threats", tone: "crit" },
+      eventGroup(prisma.threatDetection, "detectedAt", {}, windowStart, since),
     );
   }
   if (users && userRisk) {

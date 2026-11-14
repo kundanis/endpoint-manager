@@ -151,6 +151,15 @@ try {
     }
 } catch {}
 
+# Defender exclusions added by a Threat Protection policy (the agent records exactly which ones it
+# added; the company's own exclusions are never touched). Defender settings are left as they are.
+try {
+    $tpState = Get-Content -Raw -LiteralPath (Join-Path $installDir "app\.state\threat-protection-state.json") -ErrorAction Stop | ConvertFrom-Json
+    foreach ($x in @($tpState.added.paths)) { if ($x) { try { Remove-MpPreference -ExclusionPath $x -ErrorAction Stop } catch {} } }
+    foreach ($x in @($tpState.added.extensions)) { if ($x) { try { Remove-MpPreference -ExclusionExtension $x -ErrorAction Stop } catch {} } }
+    foreach ($x in @($tpState.added.processes)) { if ($x) { try { Remove-MpPreference -ExclusionProcess $x -ErrorAction Stop } catch {} } }
+} catch {}
+
 # Best-effort self-report to the server so the Agent row - and its license seat - is freed
 # immediately instead of lingering forever as an unreachable "offline" row. $config/$state
 # are already loaded above if this install ever finished enrolling; any failure here

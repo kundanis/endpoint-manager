@@ -1,7 +1,20 @@
 // Guard rails against blocking policies that take Windows down. Run with: npm test -w @em/server
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appControlRuleProblem, BUILT_IN_DATA_TYPES, commandBlockRuleProblem, remediationRisk, targetsForDataType } from "@em/shared";
+import { appControlRuleProblem, BUILT_IN_DATA_TYPES, commandBlockRuleProblem, remediationRisk, targetsForDataType, threatExclusionProblem } from "@em/shared";
+
+test("Threat Protection exclusions refuse whole drives, malware landing folders and script types", () => {
+  for (const v of ["C:\\", "C:\\*", "*", "%TEMP%", "C:\\Windows", "C:\\Windows\\Temp", "C:\\Users", "C:\\Users\\alice\\Downloads", "C:\\Users\\alice\\AppData\\Local\\Temp", "C:\\ProgramData", "%USERPROFILE%"]) {
+    assert.ok(threatExclusionProblem("path", v), `path ${v} should be refused`);
+  }
+  for (const v of ["D:\\SQLData", "C:\\Program Files\\Vendor\\Cache", "D:\\build\\temp", "\\\\fileserver\\backups"]) {
+    assert.equal(threatExclusionProblem("path", v), null, `path ${v} should be allowed`);
+  }
+  for (const v of [".exe", "dll", ".ps1", ".zip", ".log, .tmp", "*"]) assert.ok(threatExclusionProblem("extension", v), `extension ${v} should be refused`);
+  for (const v of [".ldf", "mdf", ".log"]) assert.equal(threatExclusionProblem("extension", v), null, `extension ${v} should be allowed`);
+  for (const v of ["powershell.exe", "C:\\Windows\\System32\\cmd.exe", "rundll32.exe", "notepad"]) assert.ok(threatExclusionProblem("process", v), `process ${v} should be refused`);
+  for (const v of ["sqlservr.exe", "D:\\Apps\\backup.exe"]) assert.equal(threatExclusionProblem("process", v), null, `process ${v} should be allowed`);
+});
 
 test("application control refuses rules that would stop Windows", () => {
   for (const ext of [".exe", "exe", ".COM", ".scr", ".dll", ".lnk", "*", ".*"]) {

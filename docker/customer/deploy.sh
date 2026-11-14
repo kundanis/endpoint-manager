@@ -20,7 +20,9 @@
 #                      (non-interactive: CONFIRM_SKIP_BACKUP=yes)
 #
 # Env overrides: INSTALL_DIR (default /opt/endpoint-one), ADMIN_EMAIL (first install only),
-#                APP_PORT (default 4000).
+#                APP_PORT (default 4000), ADVANCED_APP_CONTROL, THREAT_PROTECTION (true/false),
+#                PRODUCT_EDITION (full / threat-protection; a first install takes the bundle's
+#                EDITION file when not given).
 set -euo pipefail
 
 BUNDLE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -213,6 +215,10 @@ RELEASE_VERSION="$(tr -d '[:space:]' < "$BUNDLE_DIR/VERSION" 2>/dev/null || true
 [ -n "$RELEASE_VERSION" ] || die "VERSION file missing - run deploy.sh from inside the extracted release bundle."
 SERVER_IMAGE_TAR="$BUNDLE_DIR/images/endpoint-one-server-$RELEASE_VERSION.tar"
 [ -f "$SERVER_IMAGE_TAR" ] || die "Missing $SERVER_IMAGE_TAR"
+# Which product this bundle installs by default: "full" (Endpoint IQ) or "threat-protection" (the
+# separate Endpoint IQ Threat Protection edition). Same image; only the server setting differs.
+BUNDLE_EDITION="$(tr -d '[:space:]' < "$BUNDLE_DIR/EDITION" 2>/dev/null || true)"
+[ "$BUNDLE_EDITION" = "threat-protection" ] || BUNDLE_EDITION="full"
 
 arch="$(uname -m)"
 [ "$arch" = "x86_64" ] || die "An x86_64 server is required (SQL Server has no ARM image); this host is $arch."
@@ -347,6 +353,10 @@ LICENSE_ENFORCEMENT_ENABLED=false
 ADMIN_ALLOWED_NETWORKS=${allowed}
 # Advanced application control (Windows AppLocker: DLL, PowerShell and batch blocking, Allow exceptions).
 ADVANCED_APP_CONTROL=${ADVANCED_APP_CONTROL:-false}
+# Product edition: full (Endpoint IQ) or threat-protection (Endpoint IQ Threat Protection).
+PRODUCT_EDITION=${PRODUCT_EDITION:-$BUNDLE_EDITION}
+# Threat Protection (Microsoft Defender management) while licence enforcement is off.
+THREAT_PROTECTION=${THREAT_PROTECTION:-false}
 APP_VERSION=${RELEASE_VERSION}
 EOF
   )
@@ -369,6 +379,18 @@ fi
 # (or false) to switch it on (or off) for an existing install too. Without that, .env is left as is.
 if [ -n "${ADVANCED_APP_CONTROL:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
   env_set ADVANCED_APP_CONTROL "$ADVANCED_APP_CONTROL"
+fi
+# Same for Threat Protection and the product edition: only changed on an existing install when
+# given (e.g. sudo PRODUCT_EDITION=full bash deploy.sh to move a Threat Protection install to
+# full Endpoint IQ - data and agents stay).
+if [ -n "${THREAT_PROTECTION:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
+  env_set THREAT_PROTECTION "$THREAT_PROTECTION"
+fi
+if [ -n "${PRODUCT_EDITION:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
+  case "$PRODUCT_EDITION" in
+    full|threat-protection) env_set PRODUCT_EDITION "$PRODUCT_EDITION" ;;
+    *) die "PRODUCT_EDITION must be full or threat-protection, got '$PRODUCT_EDITION'." ;;
+  esac
 fi
 
 # Guard against the configured version drifting from the bundle (e.g. a variable clobbered by

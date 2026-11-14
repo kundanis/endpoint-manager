@@ -84,6 +84,17 @@ export const NAV_MODULES: NavModule[] = [
     ],
   },
   {
+    key: "threat",
+    label: "Threat Protection",
+    licenseModule: "THREAT_PROTECTION",
+    items: [
+      { path: "/threat-protection/overview", label: "Overview" },
+      { path: "/threat-protection/threats", label: "Threats" },
+      { path: "/threat-protection/activity", label: "Scans and actions" },
+      { path: "/threat-protection/policies", label: "Policies" },
+    ],
+  },
+  {
     key: "user",
     label: "Identity Governance",
     licenseModule: "USER_MANAGER",

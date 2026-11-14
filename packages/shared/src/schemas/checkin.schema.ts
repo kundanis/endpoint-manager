@@ -80,6 +80,8 @@ export const checkinResponseSchema = z.object({
   runSecurityConfigScanNow: z.boolean().optional(),
   // Report installed software now (Sync now, or a command / deployment just finished).
   runInventoryNow: z.boolean().optional(),
+  // Threat Protection: a scan or action is waiting, or the policy changed - sync it now.
+  runThreatProtectionNow: z.boolean().optional(),
   // Every address this server can be reached on, in the order the agent should try them
   // (LAN first, then the web URL, then the NAT'd public IP) - lets an admin change or add
   // addresses after install without touching endpoints. Absent until an admin has saved

@@ -18,11 +18,15 @@
   -Offline  also bundles the SQL Server image (~1.6 GB more) for servers that can't reach
             mcr.microsoft.com. Docker itself must still be installed on such servers.
   -SkipBuild reuse an existing endpoint-one-server:<Version> image instead of rebuilding.
+  -Edition  full (default) or threat-protection: the separate Endpoint IQ Threat Protection
+            product, bundled as release\endpoint-iq-threat-protection-<Version>.tar.gz. Same image;
+            its EDITION file makes deploy.sh install it with PRODUCT_EDITION=threat-protection.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [switch]$Offline,
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [ValidateSet("full", "threat-protection")][string]$Edition = "full"
 )
 $ErrorActionPreference = "Stop"
 
@@ -33,7 +37,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.]+)?$') {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $customerDir = Join-Path $PSScriptRoot "customer"
 $releaseRoot = Join-Path $repoRoot "release"
-$bundleName = "endpoint-one-$Version"
+$bundleName = if ($Edition -eq "threat-protection") { "endpoint-iq-threat-protection-$Version" } else { "endpoint-one-$Version" }
 $bundleDir = Join-Path $releaseRoot $bundleName
 $image = "endpoint-one-server:$Version"
 
@@ -162,9 +166,12 @@ setTimeout(() => {
     Write-LfFile (Join-Path $bundleDir $f) (Get-Content (Join-Path $customerDir $f) -Raw)
   }
   Write-LfFile (Join-Path $bundleDir "VERSION") "$Version`n"
+  Write-LfFile (Join-Path $bundleDir "EDITION") "$Edition`n"
   $builtAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $productName = if ($Edition -eq "threat-protection") { "Endpoint IQ Threat Protection" } else { "Endpoint IQ" }
   Write-LfFile (Join-Path $bundleDir "RELEASE-INFO.txt") @"
-Endpoint IQ $Version
+$productName $Version
+Edition: $Edition
 Built:   $builtAt
 Commit:  $commit
 Image:   $image
@@ -207,7 +214,7 @@ Offline: $([bool]$Offline)
   }
 
   # --- Bundle text files must be clean Linux files ----------------------------------------
-  foreach ($f in "deploy.sh", "docker-compose.yml", "INSTALL.md", "VERSION", "RELEASE-INFO.txt") {
+  foreach ($f in "deploy.sh", "docker-compose.yml", "INSTALL.md", "VERSION", "EDITION", "RELEASE-INFO.txt") {
     $bytes = [System.IO.File]::ReadAllBytes((Join-Path $bundleDir $f))
     $bad = @($bytes | Where-Object { $_ -lt 32 -and $_ -ne 9 -and $_ -ne 10 }).Count
     if ($bad -gt 0) { throw "SMOKE FAIL: bundle file $f contains $bad CR/control characters." }

@@ -15,4 +15,8 @@ export type SetModuleVisibilityRequest = z.infer<typeof setModuleVisibilityReque
 export interface ModuleVisibilityView {
   hiddenModuleKeys: string[];
   hiddenItemPaths: string[];
+  // Hidden by this deployment's edition or settings (not by a super admin), so not changeable.
+  fixedHiddenModuleKeys: string[];
+  fixedHiddenItemPaths: string[];
+  edition: "full" | "threat-protection";
 }

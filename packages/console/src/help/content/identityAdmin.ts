@@ -123,7 +123,17 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     title: "Licensing",
     path: "/licensing",
     summary: "The licence for this deployment: seats, validity, licensed modules, and which modules everyone sees.",
-    keywords: ["license key", "activate", "seats", "module visibility", "hide module"],
+    keywords: ["license key", "activate", "seats", "module visibility", "hide module", "threat protection", "edition"],
+    sections: [
+      {
+        title: "Threat Protection and editions",
+        items: [
+          "Threat Protection (Microsoft Defender management) is sold separately: it appears once the licence includes it. Where licence enforcement is off, the server's THREAT_PROTECTION=true setting turns it on.",
+          "The Endpoint IQ Threat Protection edition (PRODUCT_EDITION=threat-protection) shows only Endpoints, Threat Protection, Licensing and Administrators. Moving to full Endpoint IQ keeps all data and agents: change the edition setting and the licence.",
+          "Modules an edition doesn't include aren't listed under Module visibility.",
+        ],
+      },
+    ],
     howTos: [
       {
         id: "lic-activate",

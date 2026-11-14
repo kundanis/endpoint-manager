@@ -151,6 +151,19 @@ and scheduled tasks) and Allow exceptions, using Windows AppLocker. To switch it
 with `sudo ADVANCED_APP_CONTROL=true ./deploy.sh`. Set it back to `false` to switch it off;
 agents then remove every AppLocker rule they added.
 
+**Threat Protection (optional, licensed separately).** Microsoft Defender managed from the
+console: protection status, threats, scans, signature updates and Defender policies, for Windows
+endpoints with agent 0.2.28 or later. With licence enforcement on, it appears when your licence
+includes the Threat Protection module. With enforcement off, set `THREAT_PROTECTION=true` in
+`.env` and run `sudo docker compose up -d` (or `sudo THREAT_PROTECTION=true ./deploy.sh`).
+
+**Endpoint IQ Threat Protection edition.** A bundle named `endpoint-iq-threat-protection-<version>`
+installs the separate Threat Protection product: the same server with only Endpoints, Threat
+Protection, Licensing and Administrators shown (`PRODUCT_EDITION=threat-protection` in `.env`).
+To move such a server to full Endpoint IQ later, keep all data and agents and run
+`sudo PRODUCT_EDITION=full ./deploy.sh` from a full Endpoint IQ bundle, with a licence that
+includes the modules you bought. A Threat Protection licence must include Endpoint Hub as well.
+
 Never run `docker compose down -v`: `-v` deletes the database and uploads.
 
 **Backups:** schedule the manual backup above (cron), copy `backups/` and `.env` off the server,

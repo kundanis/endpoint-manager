@@ -46,6 +46,10 @@ services:
       LICENSE_ENFORCEMENT_ENABLED: ${LICENSE_ENFORCEMENT_ENABLED:-false}
       # Optional extra: advanced application control (Windows AppLocker). "true" to offer it.
       ADVANCED_APP_CONTROL: ${ADVANCED_APP_CONTROL:-false}
+      # "threat-protection" = the separate Endpoint IQ Threat Protection edition; "full" = Endpoint IQ.
+      PRODUCT_EDITION: ${PRODUCT_EDITION:-full}
+      # Threat Protection (Microsoft Defender management) on a full install whose licence enforcement is off.
+      THREAT_PROTECTION: ${THREAT_PROTECTION:-false}
       # Public IPs/CIDRs allowed to open the admin console (private networks always are).
       ADMIN_ALLOWED_NETWORKS: ${ADMIN_ALLOWED_NETWORKS:-}
       # "cloudflare" when published through Cloudflare's proxy (orange cloud) - see INSTALL.md.

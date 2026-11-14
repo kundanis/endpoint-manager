@@ -37,7 +37,8 @@ export type LicenseModuleKey =
   | "SOFTWARE_MANAGER"
   | "SECURITY_MANAGER"
   | "DATA_MANAGER"
-  | "USER_MANAGER";
+  | "USER_MANAGER"
+  | "THREAT_PROTECTION";
 
 // Org-wide "hidden for everyone" state — a third, most-authoritative layer on top of
 // license modules (LicenseStatusView.modules) and per-admin grants (MeView.moduleGrants).
@@ -47,6 +48,10 @@ export type LicenseModuleKey =
 export interface ModuleVisibilityView {
   hiddenModuleKeys: string[];
   hiddenItemPaths: string[];
+  // Hidden by the deployment's edition or settings rather than a super admin: not changeable.
+  fixedHiddenModuleKeys?: string[];
+  fixedHiddenItemPaths?: string[];
+  edition?: "full" | "threat-protection";
 }
 
 // A super admin implicitly has every module regardless of moduleGrants - see
@@ -1922,4 +1927,120 @@ export interface NotificationGroup {
 export interface NotificationsView {
   since: string;
   groups: NotificationGroup[];
+}
+
+// ---- Threat Protection (Microsoft Defender management)
+
+export type ThreatEndpointState = "AT_RISK" | "UNPROTECTED" | "OUT_OF_DATE" | "PROTECTED" | "THIRD_PARTY" | "NOT_REPORTED" | "NOT_WINDOWS";
+
+export interface ThreatEndpointView {
+  agentId: string;
+  hostname: string;
+  osPlatform: string;
+  lastCheckinAt: string | null;
+  state: ThreatEndpointState;
+  activeThreats: number;
+  defenderMode: string | null;
+  antivirusProducts: { name: string; enabled: boolean | null; upToDate: boolean | null }[];
+  realTimeOn: boolean | null;
+  cloudProtectionOn: boolean | null;
+  puaProtectionOn: boolean | null;
+  tamperProtected: boolean | null;
+  externallyManaged: boolean;
+  signatureVersion: string | null;
+  signatureUpdatedAt: string | null;
+  signaturesOutOfDate: boolean;
+  lastQuickScanAt: string | null;
+  lastFullScanAt: string | null;
+  reportedAt: string | null;
+}
+
+export interface ThreatOverview {
+  totals: {
+    endpoints: number;
+    protected: number;
+    atRisk: number;
+    unprotected: number;
+    outOfDate: number;
+    thirdParty: number;
+    notReported: number;
+    activeThreats: number;
+  };
+  endpoints: ThreatEndpointView[];
+}
+
+export interface ThreatDetectionView {
+  id: string;
+  agentId: string;
+  hostname: string;
+  source: string;
+  threatName: string;
+  severity: "LOW" | "MODERATE" | "HIGH" | "SEVERE" | "UNKNOWN";
+  category: string | null;
+  filePath: string | null;
+  resources: string[];
+  username: string | null;
+  processName: string | null;
+  status: "ACTIVE" | "QUARANTINED" | "REMOVED" | "ALLOWED" | "RESOLVED" | "FAILED";
+  actionDetail: string | null;
+  detectedAt: string;
+  lastSeenAt: string;
+  resolvedAt: string | null;
+  canRestoreOrAllow: boolean;
+}
+
+export interface ThreatTaskView {
+  id: string;
+  kind: "SCAN" | "ACTION";
+  agentId: string;
+  hostname: string;
+  what: string;
+  paths: string[];
+  threatName: string | null;
+  status: string;
+  requestedAt: string;
+  finishedAt: string | null;
+  message: string | null;
+}
+
+export interface ThreatProtectionPolicyView {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  realTimeProtection: boolean;
+  cloudProtection: boolean;
+  submitSamples: boolean;
+  puaProtection: boolean;
+  scanType: "QUICK" | "FULL";
+  scanScheduleDay: number;
+  scanScheduleTime: string;
+  signatureUpdateHours: number;
+  excludedPaths: string[];
+  excludedExtensions: string[];
+  excludedProcesses: string[];
+  assignedAgentCount: number;
+  activeThreats: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ThreatProtectionAssignmentView {
+  id: string;
+  agentId: string | null;
+  hostname: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+}
+
+export interface ThreatPolicySyncAgent {
+  agentId: string;
+  hostname: string;
+  windows: boolean;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
 }

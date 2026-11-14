@@ -6,6 +6,15 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.28
+- Threat Protection (only where the server has the module): the agent reports Microsoft Defender's
+  status (real-time protection, signature age, last scans) and the threats Defender found, applies
+  Threat Protection policies (it only ever switches protection on, never off; adds and later removes
+  only its own exclusions), and runs quick, full and folder scans, signature updates and threat
+  actions (remove, restore from quarantine, allow) requested from the console. Settings Windows
+  refuses (Tamper Protection, Group Policy, Intune) or another active antivirus show as Failed on
+  Sync status. Uninstall removes the exclusions the agent added.
+
 ## 0.2.27
 - Advanced application control (only where the server has it switched on): the agent turns DLL
   rules, Allow (exception) rules and the script and installer file types (.ps1, .bat, .cmd, .vbs,

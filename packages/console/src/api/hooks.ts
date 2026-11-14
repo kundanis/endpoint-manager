@@ -151,6 +151,12 @@ import type {
   ScreenshotBlockAssignmentView,
   ScreenshotBlockEventView,
   ScreenshotBlockPolicyView,
+  ThreatDetectionView,
+  ThreatOverview,
+  ThreatPolicySyncAgent,
+  ThreatProtectionAssignmentView,
+  ThreatProtectionPolicyView,
+  ThreatTaskView,
   ScreenCaptureItem,
   EndpointScreenCaptureReport,
   NotificationsView,
@@ -3829,5 +3835,165 @@ export function useClearAdminAudit() {
   return useMutation({
     mutationFn: (before: string) => api.post<{ removed: number }>("/admin/audit-log/clear", { before: new Date(`${before}T00:00:00`).toISOString() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["adminAudit"] }),
+  });
+}
+
+// ---- Threat Protection (Microsoft Defender management)
+
+export type ThreatProtectionPolicyBody = {
+  name: string;
+  description?: string | null;
+  enabled?: boolean;
+  realTimeProtection: boolean;
+  cloudProtection: boolean;
+  submitSamples: boolean;
+  puaProtection: boolean;
+  scanType: "QUICK" | "FULL";
+  scanScheduleDay: number;
+  scanScheduleTime: string;
+  signatureUpdateHours: number;
+  excludedPaths: string[];
+  excludedExtensions: string[];
+  excludedProcesses: string[];
+};
+
+const invalidateThreats = (qc: ReturnType<typeof useQueryClient>) => {
+  qc.invalidateQueries({ queryKey: ["threatOverview"] });
+  qc.invalidateQueries({ queryKey: ["threatDetections"] });
+  qc.invalidateQueries({ queryKey: ["threatTasks"] });
+};
+
+export function useThreatOverview() {
+  return useQuery({ queryKey: ["threatOverview"], queryFn: () => api.get<ThreatOverview>("/admin/threat-protection/overview"), refetchInterval: 30000 });
+}
+
+export function useThreatDetections(status: "open" | "all", days: number, agentId?: string) {
+  const qs = new URLSearchParams({ status, days: String(days), ...(agentId ? { agentId } : {}) });
+  return useQuery({
+    queryKey: ["threatDetections", status, days, agentId ?? ""],
+    queryFn: () => api.get<ThreatDetectionView[]>(`/admin/threat-protection/threats?${qs.toString()}`),
+    refetchInterval: 30000,
+  });
+}
+
+export function useResolveThreat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<void>(`/admin/threat-protection/threats/${id}/resolve`, {}),
+    onSuccess: () => invalidateThreats(qc),
+  });
+}
+
+export function useRequestThreatScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { agentIds: string[]; scanType: "QUICK" | "FULL" | "CUSTOM"; paths?: string[] }) =>
+      api.post<{ created: number }>("/admin/threat-protection/scans", body),
+    onSuccess: () => invalidateThreats(qc),
+  });
+}
+
+export function useRequestThreatAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { action: "REMOVE" | "RESTORE" | "ALLOW" | "UPDATE_SIGNATURES"; detectionId?: string; agentIds?: string[] }) =>
+      api.post<{ created: number }>("/admin/threat-protection/actions", body),
+    onSuccess: () => invalidateThreats(qc),
+  });
+}
+
+export function useThreatTasks(days: number, agentId?: string) {
+  const qs = new URLSearchParams({ days: String(days), ...(agentId ? { agentId } : {}) });
+  return useQuery({
+    queryKey: ["threatTasks", days, agentId ?? ""],
+    queryFn: () => api.get<ThreatTaskView[]>(`/admin/threat-protection/tasks?${qs.toString()}`),
+    refetchInterval: 15000,
+  });
+}
+
+export function useThreatProtectionPolicies() {
+  return useQuery({
+    queryKey: ["threatProtectionPolicies"],
+    queryFn: () => api.get<ThreatProtectionPolicyView[]>("/admin/threat-protection/policies"),
+    refetchInterval: 30000,
+  });
+}
+
+export function useThreatProtectionPolicy(id: string | undefined) {
+  return useQuery({
+    queryKey: ["threatProtectionPolicies", id],
+    queryFn: () => api.get<ThreatProtectionPolicyView>(`/admin/threat-protection/policies/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateThreatProtectionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ThreatProtectionPolicyBody) => api.post<ThreatProtectionPolicyView>("/admin/threat-protection/policies", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["threatProtectionPolicies"] }),
+  });
+}
+
+export function useUpdateThreatProtectionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<ThreatProtectionPolicyBody>) =>
+      api.patch<ThreatProtectionPolicyView>(`/admin/threat-protection/policies/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["threatProtectionPolicies"] });
+      qc.invalidateQueries({ queryKey: ["threatPolicySync"] });
+    },
+  });
+}
+
+export function useDeleteThreatProtectionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/admin/threat-protection/policies/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["threatProtectionPolicies"] }),
+  });
+}
+
+export function useThreatProtectionAssignments(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["threatProtectionAssignments", policyId],
+    queryFn: () => api.get<ThreatProtectionAssignmentView[]>(`/admin/threat-protection/policies/${policyId}/assignments`),
+    enabled: !!policyId,
+  });
+}
+
+export function useAssignThreatProtectionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, agentIds, groupIds }: { policyId: string; agentIds: string[]; groupIds: string[] }) =>
+      api.post<ThreatProtectionPolicyView>(`/admin/threat-protection/policies/${policyId}/assign`, { agentIds, groupIds }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["threatProtectionAssignments"] });
+      qc.invalidateQueries({ queryKey: ["threatProtectionPolicies"] });
+      qc.invalidateQueries({ queryKey: ["threatPolicySync"] });
+    },
+  });
+}
+
+export function useUnassignThreatProtectionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, assignmentId }: { policyId: string; assignmentId: string }) =>
+      api.del(`/admin/threat-protection/policies/${policyId}/assign/${assignmentId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["threatProtectionAssignments"] });
+      qc.invalidateQueries({ queryKey: ["threatProtectionPolicies"] });
+      qc.invalidateQueries({ queryKey: ["threatPolicySync"] });
+    },
+  });
+}
+
+export function useThreatPolicySync(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["threatPolicySync", policyId],
+    queryFn: () => api.get<{ agents: ThreatPolicySyncAgent[] }>(`/admin/threat-protection/policies/${policyId}/sync`),
+    enabled: !!policyId,
+    refetchInterval: 15000,
   });
 }

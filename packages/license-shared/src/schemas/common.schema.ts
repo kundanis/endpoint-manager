@@ -18,6 +18,9 @@ export const LICENSE_MODULES = [
   "SECURITY_MANAGER",
   "DATA_MANAGER",
   "USER_MANAGER",
+  // Sold separately (also as its own edition): Microsoft Defender management + YARA threat
+  // scanning. Not in the default module set, so existing keys don't include it.
+  "THREAT_PROTECTION",
 ] as const;
 export const licenseModuleSchema = z.enum(LICENSE_MODULES);
 export type LicenseModule = z.infer<typeof licenseModuleSchema>;

@@ -1,4 +1,5 @@
 import type { AdminModuleKey, SetModuleVisibilityRequest } from "@em/shared";
+import { config } from "../config";
 import { prisma } from "../db";
 
 const SINGLETON_ID = "singleton";
@@ -12,19 +13,48 @@ function parseArray(json: string): string[] {
   }
 }
 
-export async function getModuleVisibility(): Promise<{ hiddenModuleKeys: string[]; hiddenItemPaths: string[] }> {
+// Modules and items this deployment never shows, whatever the super admin's own settings:
+//  - the Threat Protection edition shows only Endpoints (list, enrollment, agent updates),
+//    Threat Protection, Licensing and Administrators;
+//  - a full deployment with licence enforcement off shows Threat Protection only when
+//    THREAT_PROTECTION=true (it's sold separately; with enforcement on, the licence decides).
+export function fixedHidden(): { moduleKeys: AdminModuleKey[]; itemPaths: string[] } {
+  if (config.productEdition === "threat-protection") {
+    return {
+      moduleKeys: ["NETWORK_MANAGER", "SOFTWARE_MANAGER", "SECURITY_MANAGER", "DATA_MANAGER", "USER_MANAGER"],
+      itemPaths: ["/commands", "/packages", "/asset-settings"],
+    };
+  }
+  if (!config.licenseEnforcementEnabled && !config.threatProtection) return { moduleKeys: ["THREAT_PROTECTION"], itemPaths: [] };
+  return { moduleKeys: [], itemPaths: [] };
+}
+
+async function savedVisibility(): Promise<{ hiddenModuleKeys: string[]; hiddenItemPaths: string[] }> {
   const row = await prisma.moduleVisibilitySettings.findUnique({ where: { id: SINGLETON_ID } });
   if (!row) return { hiddenModuleKeys: [], hiddenItemPaths: [] };
+  return { hiddenModuleKeys: parseArray(row.hiddenModuleKeys), hiddenItemPaths: parseArray(row.hiddenItemPaths) };
+}
+
+// What's hidden = the super admin's own choices plus fixedHidden(). fixed* lists the latter, so
+// the Module visibility settings can leave them out (they can't be unhidden there).
+export async function getModuleVisibility() {
+  const saved = await savedVisibility();
+  const fixed = fixedHidden();
   return {
-    hiddenModuleKeys: parseArray(row.hiddenModuleKeys),
-    hiddenItemPaths: parseArray(row.hiddenItemPaths),
+    hiddenModuleKeys: [...new Set([...saved.hiddenModuleKeys, ...fixed.moduleKeys])],
+    hiddenItemPaths: [...new Set([...saved.hiddenItemPaths, ...fixed.itemPaths])],
+    fixedHiddenModuleKeys: fixed.moduleKeys as string[],
+    fixedHiddenItemPaths: fixed.itemPaths,
+    edition: config.productEdition,
   };
 }
 
 export async function setModuleVisibility(params: SetModuleVisibilityRequest) {
+  // Only the admin's own choices are stored; the fixed ones are added on every read.
+  const fixed = fixedHidden();
   const data = {
-    hiddenModuleKeys: JSON.stringify(params.hiddenModuleKeys),
-    hiddenItemPaths: JSON.stringify(params.hiddenItemPaths),
+    hiddenModuleKeys: JSON.stringify(params.hiddenModuleKeys.filter((k) => !fixed.moduleKeys.includes(k))),
+    hiddenItemPaths: JSON.stringify(params.hiddenItemPaths.filter((p) => !fixed.itemPaths.includes(p))),
   };
   await prisma.moduleVisibilitySettings.upsert({
     where: { id: SINGLETON_ID },

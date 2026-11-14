@@ -2,6 +2,7 @@ import { DATA_TOPICS } from "./content/dataGovernance";
 import { DASHBOARD_TOPICS, ENDPOINT_HUB_TOPICS } from "./content/endpointHub";
 import { ADMIN_TOPICS, IDENTITY_TOPICS } from "./content/identityAdmin";
 import { NETWORK_APP_TOPICS, SECURITY_TOPICS } from "./content/security";
+import { THREAT_TOPICS } from "./content/threatProtection";
 import type { HelpTarget, HelpTopic, HowTo } from "./types";
 
 export type { HelpStep, HelpTarget, HelpTopic, HowTo } from "./types";
@@ -13,6 +14,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   ...NETWORK_APP_TOPICS,
   ...SECURITY_TOPICS,
   ...DATA_TOPICS,
+  ...THREAT_TOPICS,
   ...IDENTITY_TOPICS,
   ...ADMIN_TOPICS,
 ];

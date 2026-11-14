@@ -175,6 +175,11 @@ model Agent {
   screenCaptureEvents      ScreenCaptureEvent[]
   screenshotBlockEvents      ScreenshotBlockEvent[]
   screenshotBlockAssignments ScreenshotBlockPolicyAssignment[]
+  threatProtectionAssignments ThreatProtectionPolicyAssignment[]
+  protectionStatus           EndpointProtectionStatus?
+  threatDetections           ThreatDetection[]
+  threatScanTasks            ThreatScanTask[]
+  threatActionTasks          ThreatActionTask[]
   userActivityEvents       UserActivityEvent[]
   softwareChanges          AgentSoftwareChange[]
   screenCaptureAssignments ScreenCapturePolicyAssignment[]
@@ -563,6 +568,7 @@ model AssetGroup {
   ipBlockAssignments IpBlockPolicyAssignment[]
   usbControlAssignments UsbControlPolicyAssignment[]
   screenshotBlockAssignments ScreenshotBlockPolicyAssignment[]
+  threatProtectionAssignments ThreatProtectionPolicyAssignment[]
   enrollmentTokens   EnrollmentToken[]
 }
 
@@ -1972,4 +1978,166 @@ model DataType {
   createdByAdminId String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// ---- Threat Protection (licence module THREAT_PROTECTION; also its own edition): Microsoft
+// Defender management now, YARA threat scanning next.
+
+model ThreatProtectionPolicy {
+  id                   String                             @id @default(uuid())
+  name                 String                             @db.NVarChar(200)
+  description          String?                            @db.NVarChar(1000)
+  enabled              Boolean                            @default(true)
+  // Microsoft Defender settings the agent applies (and reads back) on assigned Windows endpoints.
+  realTimeProtection   Boolean                            @default(true)
+  cloudProtection      Boolean                            @default(true) // cloud lookups + block at first sight
+  submitSamples        Boolean                            @default(true) // send safe samples automatically
+  puaProtection        Boolean                            @default(true) // potentially unwanted apps
+  scanType             String                             @default("QUICK") @db.NVarChar(10) // QUICK | FULL
+  scanScheduleDay      Int                                @default(0) // Defender: 0 every day, 1-7 Sunday-Saturday, 8 never
+  scanScheduleTime     String                             @default("02:00") @db.NVarChar(5) // HH:mm, endpoint's local time
+  signatureUpdateHours Int                                @default(4) // 1-24
+  excludedPaths        String                             @default("[]") @db.NVarChar(Max) // JSON
+  excludedExtensions   String                             @default("[]") @db.NVarChar(Max) // JSON
+  excludedProcesses    String                             @default("[]") @db.NVarChar(Max) // JSON
+  // YARA threat scanning (phase 2).
+  yaraEnabled          Boolean                            @default(false)
+  yaraWatchFolders     String                             @default("[]") @db.NVarChar(Max) // JSON
+  yaraScanUsb          Boolean                            @default(false)
+  yaraScanNewPrograms  Boolean                            @default(false)
+  yaraAutoQuarantine   Boolean                            @default(false)
+  yaraRuleSetIds       String                             @default("[]") @db.NVarChar(Max) // JSON; empty = every enabled set
+  createdByAdminId     String?
+  createdAt            DateTime                           @default(now())
+  updatedAt            DateTime                           @updatedAt
+  assignments          ThreatProtectionPolicyAssignment[]
+}
+
+model ThreatProtectionPolicyAssignment {
+  id             String                 @id @default(uuid())
+  policyId       String
+  policy         ThreatProtectionPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId        String?
+  agent          Agent?                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          AssetGroup?            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt      DateTime               @default(now())
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?                @db.NVarChar(20) // SUCCESS | FAILED
+  lastSyncError  String?                @db.NVarChar(2000)
+
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// One row per endpoint: its antivirus state as last reported by the agent.
+model EndpointProtectionStatus {
+  id                 String    @id @default(uuid())
+  agentId            String    @unique
+  agent              Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  antivirusProducts  String    @default("[]") @db.NVarChar(2000) // JSON [{ name, enabled, upToDate }] from Windows Security Center
+  defenderMode       String    @default("UNKNOWN") @db.NVarChar(20) // ACTIVE | PASSIVE | EDR_BLOCK | DISABLED | NOT_INSTALLED | UNKNOWN
+  realTimeOn         Boolean?
+  behaviorMonitorOn  Boolean?
+  cloudProtectionOn  Boolean?
+  puaProtectionOn    Boolean?
+  tamperProtected    Boolean?
+  externallyManaged  Boolean   @default(false) // Defender settings set by Group Policy / Intune
+  productVersion     String?   @db.NVarChar(50)
+  engineVersion      String?   @db.NVarChar(50)
+  signatureVersion   String?   @db.NVarChar(50)
+  signatureUpdatedAt DateTime?
+  lastQuickScanAt    DateTime?
+  lastFullScanAt     DateTime?
+  activeThreats      Int       @default(0)
+  yaraRulesVersion   String?   @db.NVarChar(64)
+  reportedAt         DateTime  @default(now())
+}
+
+// A threat found on an endpoint, by Defender or (phase 2) a YARA rule.
+model ThreatDetection {
+  id                String    @id @default(uuid())
+  agentId           String
+  agent             Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  source            String    @db.NVarChar(20) // DEFENDER | YARA
+  externalKey       String    @db.NVarChar(200) // Defender detection id; YARA: sha256 + rule
+  threatName        String    @db.NVarChar(300)
+  defenderThreatId  BigInt?
+  severity          String    @default("UNKNOWN") @db.NVarChar(20) // LOW | MODERATE | HIGH | SEVERE | UNKNOWN
+  category          String?   @db.NVarChar(100)
+  filePath          String?   @db.NVarChar(1000)
+  resources         String    @default("[]") @db.NVarChar(Max) // JSON: every file / item Defender listed
+  sha256            String?   @db.NVarChar(64)
+  username          String?   @db.NVarChar(200)
+  processName       String?   @db.NVarChar(300)
+  ruleName          String?   @db.NVarChar(200)
+  ruleSetName       String?   @db.NVarChar(200)
+  ruleAuthor        String?   @db.NVarChar(200)
+  ruleLicense       String?   @db.NVarChar(100)
+  status            String    @default("ACTIVE") @db.NVarChar(20) // ACTIVE | QUARANTINED | REMOVED | ALLOWED | RESOLVED | FAILED
+  actionDetail      String?   @db.NVarChar(500)
+  quarantinePath    String?   @db.NVarChar(1000)
+  detectedAt        DateTime
+  lastSeenAt        DateTime
+  resolvedAt        DateTime?
+  resolvedByAdminId String?
+  createdAt         DateTime  @default(now())
+
+  @@unique([agentId, source, externalKey])
+  @@index([status])
+  @@index([detectedAt])
+}
+
+// YARA rule sets (phase 2): the customer's own, or community sets an admin imported.
+model ThreatYaraRuleSet {
+  id               String   @id @default(uuid())
+  name             String   @db.NVarChar(200)
+  source           String   @db.NVarChar(20) // CUSTOM | COMMUNITY
+  sourceName       String?  @db.NVarChar(200)
+  license          String?  @db.NVarChar(100)
+  author           String?  @db.NVarChar(200)
+  version          String?  @db.NVarChar(50)
+  rulesText        String   @db.NVarChar(Max)
+  sha256           String   @db.NVarChar(64)
+  ruleCount        Int      @default(0)
+  disabledRules    String   @default("[]") @db.NVarChar(Max) // JSON rule names silenced
+  enabled          Boolean  @default(true)
+  createdByAdminId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// A scan requested from the console, run by the endpoint's agent.
+model ThreatScanTask {
+  id                 String    @id @default(uuid())
+  agentId            String
+  agent              Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  scanType           String    @db.NVarChar(10) // QUICK | FULL | CUSTOM | YARA
+  paths              String    @default("[]") @db.NVarChar(Max) // JSON, CUSTOM / YARA only
+  status             String    @default("PENDING") @db.NVarChar(20) // PENDING | RUNNING | DONE | FAILED
+  requestedByAdminId String?
+  requestedAt        DateTime  @default(now())
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  filesScanned       Int?
+  threatsFound       Int?
+  errorMessage       String?   @db.NVarChar(1000)
+
+  @@index([agentId, status])
+}
+
+// An action on an endpoint requested from the console (remove a threat, update signatures...).
+model ThreatActionTask {
+  id                 String    @id @default(uuid())
+  agentId            String
+  agent              Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  detectionId        String? // ThreatDetection.id - no foreign key, both rows already cascade from Agent
+  action             String    @db.NVarChar(30) // REMOVE | QUARANTINE | RESTORE | ALLOW | UPDATE_SIGNATURES
+  status             String    @default("PENDING") @db.NVarChar(20) // PENDING | SENT | DONE | FAILED
+  requestedByAdminId String?
+  requestedAt        DateTime  @default(now())
+  finishedAt         DateTime?
+  resultMessage      String?   @db.NVarChar(1000)
+
+  @@index([agentId, status])
 }

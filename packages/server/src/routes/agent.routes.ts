@@ -1,3 +1,4 @@
+import { recordReport as recordThreatProtectionReport, recordTaskResult as recordThreatTaskResult, resolveForAgent as resolveThreatProtectionForAgent } from "../services/threatProtection.service";
 import { recordReport as recordScreenshotBlockReport, resolveAssignedForAgent as resolveScreenshotBlockForAgent } from "../services/screenshotBlock.service";
 import { storeImage as storeScreenCaptureImage } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
@@ -34,6 +35,8 @@ import {
   zeroTrustScanResultPayloadSchema,
   SCREEN_CAPTURE_IMAGE_MAX_BYTES,
   screenshotBlockReportSchema,
+  threatProtectionReportSchema,
+  threatTaskResultSchema,
 } from "@em/shared";
 import { agentUpdatePackageFor } from "../services/agentBuild.service";
 import { prisma } from "../db";
@@ -485,6 +488,34 @@ agentRouter.get("/screenshot-block/assigned", async (req, res, next) => {
 agentRouter.post("/screenshot-block/report", async (req, res, next) => {
   try {
     await recordScreenshotBlockReport(req.agentId!, screenshotBlockReportSchema.parse(req.body));
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Threat Protection (Microsoft Defender management): settings, waiting scans and actions; the
+// endpoint's protection status and threats; and each scan's or action's result.
+agentRouter.get("/threat-protection/assigned", async (req, res, next) => {
+  try {
+    res.json(await resolveThreatProtectionForAgent(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/threat-protection/report", async (req, res, next) => {
+  try {
+    await recordThreatProtectionReport(req.agentId!, threatProtectionReportSchema.parse(req.body));
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+agentRouter.post("/threat-protection/task-result", async (req, res, next) => {
+  try {
+    if (!(await recordThreatTaskResult(req.agentId!, threatTaskResultSchema.parse(req.body)))) return res.status(404).json({ error: "Task not found" });
     res.status(204).send();
   } catch (err) {
     next(err);

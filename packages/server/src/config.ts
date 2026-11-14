@@ -57,6 +57,19 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => v.trim().toLowerCase() === "true"),
+  // Which product this deployment is: "full" (Endpoint IQ) or "threat-protection" (the separate
+  // Endpoint IQ Threat Protection edition - only Endpoints, Threat Protection, Licensing and
+  // Administrators are shown; see moduleVisibility.service.ts). Same image either way.
+  PRODUCT_EDITION: z
+    .string()
+    .default("full")
+    .transform((v) => (v.trim().toLowerCase() === "threat-protection" ? "threat-protection" : "full") as "full" | "threat-protection"),
+  // Threat Protection (Microsoft Defender management) on a full Endpoint IQ deployment whose
+  // licence enforcement is off. With enforcement on, the licence decides instead.
+  THREAT_PROTECTION: z
+    .string()
+    .default("false")
+    .transform((v) => v.trim().toLowerCase() === "true"),
   // Extra (public) networks allowed to reach the admin console/login/admin API, on top of
   // private addresses - comma-separated IPs or CIDRs, e.g. "203.0.113.7,198.51.100.0/24".
   // Needed when the server is cloud-hosted (EC2) and admins connect from the internet; see
@@ -110,6 +123,8 @@ export const config = {
     : undefined,
   licenseEnforcementEnabled: parsed.data.LICENSE_ENFORCEMENT_ENABLED,
   advancedAppControl: parsed.data.ADVANCED_APP_CONTROL,
+  productEdition: parsed.data.PRODUCT_EDITION,
+  threatProtection: parsed.data.THREAT_PROTECTION,
   trustedProxy: parsed.data.TRUSTED_PROXY,
   adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")
     .map((s) => s.trim())

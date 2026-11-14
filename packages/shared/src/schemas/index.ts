@@ -38,3 +38,4 @@ export * from "./edr.schema";
 export * from "./agentSecurity.schema";
 export * from "./moduleVisibility.schema";
 export * from "./agentConnection.schema";
+export * from "./threatProtection.schema";

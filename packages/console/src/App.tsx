@@ -34,6 +34,7 @@ import CommandBlockPage from "./pages/CommandBlockPage";
 import IpBlockPage from "./pages/IpBlockPage";
 import UsbControlPage from "./pages/UsbControlPage";
 import ScreenshotBlockPage from "./pages/ScreenshotBlockPage";
+import { ThreatActivityPage, ThreatOverviewPage, ThreatPoliciesPage, ThreatsPage } from "./pages/ThreatProtectionPage";
 import AccessExceptionsPage from "./pages/AccessExceptionsPage";
 import UserProductivityPage from "./pages/UserProductivityPage";
 import EdrPage from "./pages/EdrPage";
@@ -87,6 +88,11 @@ export default function App() {
           <Route path="files" element={<DataMovementPage />} />
           <Route path="screen-capture" element={<ScreenCapturePage />} />
         </Route>
+        <Route path="/threat-protection" element={<Navigate to="/threat-protection/overview" replace />} />
+        <Route path="/threat-protection/overview" element={<RequireModule module="THREAT_PROTECTION"><ThreatOverviewPage /></RequireModule>} />
+        <Route path="/threat-protection/threats" element={<RequireModule module="THREAT_PROTECTION"><ThreatsPage /></RequireModule>} />
+        <Route path="/threat-protection/activity" element={<RequireModule module="THREAT_PROTECTION"><ThreatActivityPage /></RequireModule>} />
+        <Route path="/threat-protection/policies" element={<RequireModule module="THREAT_PROTECTION"><ThreatPoliciesPage /></RequireModule>} />
         <Route path="/epm" element={<RequireModule module="DATA_MANAGER"><EpmPage /></RequireModule>}>
           <Route index element={<Navigate to="app-control" replace />} />
           <Route path="app-control" element={<AppControlPage />} />

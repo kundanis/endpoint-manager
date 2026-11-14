@@ -174,6 +174,7 @@ export async function handleCheckin(
     runZeroTrustScanNow: takeScanRequest("zeroTrust", agentId),
     runSecurityConfigScanNow: takeScanRequest("securityConfig", agentId),
     runInventoryNow: takeScanRequest("inventory", agentId),
+    runThreatProtectionNow: takeScanRequest("threatProtection", agentId),
     serverUrls: await getServerUrlsForCheckin(),
   };
 }

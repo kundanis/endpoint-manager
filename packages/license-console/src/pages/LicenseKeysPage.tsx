@@ -31,6 +31,7 @@ const MODULE_LABELS: Record<LicenseProduct, Record<LicenseModule, string>> = {
     SECURITY_MANAGER: "Security Manager",
     DATA_MANAGER: "Data Manager",
     USER_MANAGER: "User Manager",
+    THREAT_PROTECTION: "Threat Protection",
   },
   ENDPOINT_IQ: {
     ENDPOINT_MANAGER: "Endpoint Hub",
@@ -39,6 +40,7 @@ const MODULE_LABELS: Record<LicenseProduct, Record<LicenseModule, string>> = {
     SECURITY_MANAGER: "Security Posture",
     DATA_MANAGER: "Data Governance",
     USER_MANAGER: "Identity Governance",
+    THREAT_PROTECTION: "Threat Protection",
   },
 };
 
@@ -50,9 +52,12 @@ const IQ_MODULE_HINTS: Record<LicenseModule, string> = {
   SECURITY_MANAGER: "Vulnerabilities, patches, security configuration, Zero Trust, threat detection",
   DATA_MANAGER: "Data types, data discovery, DLP, data movement, EPM, access exceptions",
   USER_MANAGER: "User productivity, user risk, admin logs",
+  THREAT_PROTECTION: "Microsoft Defender management, threats, scans and quarantine (also sold as its own edition)",
 };
 
 const LICENSE_MODULES = Object.keys(MODULE_LABELS.ENDPOINT_ONE) as LicenseModule[];
+// Threat Protection is sold separately, so a new key starts without it (tick it to add it).
+const DEFAULT_MODULES = LICENSE_MODULES.filter((m) => m !== "THREAT_PROTECTION");
 
 function statusBadgeClass(status: string): string {
   if (status === "ACTIVATED") return "online";
@@ -70,7 +75,7 @@ export default function LicenseKeysPage() {
   const [product, setProduct] = useState<LicenseProduct>("ENDPOINT_IQ");
   const [maxAgents, setMaxAgents] = useState(10);
   const [validityType, setValidityType] = useState<ValidityType>("ONE_YEAR");
-  const [modules, setModules] = useState<LicenseModule[]>([...LICENSE_MODULES]);
+  const [modules, setModules] = useState<LicenseModule[]>([...DEFAULT_MODULES]);
   const [justIssued, setJustIssued] = useState<IssuedLicenseKey | null>(null);
   const [copied, setCopied] = useState(false);
 

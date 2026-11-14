@@ -133,12 +133,15 @@ function ModuleVisibilityPanel() {
 
   useEffect(() => {
     if (visibility) {
-      setHiddenModuleKeys(visibility.hiddenModuleKeys);
-      setHiddenItemPaths(visibility.hiddenItemPaths);
+      setHiddenModuleKeys(visibility.hiddenModuleKeys.filter((k) => !(visibility.fixedHiddenModuleKeys ?? []).includes(k)));
+      setHiddenItemPaths(visibility.hiddenItemPaths.filter((p) => !(visibility.fixedHiddenItemPaths ?? []).includes(p)));
     }
   }, [visibility]);
 
-  const hideableModules = NAV_MODULES.filter((m) => m.licenseModule && m.items);
+  // Modules and items this deployment never shows (its edition) aren't offered here.
+  const fixedModules = visibility?.fixedHiddenModuleKeys ?? [];
+  const fixedItems = visibility?.fixedHiddenItemPaths ?? [];
+  const hideableModules = NAV_MODULES.filter((m) => m.licenseModule && m.items && !fixedModules.includes(m.licenseModule));
 
   function toggleModule(key: string) {
     setHiddenModuleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -189,7 +192,7 @@ function ModuleVisibilityPanel() {
                     <span className="app-muted">Every item in {module.label} is hidden.</span>
                   ) : (
                     <div className="app-stack-sm">
-                      {module.items!.map((item) => (
+                      {module.items!.filter((item) => !fixedItems.includes(item.path)).map((item) => (
                         <Check
                           key={item.path}
                           checked={hiddenItemPaths.includes(item.path)}

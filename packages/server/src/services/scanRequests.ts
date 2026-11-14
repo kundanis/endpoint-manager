@@ -9,9 +9,10 @@
 
 // "inventory": report installed software now (Sync now on the endpoint's Software tab, and after
 // a command or deployment finishes, since either may have installed or removed something).
-type ScanKind = "zeroTrust" | "securityConfig" | "inventory";
+// "threatProtection": a Threat Protection scan or action was requested, or its policy changed.
+type ScanKind = "zeroTrust" | "securityConfig" | "inventory" | "threatProtection";
 
-const pending: Record<ScanKind, Set<string>> = { zeroTrust: new Set(), securityConfig: new Set(), inventory: new Set() };
+const pending: Record<ScanKind, Set<string>> = { zeroTrust: new Set(), securityConfig: new Set(), inventory: new Set(), threatProtection: new Set() };
 
 export function requestScan(kind: ScanKind, agentIds: string[]): void {
   for (const id of agentIds) pending[kind].add(id);

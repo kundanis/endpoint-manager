@@ -35,6 +35,7 @@ const MODULE_KEYS: LicenseModuleKey[] = [
   "SECURITY_MANAGER",
   "DATA_MANAGER",
   "USER_MANAGER",
+  "THREAT_PROTECTION",
 ];
 const MODULE_LABELS = LICENSE_MODULE_LABELS;
 // Narrower grants on top of the modules; labels for the list and the form.

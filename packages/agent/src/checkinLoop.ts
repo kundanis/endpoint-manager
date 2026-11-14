@@ -33,6 +33,7 @@ import { runAppControlScan } from "./appControlEnforcer";
 import { runWebBlockScan } from "./webBlockEnforcer";
 import { runIpBlockScan } from "./ipBlockEnforcer";
 import { runScreenshotBlockSync } from "./screenshotBlockEnforcer";
+import { runThreatProtectionSync, THREAT_PROTECTION_INTERVAL_MS } from "./threatProtection";
 import { runUsbControlScan } from "./usbControlEnforcer";
 import { ensureWatchdogTaskRegistered } from "./watchdogGuard";
 import { ensureDefenderExclusion } from "./defenderExclusion";
@@ -160,6 +161,14 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
       await runIpBlockScan(client);
     } catch (err) {
       console.error("IP Block scan failed", err);
+    }
+  }
+
+  async function sendThreatProtectionSync() {
+    try {
+      await runThreatProtectionSync(client);
+    } catch (err) {
+      console.error("Threat Protection sync failed", (err as Error).message);
     }
   }
 
@@ -348,6 +357,8 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
         void sendZeroTrustScan();
       }
 
+      if (data.runThreatProtectionNow) void sendThreatProtectionSync();
+
       if (data.runInventoryNow) {
         console.log("Check-in requested an inventory report now");
         void sendInventory();
@@ -387,6 +398,7 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
     void sendIpBlockScan();
     void sendScreenshotBlockSync();
     void sendUsbControlScan();
+    void sendThreatProtectionSync();
     void sendInventory();
     return true;
   }
@@ -424,6 +436,8 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   setInterval(sendScreenshotBlockSync, agentConfig.ipBlockScanIntervalMs); // same policy sync interval
   void sendUsbControlScan();
   setInterval(sendUsbControlScan, agentConfig.usbControlScanIntervalMs);
+  void sendThreatProtectionSync();
+  setInterval(sendThreatProtectionSync, THREAT_PROTECTION_INTERVAL_MS);
   void checkWatchdogTask();
   setInterval(checkWatchdogTask, agentConfig.watchdogCheckIntervalMs);
   void sendUserProductivityScan();

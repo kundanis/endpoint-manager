@@ -1,23 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import {
-  ChevronDown,
-  ChevronRight,
-  Database,
-  KeyRound,
-  LayoutGrid,
-  Lock,
-  LogOut,
-  Menu,
-  Monitor,
-  Network,
-  Package,
-  Settings,
-  Shield,
-  Users,
-  type LucideIcon,
-  CircleHelp,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck } from "lucide-react";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
 import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
@@ -35,6 +18,7 @@ const MODULE_ICONS: Record<string, LucideIcon> = {
   security: Shield,
   data: Database,
   user: Users,
+  threat: ShieldCheck,
   licensing: KeyRound,
   "admin-users": Settings,
 };
