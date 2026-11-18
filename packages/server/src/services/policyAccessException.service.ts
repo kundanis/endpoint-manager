@@ -2,6 +2,8 @@ import type { CreatePolicyAccessExceptionRequest, PolicyAccessExceptionType } fr
 import { prisma } from "../db";
 
 export class AgentNotFoundError extends Error {}
+export class GroupNotFoundError extends Error {}
+export class GroupEmptyError extends Error {}
 export class PolicyNotFoundError extends Error {}
 export class RequestNotFoundError extends Error {}
 export class RequestAlreadyResolvedError extends Error {}
@@ -37,24 +39,39 @@ export async function isPolicyExcepted(policyType: PolicyAccessExceptionType, po
   return active !== null;
 }
 
+// One endpoint, or every endpoint in a group: a group request becomes one request per endpoint
+// (exceptions are enforced per endpoint), each approved, rejected or ended on its own.
 export async function createRequest(params: CreatePolicyAccessExceptionRequest, requestedByAdminId: string) {
-  const agent = await prisma.agent.findUnique({ where: { id: params.agentId }, select: { id: true } });
-  if (!agent) throw new AgentNotFoundError();
+  let agentIds: string[];
+  if (params.groupId) {
+    const group = await prisma.assetGroup.findUnique({ where: { id: params.groupId }, select: { id: true } });
+    if (!group) throw new GroupNotFoundError();
+    agentIds = (await prisma.agentGroupMembership.findMany({ where: { groupId: params.groupId }, select: { agentId: true } })).map((m) => m.agentId);
+    if (agentIds.length === 0) throw new GroupEmptyError();
+  } else {
+    const agent = await prisma.agent.findUnique({ where: { id: params.agentId! }, select: { id: true } });
+    if (!agent) throw new AgentNotFoundError();
+    agentIds = [agent.id];
+  }
 
   const policyName = await getPolicyName(params.policyType, params.policyId);
   if (!policyName) throw new PolicyNotFoundError();
 
-  const request = await prisma.policyAccessException.create({
-    data: {
-      policyType: params.policyType,
-      policyId: params.policyId,
-      agentId: params.agentId,
-      reason: params.reason,
-      durationMinutes: params.durationMinutes,
-      requestedByAdminId,
-    },
-  });
-  return serialize(request, policyName);
+  const requests = await prisma.$transaction(
+    agentIds.map((agentId) =>
+      prisma.policyAccessException.create({
+        data: {
+          policyType: params.policyType,
+          policyId: params.policyId,
+          agentId,
+          reason: params.reason,
+          durationMinutes: params.durationMinutes,
+          requestedByAdminId,
+        },
+      }),
+    ),
+  );
+  return { created: requests.length, requests: requests.map((r) => serialize(r, policyName)) };
 }
 
 export async function listRequests() {

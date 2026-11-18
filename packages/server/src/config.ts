@@ -93,6 +93,8 @@ export const config = {
   jwtSecret: parsed.data.JWT_SECRET,
   uploadsDir: path.resolve(process.cwd(), parsed.data.UPLOADS_DIR),
   agentInstallerPath: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "EndpointProAgentSetup.exe"),
+  // The same setup built without PowerShell (for machines where Group Policy blocks powershell.exe).
+  agentInstallerNoPowerShellPath: path.resolve(process.cwd(), parsed.data.AGENT_INSTALLER_DIR, "EndpointProAgentSetup-NoPowerShell.exe"),
   // Same directory, two more artifacts a packaging run stages alongside the interactive
   // .exe: the raw installer zip (reused as-is for agent self-update - it already excludes
   // config.json/.state, so extracting it over an existing install can't touch identity/

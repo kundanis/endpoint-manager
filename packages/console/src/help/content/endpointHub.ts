@@ -57,6 +57,68 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
       },
     ],
   },
+  {
+    id: "events",
+    module: "Events",
+    title: "Events",
+    path: "/events",
+    summary:
+      "Every module's events in one place: threats, DLP and data movement, blocked devices, apps and commands, failing Zero Trust and security configuration checks, user risk alerts and software changes. See each kind of event once with how many endpoints it happened on, or every event on a timeline.",
+    keywords: ["activity", "alerts", "violations", "timeline", "log", "siem", "audit", "incidents", "history"],
+    sections: [
+      {
+        title: "By event",
+        items: [
+          "Each kind of event appears once, with its severity, category, how many endpoints it happened on, how many times and when it was last seen.",
+          "Click a row to see the endpoints it happened on. Click an endpoint to show only that endpoint's events.",
+          "Timeline opens every occurrence of that event; the arrow icon opens the module page where you can act on it (release, unblock, remediate).",
+        ],
+      },
+      {
+        title: "Timeline",
+        items: [
+          "Every event, newest first, with the endpoint, the user and details. Load older events pages back 100 at a time.",
+        ],
+      },
+      {
+        title: "Filters and period",
+        items: [
+          "Filter by endpoint, group, category, severity and event type. The filters stay in the page address, so you can bookmark or share a filtered view.",
+          "Period: the last 24 hours, 7 days (the default), 30 days or 90 days.",
+          "Endpoint and group filters leave out events that aren't tied to an endpoint: user risk alerts and email attachment blocks.",
+          "Zero Trust and security configuration failures are states rather than one-off events: they appear while a check is still failing, at the last time it was seen failing.",
+          "Admin actions are not shown here: they are in Identity Governance → Admin logs.",
+          "You only see events from modules you have access to, that are licensed and not hidden. An endpoint's Security posture card links here with that endpoint selected.",
+        ],
+      },
+    ],
+    howTos: [
+      {
+        id: "events-endpoint",
+        title: "See everything that happened on one endpoint",
+        steps: [
+          { route: "/events", text: "Choose the endpoint in the Endpoint filter.", target: { kind: "field", label: "Endpoint" } },
+          { text: "Switch to Timeline to see each event in order.", target: { kind: "tab", label: "Timeline" } },
+        ],
+      },
+      {
+        id: "events-spread",
+        title: "Find out how many endpoints an event happened on",
+        steps: [
+          { route: "/events", text: "On By event, read the Endpoints column.", target: { kind: "tab", label: "By event" } },
+          { text: "Click the row to list those endpoints, with how often it happened on each." },
+        ],
+      },
+      {
+        id: "events-critical",
+        title: "Review critical and high events",
+        steps: [
+          { route: "/events", text: "Click the Critical and high tile to filter to them.", target: { kind: "text", label: "Critical and high" } },
+          { text: "Open each event's module page with the arrow icon to act on it." },
+        ],
+      },
+    ],
+  },
 ];
 
 export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
@@ -120,7 +182,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Tabs",
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
-          "Security posture (on Overview): vulnerabilities, Zero Trust, patches, security configuration and, on Windows with Threat Protection, threats detected (open, and in the last 30 days). Select one to open that page for this endpoint.",
+          "Security posture (on Overview): vulnerabilities, Zero Trust, patches, security configuration and, on Windows with Threat Protection, threats detected (open, and in the last 30 days). Select one to open that page for this endpoint. Events opens every module's events for this endpoint.",
           "Software: installed applications with licence status; uninstall them remotely. System software (Windows components, drivers, runtimes such as .NET and Visual C++, OEM tools, Defender and the Endpoint IQ agent) shows System software instead of Uninstall and can't be removed from the console. Sync now fetches the current list from the device.",
           "Block (software with no licence recorded): the endpoint closes the program whenever it starts and the user sees a message; it stays installed. Release lets it run again. Blocks are kept in an Application control policy named Unlicensed software: <endpoint>, and need access to Application control.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
@@ -177,13 +239,14 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     title: "Enrollment tokens",
     path: "/enrollment-tokens",
     summary: "Tokens that let new devices join, the agent installers, and the addresses agents use to reach this server.",
-    keywords: ["install agent", "enroll", "setup exe", "deploy agent", "mac", "linux", "winrm", "server url"],
+    keywords: ["install agent", "enroll", "setup exe", "deploy agent", "mac", "linux", "winrm", "server url", "blocked by group policy", "without powershell"],
     sections: [
       {
         title: "What you can do",
         items: [
           "Create a token with an expiry, a usage limit and a group new devices join automatically. Choose New group… in Target group to create one there.",
           "Download a ready-to-run Windows setup file for a token: nothing to type on the device.",
+          "Download the setup without PowerShell for PCs where Group Policy blocks PowerShell (setup says \"This program is blocked by group policy\"). It installs the same agent.",
           "Push-install the agent to Windows machines over the network with admin credentials (never stored).",
           "Download the macOS or Linux agent and copy its install command.",
           "Set the server addresses agents use (LAN, HTTPS address, public IP); they fail over automatically.",
@@ -200,6 +263,16 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
           { text: "Give it a label, choose how long it's valid and how many devices may use it, and optionally a group. To make a new group, choose New group…, type its name and select Create group. Create the token." },
           { text: "Select Download setup for this token and run the file on the PC as an administrator." },
           { text: "The PC appears under Endpoints within a minute." },
+        ],
+      },
+      {
+        id: "tokens-windows-no-powershell",
+        title: "Install on a PC where PowerShell is blocked",
+        steps: [
+          { route: "/enrollment-tokens", text: "If setup says \"This program is blocked by group policy\", the PC's Group Policy blocks PowerShell." },
+          { text: "In the token list, open the token's ⋯ menu and select Download Windows setup without PowerShell. Without a token, use Without PowerShell under Download the agent installer." },
+          { text: "Run the file on the PC as an administrator. It installs the same agent without starting PowerShell." },
+          { text: "Check the endpoint's page once it appears. If some details stay empty, the policy also blocks PowerShell for the agent itself; ask the PC's IT team to allow it for the SYSTEM account." },
         ],
       },
       {

@@ -197,7 +197,7 @@ Offline: $([bool]$Offline)
       }
     }
   } else {
-    Write-Warning "docker\agent-installer is empty - the bundle has no agent installer. Build with 'npm run package -w @em/agent' and copy the 3 files there."
+    Write-Warning "docker\agent-installer is empty - the bundle has no agent installer. Build with 'npm run package -w @em/agent' and copy the files there (both setup exes, the zip and agent-manifest.json)."
   }
 
   # --- Images -------------------------------------------------------------------------------

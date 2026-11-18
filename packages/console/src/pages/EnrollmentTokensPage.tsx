@@ -625,7 +625,9 @@ export default function EnrollmentTokensPage() {
               Copy the downloaded <span className="ep-mono">EndpointProAgentSetup-….exe</span> to the target machine and
               double-click it — it installs and enrolls the agent with every server address from{" "}
               <em>Server connection details</em>, and the agent picks whichever one it can reach (LAN or WAN). One file
-              works for as many machines as the token's uses allow.
+              works for as many machines as the token's uses allow. If Group Policy blocks PowerShell on the machine
+              (setup reports "This program is blocked by group policy"), use the setup without PowerShell — it installs
+              the same agent.
             </p>
             <div className="app-actions-row">
               <Button
@@ -635,6 +637,15 @@ export default function EnrollmentTokensPage() {
                 disabled={downloadSetup.isPending}
               >
                 {downloadSetup.isPending ? "Preparing…" : "Download setup for this token"}
+              </Button>
+              <Button
+                icon={Download}
+                onClick={() =>
+                  downloadSetup.mutate({ tokenId: justCreated.id, enrollmentToken: justCreated.token, variant: "no-powershell" })
+                }
+                disabled={downloadSetup.isPending}
+              >
+                Setup without PowerShell
               </Button>
             </div>
             {downloadSetup.isError && <Alert tone="critical">{(downloadSetup.error as Error).message}</Alert>}
@@ -740,7 +751,23 @@ export default function EnrollmentTokensPage() {
                                   icon: Download,
                                   disabled: isDead || !t.downloadable || downloadTokenSetup.isPending,
                                   title: !t.downloadable ? NOT_DOWNLOADABLE : isDead ? "This token can no longer enroll endpoints" : undefined,
-                                  onSelect: () => downloadTokenSetup.mutate(t.id, { onError: (err) => toast((err as Error).message) }),
+                                  onSelect: () =>
+                                    downloadTokenSetup.mutate({ tokenId: t.id }, { onError: (err) => toast((err as Error).message) }),
+                                },
+                                {
+                                  label: "Download Windows setup without PowerShell",
+                                  icon: Download,
+                                  disabled: isDead || !t.downloadable || downloadTokenSetup.isPending,
+                                  title: !t.downloadable
+                                    ? NOT_DOWNLOADABLE
+                                    : isDead
+                                      ? "This token can no longer enroll endpoints"
+                                      : "For machines where Group Policy blocks PowerShell",
+                                  onSelect: () =>
+                                    downloadTokenSetup.mutate(
+                                      { tokenId: t.id, variant: "no-powershell" },
+                                      { onError: (err) => toast((err as Error).message) },
+                                    ),
                                 },
                                 {
                                   label: "Copy token",
@@ -795,14 +822,21 @@ export default function EnrollmentTokensPage() {
               when run it only asks for an enrollment token. For a no-typing install, create a token and use{" "}
               <em>Download setup for this token</em> instead.
             </p>
+            <p className="app-text">
+              <strong>Without PowerShell</strong> installs the same agent without starting PowerShell, for machines where
+              Group Policy blocks it (setup reports "This program is blocked by group policy").
+            </p>
             {downloadInstaller.isError && (
               <Alert tone="critical" title="Installer not available">
                 {(downloadInstaller.error as Error).message}
               </Alert>
             )}
             <div className="app-actions-row">
-              <Button icon={Download} onClick={() => downloadInstaller.mutate()} disabled={downloadInstaller.isPending}>
+              <Button icon={Download} onClick={() => downloadInstaller.mutate("standard")} disabled={downloadInstaller.isPending}>
                 {downloadInstaller.isPending ? "Preparing…" : "Download agent installer"}
+              </Button>
+              <Button icon={Download} onClick={() => downloadInstaller.mutate("no-powershell")} disabled={downloadInstaller.isPending}>
+                Without PowerShell
               </Button>
             </div>
           </div>

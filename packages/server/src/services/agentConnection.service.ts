@@ -102,20 +102,32 @@ export async function getServerUrlsForCheckin(): Promise<string[] | undefined> {
 
 export class AgentInstallerMissingError extends Error {}
 
+// "standard" runs install.ps1; "no-powershell" installs by itself, for machines where Group
+// Policy blocks powershell.exe. Both install the same agent.
+export type SetupVariant = "standard" | "no-powershell";
+
+export function parseSetupVariant(value: unknown): SetupVariant {
+  return value === "no-powershell" ? "no-powershell" : "standard";
+}
+
 // enrollmentToken empty = the generic installer download: it still carries the server
 // addresses, so setup only prompts for the token.
-export async function buildConfiguredSetupExe(enrollmentToken = ""): Promise<Buffer> {
-  if (!fs.existsSync(config.agentInstallerPath)) {
+export async function buildConfiguredSetupExe(enrollmentToken = "", variant: SetupVariant = "standard"): Promise<Buffer> {
+  const exePath = variant === "no-powershell" ? config.agentInstallerNoPowerShellPath : config.agentInstallerPath;
+  if (!fs.existsSync(exePath)) {
     throw new AgentInstallerMissingError(
-      "No agent installer has been published on this server yet. Build one with " +
-        "'npm run package -w @em/agent' and place EndpointProAgentSetup.exe in the configured AGENT_INSTALLER_DIR.",
+      variant === "no-powershell"
+        ? "The setup without PowerShell isn't on this server yet. It comes with agent 0.2.29 or later: build it with " +
+            "'npm run package -w @em/agent' and place EndpointProAgentSetup-NoPowerShell.exe in the configured AGENT_INSTALLER_DIR."
+        : "No agent installer has been published on this server yet. Build one with " +
+            "'npm run package -w @em/agent' and place EndpointProAgentSetup.exe in the configured AGENT_INSTALLER_DIR.",
     );
   }
   const serverUrls = await getAgentServerUrls();
   if (serverUrls.length === 0) {
     throw new Error("No server address is configured or detectable - set the agent connection settings first.");
   }
-  const exe = await fs.promises.readFile(config.agentInstallerPath);
+  const exe = await fs.promises.readFile(exePath);
   const payload = Buffer.from(`${serverUrls.join(",")}\n${enrollmentToken}`, "utf8");
   const length = Buffer.alloc(4);
   length.writeInt32LE(payload.length, 0);

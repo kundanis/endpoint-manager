@@ -3,6 +3,7 @@ import { Check, KeyRound, SearchX, X } from "lucide-react";
 import {
   useAgents,
   useApprovePolicyAccessException,
+  useAssetGroups,
   useAppControlPolicies,
   useCommandBlockPolicies,
   useCreatePolicyAccessException,
@@ -35,6 +36,7 @@ import {
   Toolbar,
   useConfirm,
   usePagedList,
+  useToast,
   type BadgeTone,
 } from "../components/ui";
 import { formatDateTime } from "../format";
@@ -112,13 +114,25 @@ function usePoliciesForType(policyType: PolicyAccessExceptionType) {
   }
 }
 
+// "DOMAIN\jdoe" and "jdoe" are the same user for the search.
+function bareUser(value: string | null | undefined): string {
+  const v = (value ?? "").trim().toLowerCase();
+  return v.slice(v.lastIndexOf("\\") + 1);
+}
+
 function RequestForm() {
   const { data: agents } = useAgents();
+  const { data: groups } = useAssetGroups();
   const createRequest = useCreatePolicyAccessException();
+  const toast = useToast();
 
   const [policyType, setPolicyType] = useState<PolicyAccessExceptionType>("APP_CONTROL");
   const [policyId, setPolicyId] = useState("");
+  // One endpoint, or every endpoint in a group (one request per endpoint).
+  const [target, setTarget] = useState<"agent" | "group">("agent");
   const [agentId, setAgentId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [search, setSearch] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [reason, setReason] = useState("");
 
@@ -127,24 +141,54 @@ function RequestForm() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     createRequest.mutate(
-      { policyType, policyId, agentId, durationMinutes, reason },
+      { policyType, policyId, ...(target === "agent" ? { agentId } : { groupId }), durationMinutes, reason },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          if (result.created > 1) toast(`${result.created} requests created, one for each endpoint in the group.`);
           setPolicyId("");
           setAgentId("");
+          setGroupId("");
+          setSearch("");
           setReason("");
         },
       },
     );
   }
 
+  // The search narrows the list - endpoints by hostname, signed-in user or group, groups by name.
+  const term = search.trim().toLowerCase();
+  const agentText = (a: NonNullable<typeof agents>[number]) =>
+    [a.hostname, a.inventory?.lastLoggedOnUser ?? "", ...a.groups.map((g) => g.name)].join(" ").toLowerCase();
+  const matchAgents = (t: string) => (agents ?? []).filter((a) => !t || agentText(a).includes(t));
+  const matchGroups = (t: string) => (groups ?? []).filter((g) => !t || g.name.toLowerCase().includes(t));
+  const shownAgents = matchAgents(term);
+  const shownGroups = matchGroups(term);
+
+  // Typing selects the best match straight away: an exact hostname, user or group name first,
+  // otherwise the first match. No match clears the selection.
+  function handleSearch(value: string) {
+    setSearch(value);
+    const t = value.trim().toLowerCase();
+    if (!t) return;
+    if (target === "agent") {
+      const found = matchAgents(t);
+      const exact = found.find((a) => a.hostname.toLowerCase() === t || bareUser(a.inventory?.lastLoggedOnUser) === bareUser(t));
+      setAgentId((exact ?? found[0])?.id ?? "");
+    } else {
+      const found = matchGroups(t);
+      setGroupId((found.find((g) => g.name.toLowerCase() === t) ?? found[0])?.id ?? "");
+    }
+  }
+  const chosenGroup = groups?.find((g) => g.id === groupId);
+  const hasTarget = target === "agent" ? !!agentId : !!groupId && (chosenGroup?.memberCount ?? 0) > 0;
+
   return (
     <form className="ep-card" onSubmit={handleSubmit}>
       <div className="ep-section">
         <h4>Request an access exception</h4>
         <p>
-          Temporarily carve out one endpoint from one EPM or DLP policy's enforcement, for a fixed window. Nothing takes
-          effect until an admin approves it above.
+          Temporarily carve out an endpoint, or every endpoint in a group, from one EPM or DLP policy's enforcement, for a
+          fixed window. A group creates one request per endpoint. Nothing takes effect until an admin approves it above.
         </p>
         <FormGrid>
           <Field label="Module" htmlFor="ae-module">
@@ -174,14 +218,55 @@ function RequestForm() {
               ))}
             </select>
           </Field>
-          <Field label="Endpoint" htmlFor="ae-endpoint" required>
-            <select id="ae-endpoint" className="ep-select" value={agentId} onChange={(e) => setAgentId(e.target.value)} required>
-              <option value="">Select an endpoint…</option>
-              {agents?.map((a) => (
-                <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
-              ))}
-            </select>
+          <Field label="Request for" htmlFor="ae-target">
+            <Segmented
+              label="Request for"
+              options={[
+                { value: "agent", label: "Endpoint" },
+                { value: "group", label: "Group" },
+              ]}
+              value={target}
+              onChange={(v) => {
+                setTarget(v);
+                setSearch("");
+              }}
+            />
           </Field>
+          <Field label={target === "agent" ? "Search endpoints" : "Search groups"} htmlFor="ae-search">
+            <SearchInput
+              id="ae-search"
+              placeholder={target === "agent" ? "Hostname or user name" : "Group name"}
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+          </Field>
+          {target === "agent" ? (
+            <Field label="Endpoint" htmlFor="ae-endpoint" required span2>
+              <select id="ae-endpoint" className="ep-select" value={agentId} onChange={(e) => setAgentId(e.target.value)} required>
+                <option value="">{term ? (shownAgents.length ? `Select an endpoint… (${shownAgents.length} match)` : "No endpoint matches the search") : "Select an endpoint…"}</option>
+                {shownAgents.map((a) => (
+                  <EndpointOption key={a.id} value={a.id} hostname={a.hostname} agentId={a.id} />
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field
+              label="Group"
+              htmlFor="ae-group"
+              required
+              span2
+              help={chosenGroup ? (chosenGroup.memberCount > 0 ? `Creates ${chosenGroup.memberCount} request${chosenGroup.memberCount === 1 ? "" : "s"}, one per endpoint.` : "This group has no endpoints.") : undefined}
+            >
+              <select id="ae-group" className="ep-select" value={groupId} onChange={(e) => setGroupId(e.target.value)} required>
+                <option value="">{term ? (shownGroups.length ? `Select a group… (${shownGroups.length} match)` : "No group matches the search") : "Select a group…"}</option>
+                {shownGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.memberCount} endpoint{g.memberCount === 1 ? "" : "s"})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Duration" htmlFor="ae-duration">
             <select id="ae-duration" className="ep-select" value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))}>
               {DURATION_OPTIONS.map((d) => (
@@ -210,7 +295,7 @@ function RequestForm() {
         )}
       </div>
       <FormFooter>
-        <Button type="submit" variant="primary" disabled={createRequest.isPending || !policyId || !agentId || !reason.trim()}>
+        <Button type="submit" variant="primary" disabled={createRequest.isPending || !policyId || !hasTarget || !reason.trim()}>
           {createRequest.isPending ? "Submitting…" : "Submit request"}
         </Button>
       </FormFooter>

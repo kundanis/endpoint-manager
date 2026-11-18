@@ -16,6 +16,7 @@ import { commandsRouter } from "./routes/commands.routes";
 import { commandTemplatesRouter } from "./routes/commandTemplates.routes";
 import { dashboardRouter } from "./routes/dashboard.routes";
 import { eventsRouter } from "./routes/events.routes";
+import { eventCenterRouter } from "./routes/eventCenter.routes";
 import { packagesRouter } from "./routes/packages.routes";
 import { deploymentsRouter } from "./routes/deployments.routes";
 import { agentUpdatesRouter } from "./routes/agentUpdates.routes";
@@ -167,6 +168,8 @@ export function createApp() {
   app.use("/api/admin/events", adminAuthMiddleware, eventsRouter);
   // The alert bell: each module's part is filtered inside by the admin's own access.
   app.use("/api/admin/notifications", adminAuthMiddleware, notificationsRouter);
+  // Events: every module's events in one place; each kind is filtered inside by the admin's access.
+  app.use("/api/admin/event-center", adminAuthMiddleware, eventCenterRouter);
   app.use("/api/admin/commands", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandsRouter);
   app.use("/api/admin/command-templates", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandTemplatesRouter);
   app.use("/api/admin/packages", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), packagesRouter);

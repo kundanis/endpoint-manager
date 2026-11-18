@@ -106,9 +106,17 @@ internal static class SetupStub
             }
         }
 
+#if NO_POWERSHELL
+        // Setup without PowerShell: the same steps as install.ps1, done by this program itself.
+        string installServerUrl = serverUrl;
+        string installToken = token;
+        return RunFromPayload(extractDir => NativeInstaller.Install(extractDir, installServerUrl, installToken), "Setup Complete",
+            "The Endpoint IQ agent was installed successfully and is now running.", "Setup Failed", "Installation failed:", false);
+#else
         string installArgs = " -ServerUrl \"" + serverUrl + "\" -EnrollmentToken \"" + token + "\"";
         return RunBundledScript("install.ps1", installArgs, "Setup Complete",
             "The Endpoint IQ agent was installed successfully and is now running.", "Setup Failed", "Installation failed:");
+#endif
     }
 
     // Server-appended trailer: [UTF-8 "url1,url2,...\ntoken"][int32 LE length][16-byte magic]
@@ -160,6 +168,39 @@ internal static class SetupStub
     private static int RunBundledScript(string scriptName, string scriptArgs, string successTitle,
         string successMessage, string failureTitle, string failureLabel)
     {
+        return RunFromPayload(extractDir => RunScript(Path.Combine(extractDir, scriptName), scriptArgs),
+            successTitle, successMessage, failureTitle, failureLabel, scriptName == "uninstall.ps1");
+    }
+
+    // Runs a bundled .ps1; null when it succeeded, otherwise its output.
+    private static string RunScript(string script, string scriptArgs)
+    {
+        ProcessStartInfo psi = new ProcessStartInfo("powershell.exe",
+            "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"" + scriptArgs)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        using (Process proc = Process.Start(psi))
+        {
+            string output = proc.StandardOutput.ReadToEnd();
+            string error = proc.StandardError.ReadToEnd();
+            proc.WaitForExit();
+            return proc.ExitCode == 0 ? null : output + "\n" + error;
+        }
+    }
+
+    // ERROR_ACCESS_DISABLED_BY_POLICY: Software Restriction Policies or AppLocker blocked the program.
+    private const int BlockedByPolicy = 1260;
+
+    // Extracts the embedded installer payload to a temp folder, runs `run` on it (null = success,
+    // otherwise the error text) and shows the outcome.
+    private static int RunFromPayload(Func<string, string> run, string successTitle, string successMessage,
+        string failureTitle, string failureLabel, bool uninstalling)
+    {
         string tempDir = Path.Combine(Path.GetTempPath(), "EndpointProSetup_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
@@ -185,32 +226,31 @@ internal static class SetupStub
             string extractDir = Path.Combine(tempDir, "extracted");
             ZipFile.ExtractToDirectory(zipPath, extractDir);
 
-            string script = Path.Combine(extractDir, scriptName);
-            ProcessStartInfo psi = new ProcessStartInfo("powershell.exe",
-                "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"" + scriptArgs)
+            string error = run(extractDir);
+            if (error == null)
             {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
+                MessageBox.Show(successMessage, successTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return 0;
+            }
 
-            using (Process proc = Process.Start(psi))
+            MessageBox.Show(failureLabel + "\n\n" + error, failureTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            if (ex.NativeErrorCode != BlockedByPolicy)
             {
-                string output = proc.StandardOutput.ReadToEnd();
-                string error = proc.StandardError.ReadToEnd();
-                proc.WaitForExit();
-
-                if (proc.ExitCode == 0)
-                {
-                    MessageBox.Show(successMessage, successTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return 0;
-                }
-
-                MessageBox.Show(failureLabel + "\n\n" + output + "\n" + error, failureTitle,
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(failureLabel + "\n\n" + ex, failureTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
+            // Group Policy blocks powershell.exe on this computer - say what to do instead.
+            string advice = uninstalling
+                ? "Uninstall the agent from the console instead: open the endpoint's page and use Uninstall agent."
+                : "Download \"Setup without PowerShell\" from the console (Enrollment tokens) and run that instead. " +
+                  "It installs the same agent without starting PowerShell.";
+            MessageBox.Show(failureLabel + "\n\nPowerShell is blocked by Group Policy on this computer, so this setup can't run it.\n\n" + advice,
+                failureTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
         }
         catch (Exception ex)
         {

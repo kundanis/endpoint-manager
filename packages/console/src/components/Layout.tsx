@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck } from "lucide-react";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
 import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
@@ -12,6 +12,7 @@ import { HelpProvider, useHelp } from "../help/HelpProvider";
 // Lucide icon per nav module (design-system/docs/COMPONENTS.md §18).
 const MODULE_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutGrid,
+  events: Activity,
   endpoint: Monitor,
   network: Network,
   software: Package,

@@ -162,6 +162,9 @@ import type {
   ThreatTaskView,
   ScreenCaptureItem,
   EndpointScreenCaptureReport,
+  EventGroupsView,
+  EventOptionsView,
+  EventTimelineView,
   NotificationsView,
   PolicyScreenCaptureReport,
   ScreenCapturePolicyDetail,
@@ -305,17 +308,25 @@ export function useSaveAgentConnectionSettings() {
   });
 }
 
+// Windows setup: "standard" runs PowerShell; "no-powershell" installs by itself, for machines
+// where Group Policy blocks powershell.exe. Both install the same agent.
+export type SetupVariant = "standard" | "no-powershell";
+const setupQuery = (variant: SetupVariant) => (variant === "no-powershell" ? "?variant=no-powershell" : "");
+const setupFile = (variant: SetupVariant) =>
+  variant === "no-powershell" ? "EndpointProAgentSetup-NoPowerShell.exe" : "EndpointProAgentSetup.exe";
+
 export function useDownloadAgentSetup() {
   return useMutation({
-    mutationFn: ({ tokenId, enrollmentToken }: { tokenId: string; enrollmentToken: string }) =>
-      api.postDownload(`/admin/enrollment-tokens/${tokenId}/setup-exe`, { enrollmentToken }, "EndpointProAgentSetup.exe"),
+    mutationFn: ({ tokenId, enrollmentToken, variant = "standard" }: { tokenId: string; enrollmentToken: string; variant?: SetupVariant }) =>
+      api.postDownload(`/admin/enrollment-tokens/${tokenId}/setup-exe${setupQuery(variant)}`, { enrollmentToken }, setupFile(variant)),
   });
 }
 
 // A token's setup file at any time from the token list (the server decrypts the stored token).
 export function useDownloadTokenSetup() {
   return useMutation({
-    mutationFn: (tokenId: string) => api.getDownload(`/admin/enrollment-tokens/${tokenId}/setup-exe`, "EndpointProAgentSetup.exe"),
+    mutationFn: ({ tokenId, variant = "standard" }: { tokenId: string; variant?: SetupVariant }) =>
+      api.getDownload(`/admin/enrollment-tokens/${tokenId}/setup-exe${setupQuery(variant)}`, setupFile(variant)),
   });
 }
 
@@ -327,7 +338,7 @@ export function fetchEnrollmentTokenValue(tokenId: string): Promise<string> {
 // The generic installer (server addresses, no token) - GET /admin/agent-installer.
 export function useDownloadAgentInstaller() {
   return useMutation({
-    mutationFn: () => api.getDownload("/admin/agent-installer", "EndpointProAgentSetup.exe"),
+    mutationFn: (variant: SetupVariant = "standard") => api.getDownload(`/admin/agent-installer${setupQuery(variant)}`, setupFile(variant)),
   });
 }
 
@@ -3100,10 +3111,11 @@ export function useCreatePolicyAccessException() {
     mutationFn: (body: {
       policyType: PolicyAccessExceptionType;
       policyId: string;
-      agentId: string;
+      agentId?: string;
+      groupId?: string;
       reason: string;
       durationMinutes: number;
-    }) => api.post<PolicyAccessExceptionView>("/admin/policy-exceptions", body),
+    }) => api.post<{ created: number; requests: PolicyAccessExceptionView[] }>("/admin/policy-exceptions", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["policyAccessExceptions"] }),
   });
 }
@@ -3572,6 +3584,29 @@ export function useNotifications(since: string | null) {
     queryKey: ["notifications", since ?? ""],
     queryFn: () => api.get<NotificationsView>(`/admin/notifications${since ? `?since=${encodeURIComponent(since)}` : ""}`),
     refetchInterval: 60000,
+  });
+}
+
+// ---- Events: every module's events in one place. `qs` is the filter query string (no "?").
+export function useEventOptions() {
+  return useQuery({ queryKey: ["eventCenter", "options"], queryFn: () => api.get<EventOptionsView>("/admin/event-center/options") });
+}
+
+export function useEventGroups(qs: string) {
+  return useQuery({
+    queryKey: ["eventCenter", "groups", qs],
+    queryFn: () => api.get<EventGroupsView>(`/admin/event-center/groups?${qs}`),
+    placeholderData: keepPreviousData,
+    refetchInterval: 60000,
+  });
+}
+
+// Newest first, 100 a page; `before` is the previous page's last time.
+export function useEventTimeline(qs: string, before: string | null) {
+  return useQuery({
+    queryKey: ["eventCenter", "timeline", qs, before ?? ""],
+    queryFn: () => api.get<EventTimelineView>(`/admin/event-center/timeline?${qs}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
+    placeholderData: keepPreviousData,
   });
 }
 

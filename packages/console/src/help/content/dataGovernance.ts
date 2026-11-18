@@ -404,8 +404,19 @@ export const DATA_TOPICS: HelpTopic[] = [
     module: "Data Governance",
     title: "Access exceptions",
     path: "/access-exceptions",
-    summary: "Time-limited, approved exceptions to an EPM or DLP policy for one endpoint. A different admin must approve.",
-    keywords: ["exception", "allow temporarily", "approval"],
+    summary:
+      "Time-limited, approved exceptions to an EPM or DLP policy for one endpoint or every endpoint in a group. A different admin must approve.",
+    keywords: ["exception", "allow temporarily", "approval", "group", "search"],
+    sections: [
+      {
+        title: "Request an access exception",
+        items: [
+          "Request for: choose Endpoint for one machine, or Group for every endpoint in an asset group.",
+          "Use the search box to find an endpoint by hostname, signed-in user name or group, or a group by name. The best match is selected in the Endpoint (or Group) field as you type; pick another from the narrowed list if needed.",
+          "A group request creates one request per endpoint in the group (the count is shown before you submit). Each is approved, rejected or ended on its own.",
+        ],
+      },
+    ],
     howTos: [
       {
         id: "ae-request",
@@ -414,6 +425,16 @@ export const DATA_TOPICS: HelpTopic[] = [
           { route: "/access-exceptions", text: "Under Request an access exception, choose USB device control, the policy and the endpoint." },
           { text: "Choose 1 day, enter the reason and select Submit request.", target: { kind: "button", label: "Submit request" } },
           { text: "Another admin approves it; it applies within about 20 seconds and ends on its own." },
+        ],
+      },
+      {
+        id: "ae-request-group",
+        title: "Request an exception for a whole group",
+        steps: [
+          { route: "/access-exceptions", text: "Under Request an access exception, choose the module and the policy." },
+          { text: "Under Request for, choose Group.", target: { kind: "text", label: "Group" } },
+          { text: "Search for the group, choose it and check how many requests it will create.", target: { kind: "field", label: "Group" } },
+          { text: "Enter the duration and reason, then select Submit request. One request appears per endpoint for approval.", target: { kind: "button", label: "Submit request" } },
         ],
       },
     ],

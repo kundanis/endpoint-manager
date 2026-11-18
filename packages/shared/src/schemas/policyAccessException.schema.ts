@@ -59,13 +59,18 @@ export interface AgentPauseRequestView {
   createdAt: string;
 }
 
-export const createPolicyAccessExceptionRequestSchema = z.object({
-  policyType: z.enum(POLICY_ACCESS_EXCEPTION_TYPES),
-  policyId: z.string().min(1),
-  agentId: z.string().min(1),
-  reason: z.string().min(1).max(1000),
-  durationMinutes: z.number().int().positive().max(10080), // capped at 7 days
-});
+// One endpoint (agentId) or every endpoint in a group (groupId) - a group request creates one
+// request per endpoint, each approved, rejected or ended on its own.
+export const createPolicyAccessExceptionRequestSchema = z
+  .object({
+    policyType: z.enum(POLICY_ACCESS_EXCEPTION_TYPES),
+    policyId: z.string().min(1),
+    agentId: z.string().min(1).optional(),
+    groupId: z.string().min(1).optional(),
+    reason: z.string().min(1).max(1000),
+    durationMinutes: z.number().int().positive().max(10080), // capped at 7 days
+  })
+  .refine((v) => !!v.agentId !== !!v.groupId, { message: "Choose an endpoint or a group", path: ["agentId"] });
 export type CreatePolicyAccessExceptionRequest = z.infer<typeof createPolicyAccessExceptionRequestSchema>;
 
 export const resolvePolicyAccessExceptionRequestSchema = z.object({

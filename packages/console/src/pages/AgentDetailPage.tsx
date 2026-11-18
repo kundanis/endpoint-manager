@@ -583,6 +583,16 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
     ),
   });
 
+  // Every module's events for this endpoint (Events page, filtered to it).
+  items.push({
+    label: "Events",
+    value: (
+      <Link className="ep-link" to={`/events?agent=${encodeURIComponent(agent.id)}`}>
+        View this endpoint's events
+      </Link>
+    ),
+  });
+
   return (
     <Card title="Security posture">
       {items.length > 0 ? <KeyValueList items={items} /> : <p className="app-muted">The security modules are hidden for your account.</p>}

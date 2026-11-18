@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
+import EventsPage from "./pages/EventsPage";
 import AgentsPage from "./pages/AgentsPage";
 import AgentDetailPage from "./pages/AgentDetailPage";
 import EnrollmentTokensPage from "./pages/EnrollmentTokensPage";
@@ -58,6 +59,7 @@ export default function App() {
       >
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/events" element={<EventsPage />} />
         <Route path="/help" element={<HelpCenterPage />} />
         <Route path="/endpoints" element={<RequireModule module="ENDPOINT_MANAGER"><AgentsPage /></RequireModule>} />
         <Route path="/endpoints/:id" element={<RequireModule module="ENDPOINT_MANAGER"><AgentDetailPage /></RequireModule>} />

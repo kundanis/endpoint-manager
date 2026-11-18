@@ -32,6 +32,8 @@ import {
 import {
   AgentInstallerMissingError,
   buildConfiguredSetupExe,
+  parseSetupVariant,
+  type SetupVariant,
   getAgentConnectionSettings,
   setAgentConnectionSettings,
 } from "../services/agentConnection.service";
@@ -607,12 +609,14 @@ adminRouter.get("/enrollment-tokens", async (_req, res, next) => {
 });
 
 // Carries this server's addresses (Server connection details) but no token, so running it
-// only asks for an enrollment token - see buildConfiguredSetupExe.
-adminRouter.get("/agent-installer", async (_req, res, next) => {
+// only asks for an enrollment token - see buildConfiguredSetupExe. ?variant=no-powershell gives
+// the setup that doesn't use PowerShell.
+adminRouter.get("/agent-installer", async (req, res, next) => {
   try {
-    const exe = await buildConfiguredSetupExe();
+    const variant = parseSetupVariant(req.query.variant);
+    const exe = await buildConfiguredSetupExe("", variant);
     res.setHeader("Content-Type", "application/octet-stream");
-    res.setHeader("Content-Disposition", 'attachment; filename="EndpointProAgentSetup.exe"');
+    res.setHeader("Content-Disposition", `attachment; filename="${setupFileName(variant)}.exe"`);
     res.send(exe);
   } catch (err) {
     if (err instanceof AgentInstallerMissingError) return res.status(404).json({ error: err.message });
@@ -658,11 +662,14 @@ adminRouter.put("/agent-connection", async (req, res, next) => {
 
 // The same EndpointProAgentSetup.exe as GET /agent-installer, with this server's addresses and
 // the token appended (see buildConfiguredSetupExe) - double-click installs with no prompts.
-async function sendTokenSetupExe(res: Response, label: string, enrollmentToken: string) {
-  const exe = await buildConfiguredSetupExe(enrollmentToken);
+const setupFileName = (variant: SetupVariant) =>
+  variant === "no-powershell" ? "EndpointProAgentSetup-NoPowerShell" : "EndpointProAgentSetup";
+
+async function sendTokenSetupExe(res: Response, label: string, enrollmentToken: string, variant: SetupVariant) {
+  const exe = await buildConfiguredSetupExe(enrollmentToken, variant);
   const safeLabel = label.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "") || "agent";
   res.setHeader("Content-Type", "application/octet-stream");
-  res.setHeader("Content-Disposition", `attachment; filename="EndpointProAgentSetup-${safeLabel}.exe"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${setupFileName(variant)}-${safeLabel}.exe"`);
   res.send(exe);
 }
 
@@ -683,7 +690,7 @@ adminRouter.get("/enrollment-tokens/:id/setup-exe", async (req, res, next) => {
   try {
     const found = await getUsableTokenPlaintext(req.params.id);
     if (!found) return res.status(404).json({ error: "Enrollment token not found" });
-    await sendTokenSetupExe(res, found.label, found.token);
+    await sendTokenSetupExe(res, found.label, found.token, parseSetupVariant(req.query.variant));
   } catch (err) {
     if (!sendTokenError(res, err)) next(err);
   }
@@ -713,7 +720,7 @@ adminRouter.post("/enrollment-tokens/:id/setup-exe", async (req, res, next) => {
     if (token.revoked || token.expiresAt < new Date() || token.usesRemaining <= 0) {
       return res.status(400).json({ error: "This enrollment token is revoked, expired or used up" });
     }
-    await sendTokenSetupExe(res, token.label, enrollmentToken);
+    await sendTokenSetupExe(res, token.label, enrollmentToken, parseSetupVariant(req.query.variant));
   } catch (err) {
     if (!sendTokenError(res, err)) next(err);
   }

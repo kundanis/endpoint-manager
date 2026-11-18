@@ -31,6 +31,13 @@ export const NAV_MODULES: NavModule[] = [
     label: "Dashboard",
     path: "/dashboard",
   },
+  // Every module's events in one place. No licence module of its own: each kind of event is
+  // shown only to admins who can open the module it comes from (server: eventCenter.service).
+  {
+    key: "events",
+    label: "Events",
+    path: "/events",
+  },
   {
     key: "endpoint",
     label: "Endpoint Hub",

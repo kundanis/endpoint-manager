@@ -1981,6 +1981,71 @@ export interface NotificationsView {
   groups: NotificationGroup[];
 }
 
+// ---- Events: every module's events in one place (server: eventCenter.service.ts).
+export type EventCategory =
+  | "THREATS"
+  | "DATA_PROTECTION"
+  | "DEVICE_CONTROL"
+  | "POLICY_VIOLATIONS"
+  | "COMPLIANCE"
+  | "USER_RISK"
+  | "SOFTWARE_CHANGES";
+export type EventSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
+
+export interface EventGroupView {
+  key: string; // pass back as ?event= to see this kind's timeline
+  type: string;
+  typeLabel: string;
+  category: EventCategory;
+  severity: EventSeverity;
+  title: string;
+  occurrences: number;
+  endpointCount: number | null; // null: not tied to endpoints
+  firstAt: string;
+  lastAt: string;
+  path: string;
+  endpoints: { agentId: string; hostname: string; count: number; lastAt: string }[];
+}
+
+export interface EventGroupsView {
+  from: string;
+  to: string;
+  totals: {
+    events: number;
+    kinds: number;
+    endpoints: number;
+    bySeverity: Record<EventSeverity, number>;
+    byCategory: Partial<Record<EventCategory, number>>;
+  };
+  groups: EventGroupView[];
+}
+
+export interface EventItemView {
+  id: string;
+  type: string;
+  typeLabel: string;
+  category: EventCategory;
+  severity: EventSeverity;
+  title: string;
+  detail: string | null;
+  at: string;
+  agentId: string | null;
+  hostname: string | null;
+  user: string | null;
+  path: string;
+}
+
+export interface EventTimelineView {
+  items: EventItemView[];
+  nextBefore: string | null;
+}
+
+export interface EventOptionsView {
+  types: { type: string; label: string; category: EventCategory }[];
+  agents: { id: string; hostname: string }[];
+  groups: { id: string; name: string }[];
+}
+
 // ---- Threat Protection (Microsoft Defender management)
 
 export type ThreatEndpointState = "AT_RISK" | "UNPROTECTED" | "OUT_OF_DATE" | "PROTECTED" | "THIRD_PARTY" | "NOT_REPORTED" | "NOT_WINDOWS";

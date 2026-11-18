@@ -2,6 +2,8 @@ import { Router } from "express";
 import { createPolicyAccessExceptionRequestSchema, resolvePolicyAccessExceptionRequestSchema } from "@em/shared";
 import {
   AgentNotFoundError,
+  GroupEmptyError,
+  GroupNotFoundError,
   PolicyNotFoundError,
   RequestAlreadyResolvedError,
   RequestNotActiveError,
@@ -22,6 +24,8 @@ policyAccessExceptionRouter.post("/", async (req, res, next) => {
     res.status(201).json(await createRequest(payload, req.adminId!));
   } catch (err) {
     if (err instanceof AgentNotFoundError) return res.status(404).json({ error: "Agent not found" });
+    if (err instanceof GroupNotFoundError) return res.status(404).json({ error: "Group not found" });
+    if (err instanceof GroupEmptyError) return res.status(400).json({ error: "This group has no endpoints" });
     if (err instanceof PolicyNotFoundError) return res.status(404).json({ error: "Policy not found" });
     next(err);
   }

@@ -6,6 +6,13 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.29
+- New setup without PowerShell (EndpointProAgentSetup-NoPowerShell.exe), for PCs where Group Policy
+  blocks powershell.exe and the standard setup fails with "This program is blocked by group policy".
+  It installs the same agent the same way (files, Windows service, folder protection, watchdog)
+  without starting PowerShell. The standard setup now says plainly when PowerShell is blocked and
+  points to the setup without PowerShell. The agent itself is unchanged.
+
 ## 0.2.28
 - Threat Protection (only where the server has the module): the agent reports Microsoft Defender's
   status (real-time protection, signature age, last scans) and the threats Defender found, applies

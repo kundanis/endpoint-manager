@@ -218,6 +218,19 @@ if (Test-Path $exePath) { Remove-Item $exePath -Force }
     (Join-Path $templatesDir "SetupStub.cs")
 if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the setup exe" }
 
+# The same setup without PowerShell (SetupStub.cs compiled with NO_POWERSHELL + NativeInstaller.cs):
+# installs the same agent by itself, for machines where Group Policy blocks powershell.exe.
+$noPsExePath = Join-Path $distInstallerDir "EndpointProAgentSetup-NoPowerShell-$agentVersion.exe"
+if (Test-Path $noPsExePath) { Remove-Item $noPsExePath -Force }
+
+& $csc /nologo /target:winexe /platform:x64 /define:NO_POWERSHELL /out:$noPsExePath `
+    /r:Microsoft.VisualBasic.dll /r:System.Windows.Forms.dll /r:System.IO.Compression.dll `
+    /r:System.IO.Compression.FileSystem.dll /r:System.ServiceProcess.dll `
+    "/res:$zipPath,installer.zip" `
+    (Join-Path $templatesDir "SetupStub.cs") (Join-Path $templatesDir "NativeInstaller.cs")
+if ($LASTEXITCODE -ne 0) { throw "csc.exe failed to compile the setup exe without PowerShell" }
+
 Write-Host ""
 Write-Host "Installer created: $zipPath"
 Write-Host "Single-file setup exe created: $exePath"
+Write-Host "Setup exe without PowerShell created: $noPsExePath"
