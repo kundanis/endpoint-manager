@@ -150,6 +150,16 @@ export interface RawEvent {
   at: string;
   closed: boolean;
   sessionId: number;
+  // A program the allowlist blocked or (audit) would have blocked, as Windows recorded it.
+  allowlist?: {
+    outcome: "BLOCKED" | "AUDIT";
+    publisher: string | null;
+    productName: string | null;
+    fileVersion: string | null;
+    fileHash: string | null;
+    fileSize: number | null;
+    userName: string | null;
+  };
 }
 
 // sweepOnly: check the programs running now and exit - the fallback each sync runs while the
@@ -559,7 +569,7 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
       });
     }
 
-    const appLocker = await syncAppLocker(advanced, rules);
+    const appLocker = await syncAppLocker(advanced, rules, suspended ? undefined : data.advanced?.allowlist);
     const raw = [...watcherEvents.splice(0), ...fallback, ...(await collectBlockerEvents(launchBlocks)), ...appLocker.events];
     void notifyClosed(raw);
     const now = Date.now();
@@ -573,6 +583,18 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
         matchedPath: e.path.slice(0, 1000),
         processName: path.win32.basename(e.path).slice(0, 300),
         occurredAt: e.at,
+        ...(e.allowlist
+          ? {
+              allowlist: true,
+              outcome: e.allowlist.outcome,
+              publisher: e.allowlist.publisher?.slice(0, 500) ?? null,
+              productName: e.allowlist.productName?.slice(0, 300) ?? null,
+              fileVersion: e.allowlist.fileVersion?.slice(0, 50) ?? null,
+              fileHash: e.allowlist.fileHash,
+              fileSize: e.allowlist.fileSize,
+              userName: e.allowlist.userName?.slice(0, 200) ?? null,
+            }
+          : {}),
       });
     }
     if (lastReported.size > 5000) lastReported.clear();

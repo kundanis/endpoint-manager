@@ -288,6 +288,8 @@ export const SOURCES: Source[] = [
     perEndpoint: true,
     delegate: () => prisma.appControlEvent,
     timeField: "occurredAt",
+    // Audit records (an allowlist in audit mode) blocked nothing.
+    baseWhere: { outcome: "BLOCKED" },
     keyFields: ["processName", "policyId"],
     severity: { fixed: "MEDIUM" },
     describe: async (keys) => {

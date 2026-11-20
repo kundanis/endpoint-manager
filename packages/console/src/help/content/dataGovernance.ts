@@ -226,8 +226,8 @@ export const DATA_TOPICS: HelpTopic[] = [
     module: "Data Governance",
     title: "EPM: Application control",
     path: "/epm/app-control",
-    summary: "Block applications by name, path, product or publisher, or script types such as .vbs. Everything else stays allowed.",
-    keywords: ["block app", "whitelist", "blacklist", "executable", "renamed", "publisher", "product", "anydesk", "telegram", "black screen", "emergency", "applocker", "dll", "powershell", "ps1", "batch", "bat", "allow", "exception"],
+    summary: "Block applications by name, path, product or publisher, or script types such as .vbs. Or use an allowlist: only Windows and the applications you allow can run.",
+    keywords: ["block app", "whitelist", "blacklist", "allowlist", "allow list", "default deny", "only allowed apps", "sha256", "hash", "ransomware", "setup", "installer", "msi", "undefined", "unknown software", "executable", "renamed", "publisher", "product", "anydesk", "telegram", "black screen", "emergency", "applocker", "dll", "powershell", "ps1", "batch", "bat", "allow", "exception"],
     sections: [
       {
         title: "Advanced application control (optional)",
@@ -238,6 +238,33 @@ export const DATA_TOPICS: HelpTopic[] = [
           "Allow (exception) rules name a folder or file that is never blocked by any rule on the endpoint, for example the folder your IT team's scripts run from.",
           "A device that already has its own AppLocker policy keeps it; Endpoint IQ only adds its block rules. Blocks show on the Events tab like any other.",
           "If Windows can't enforce a rule (for example the Application Identity service won't start), the endpoint shows Failed on the Sync status tab with the reason.",
+        ],
+      },
+      {
+        title: "Allowlist policies (allow only listed applications)",
+        items: [
+          "Choose Allowlist as the type when creating a policy (advanced application control must be on for this server). Needs Windows agent 0.2.30 or later and Windows Pro, Enterprise or Education; Windows Home shows Failed on the Sync status tab.",
+          "Windows and what it needs always run: everything in the Windows folder (including .NET Framework), Windows' own signed components wherever they are (such as Microsoft Defender), drivers' tools from hardware makers (Intel, Realtek, NVIDIA, AMD and others), Microsoft Edge and WebView2, .NET, Store apps and the Endpoint IQ agent.",
+          "Everything else is blocked by Windows unless the policy allows it, including any new setup: programs and .msi installers from Downloads, USB drives or a user's own folders can't run. Windows shows its own message.",
+          "Folders inside Windows that users can write to, such as Windows\\Temp, are not covered by the Windows allowance.",
+          "Custom applications: allow a folder or file, a publisher (the signer, optionally one product, one file name and a version: any, this or newer, or exactly this), or one exact file by its hash. Read from a program file fills them in from an .exe on your computer without uploading it.",
+          "Common applications: search the list (Microsoft 365, OneDrive, Teams, Power BI, SQL Server Management Studio, Chrome, Firefox, Adobe Reader, WinZip, 7-Zip, UltraViewer, AnyDesk, TeamViewer, Zoom, VPN clients, antivirus, Dell/HP/Lenovo tools, developer tools, Tally, SAP GUI and more) and select the ones people may use; select again or use the x to remove one. Each is allowed from the folder it installs to for all users, under Program Files; copies in a user's own folders stay blocked.",
+          "A publisher rule keeps working after updates. A hash rule stops matching when the program is updated. Unsigned programs can only be allowed by hash or folder.",
+          "Settings: administrators can run anything, including setups, when they run it as administrator (on by default); Allow every application installed in Program Files (off by default).",
+          "Software installed by IT tools that run as the system (Packages, Windows Update, Intune) isn't affected.",
+          "Blocked attempts are listed on the policy's Events tab and in Events.",
+          "Several allowlists on one endpoint add up: an application allowed by any of them runs. Block policies still apply on top.",
+          "Emergency release, pausing an endpoint, the desktop safety net and uninstalling the agent all remove the allowlist from the endpoint.",
+          "A device with its own AppLocker rules keeps them; the allowlist's rules are added to them.",
+        ],
+      },
+      {
+        title: "Undefined applications",
+        items: [
+          "The Undefined applications tab at the top of Application control lists software installed on your endpoints (from each endpoint's software list) that no policy allows or blocks yet, with the endpoints it is on.",
+          "Drivers, runtimes, updates and parts of server products are hidden; tick Show drivers, runtimes and updates to see them too.",
+          "Use the row menu to allow the application in an allowlist (when it is in the common applications list) or to block it in a block list by its product name.",
+          "Matching uses the software's name and publisher, as the software list has no program paths: folder and hash rules can't be matched, so applications allowed only that way still show here.",
         ],
       },
       {
@@ -274,6 +301,18 @@ export const DATA_TOPICS: HelpTopic[] = [
         id: "epm-app-block",
         title: "Block an application",
         steps: policySteps("/epm/app-control", "Rules", "On the Rules tab, add the program name (for example AnyDesk.exe); to catch renamed copies and new versions too, add its Product name or Publisher as well."),
+      },
+      {
+        id: "epm-app-allowlist",
+        title: "Allow only approved applications",
+        steps: [
+          { route: "/epm/app-control", text: "Select New policy, choose Allowlist as the type, name it and create it.", target: { kind: "button", label: "New policy" } },
+          { text: "On the Allowed applications tab, add anything your organisation built or bought under Custom applications: Read from a program file, or enter a folder, publisher or hash." },
+          { text: "Under Common applications, search for and select the applications people use." },
+          { text: "Check the Undefined applications tab for installed software no policy covers yet." },
+          { text: "Assign the policy to one test endpoint and check that people's applications open. Blocked attempts show on the Events tab." },
+          { text: "Then assign it to more endpoints." },
+        ],
       },
       {
         id: "epm-app-scripts",

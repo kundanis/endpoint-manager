@@ -9,3 +9,5 @@ export * from "./data/dataTypes";
 export * from "./data/commandProtections";
 export * from "./data/mailGuard";
 export * from "./endpointSafety";
+export * from "./peFileInfo";
+export * from "./data/appCatalog";

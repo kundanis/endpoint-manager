@@ -17,12 +17,14 @@ import {
   getPolicyAgentBreakdown,
   getPolicyEventsForAgent,
   listAssignments,
+  searchSeenSigners,
   listPolicies,
   unassign,
   updatePolicy,
   updateRule,
 } from "../services/appControlPolicy.service";
-import { UnsafeRuleError } from "../services/appControlPolicy.service";
+import { PolicyModeError, UnsafeRuleError } from "../services/appControlPolicy.service";
+import { getUndefinedApplications } from "../services/appControlUndefined.service";
 import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { prisma } from "../db";
 import { config } from "../config";
@@ -34,6 +36,25 @@ appControlRouter.post("/", async (req, res, next) => {
   try {
     const payload = createAppControlPolicyRequestSchema.parse(req.body);
     res.status(201).json(await createPolicy(payload, req.adminId!));
+  } catch (err) {
+    if (err instanceof PolicyModeError) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+});
+
+// Installed software no policy names yet (?all=1 includes drivers, runtimes and updates).
+appControlRouter.get("/undefined-applications", async (req, res, next) => {
+  try {
+    res.json(await getUndefinedApplications(req.query.all === "1"));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Allowlist rule picker: signers Windows recorded on endpoints. ?q= filters by name.
+appControlRouter.get("/signers", async (req, res, next) => {
+  try {
+    res.json(await searchSeenSigners(typeof req.query.q === "string" ? req.query.q : ""));
   } catch (err) {
     next(err);
   }

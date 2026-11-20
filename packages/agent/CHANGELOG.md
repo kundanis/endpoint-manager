@@ -6,6 +6,18 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.30
+- Allowlist policies (Application control, only where the server has advanced application control):
+  only Windows and what it needs (the Windows folder, Windows' own signed components such as
+  Microsoft Defender, drivers' tools, Edge and WebView2, .NET, Store apps), the agent and the
+  applications the policy allows can run. Every other program, and every .msi installer a user
+  starts, is blocked by Windows AppLocker. Allowed applications can be common applications from a
+  list, folders, publishers (with an optional product, file name and version) or exact files by
+  hash. Administrators can run anything when they run it as administrator, if the policy allows it.
+  Blocked attempts are reported with the program's publisher, version, hash and user. Windows Home
+  doesn't enforce AppLocker and reports Failed on Sync status. Emergency release, pause, the
+  desktop safety net and uninstall remove the allowlist.
+
 ## 0.2.29
 - New setup without PowerShell (EndpointProAgentSetup-NoPowerShell.exe), for PCs where Group Policy
   blocks powershell.exe and the standard setup fails with "This program is blocked by group policy".

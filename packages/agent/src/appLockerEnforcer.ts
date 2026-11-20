@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { AppControlRuleWire } from "@em/shared";
-import { APPLOCKER_MSI_EXTENSIONS, APPLOCKER_SCRIPT_EXTENSIONS, appControlRuleProblem } from "@em/shared";
+import type { AllowlistWire, AppControlRuleWire } from "@em/shared";
+import { APPLOCKER_MSI_EXTENSIONS, APPLOCKER_SCRIPT_EXTENSIONS, MICROSOFT_PUBLISHER, appControlRuleProblem } from "@em/shared";
 import { APPLOCKER_MARKER, appLockerStateFile, REMOVE_APPLOCKER_RULES_PS } from "./appControlPaths";
 import type { RawEvent } from "./appControlEnforcer";
 
@@ -27,6 +27,12 @@ const execFileAsync = promisify(execFile);
 //  - Every rule we add carries APPLOCKER_MARKER, so it can be removed exactly (sync, desktop
 //    safety net, uninstall) without touching anyone else's.
 //
+// Allowlist (an allowlist policy): the Exe (program) collection gets only allow rules - Windows and
+// what it needs, the agent, the options and the policy's rules - so Windows blocks every other
+// program a user starts. The Msi (Windows Installer) collection likewise allows only Windows' own
+// installer cache (and administrators), so no new setup can be run by a user. A device whose
+// collections already have someone else's rules keeps them and their mode.
+//
 // Needs the Application Identity service (AppIDSvc), which the agent starts. Windows 10/11 Pro,
 // Enterprise and Education all enforce AppLocker (edition checks were removed in 2022, KB5024351).
 
@@ -43,6 +49,52 @@ const APPLOCKER_VARIABLES = ["%WINDIR%", "%SYSTEM32%", "%OSDRIVE%", "%PROGRAMFIL
 
 type Collection = "Script" | "Msi" | "Dll";
 
+// Folders inside Windows that standard users can write to: a program copied there must not run
+// under the Windows allowance.
+const WINDOWS_USER_WRITABLE = [
+  "%WINDIR%\\Tasks\\*",
+  "%WINDIR%\\Temp\\*",
+  "%WINDIR%\\tracing\\*",
+  "%WINDIR%\\Registration\\CRMLog\\*",
+  "%WINDIR%\\debug\\WIA\\*",
+  "%WINDIR%\\PLA\\Reports\\*",
+  "%WINDIR%\\PLA\\Rules\\*",
+  "%WINDIR%\\PLA\\Templates\\*",
+  "%WINDIR%\\System32\\FxsTmp\\*",
+  "%WINDIR%\\System32\\com\\dmp\\*",
+  "%WINDIR%\\System32\\Microsoft\\Crypto\\RSA\\MachineKeys\\*",
+  "%WINDIR%\\System32\\spool\\PRINTERS\\*",
+  "%WINDIR%\\System32\\spool\\SERVERS\\*",
+  "%WINDIR%\\System32\\spool\\drivers\\color\\*",
+  "%WINDIR%\\System32\\Tasks\\*",
+  "%WINDIR%\\SysWOW64\\FxsTmp\\*",
+  "%WINDIR%\\SysWOW64\\com\\dmp\\*",
+  "%WINDIR%\\SysWOW64\\Tasks\\*",
+];
+const BASELINE_IDS = {
+  windowsComponents: "e1d0a11c-0000-4000-8000-000000000106",
+  edge: "e1d0a11c-0000-4000-8000-000000000107",
+  webView2: "e1d0a11c-0000-4000-8000-000000000108",
+  edgeUpdate: "e1d0a11c-0000-4000-8000-000000000109",
+  dotnet: "e1d0a11c-0000-4000-8000-000000000110",
+  dotnetFolder: "e1d0a11c-0000-4000-8000-000000000111",
+  msiCache: "e1d0a11c-0000-4000-8000-000000000112",
+  msiAdministrators: "e1d0a11c-0000-4000-8000-000000000113",
+  windows: "e1d0a11c-0000-4000-8000-000000000101",
+  programFiles: "e1d0a11c-0000-4000-8000-000000000102",
+  administrators: "e1d0a11c-0000-4000-8000-000000000103",
+  agent: "e1d0a11c-0000-4000-8000-000000000104",
+  microsoftAll: "e1d0a11c-0000-4000-8000-000000000105",
+};
+const EVERYONE = "S-1-1-0";
+// Hardware vendors whose driver tools live under Program Files (only administrators can write there).
+const DRIVER_VENDOR_FOLDERS = ["Intel", "Realtek", "NVIDIA Corporation", "AMD", "Synaptics", "Elantech", "Conexant", "Waves", "Dolby", "DTS", "Qualcomm", "MediaTek", "Broadcom"];
+// The product name on Windows' own files (as Windows reads it, in upper case).
+const WINDOWS_PRODUCT = "MICROSOFT\u00ae WINDOWS\u00ae OPERATING SYSTEM";
+const ADMINISTRATORS = "S-1-5-32-544";
+// Windows records a program no rule allowed (an allowlist's default) with this rule id.
+const NO_RULE_ID = "00000000-0000-0000-0000-000000000000";
+
 interface DenyRule {
   id: string;
   collection: Collection;
@@ -53,6 +105,8 @@ interface DenyRule {
 interface Desired {
   denies: DenyRule[];
   allows: string[];
+  // Allowlist: the Exe and Msi collections' allow rules (XML) and the mode; null without an allowlist.
+  exe: { rules: string[]; msiRules: string[]; mode: "Enabled" | "AuditOnly" } | null;
 }
 
 interface SavedState {
@@ -94,7 +148,95 @@ export function dllPattern(value: string): string {
   return v.includes("\\") ? v : `*\\${v}`;
 }
 
-export function desiredAppLocker(advancedRules: AppControlRuleWire[], rules: AppControlRuleWire[]): Desired {
+// A GUID that stays the same for the same text (AppLocker rule ids must be GUIDs).
+function stableGuid(text: string): string {
+  const h = createHash("sha256").update(text).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+// AppLocker wants four-part versions.
+const fourPart = (v: string) => {
+  const parts = v.trim().split(".").filter(Boolean);
+  while (parts.length < 4) parts.push("0");
+  return parts.slice(0, 4).join(".");
+};
+
+function pathRule(id: string, name: string, sid: string, pathValue: string, exceptions: string[] = []): string {
+  const ex = exceptions.length ? `<Exceptions>${exceptions.map((e) => `<FilePathCondition Path="${xmlAttr(e)}" />`).join("")}</Exceptions>` : "";
+  return (
+    `<FilePathRule Id="${xmlAttr(id)}" Name="${xmlAttr(`Endpoint IQ: ${name}`.slice(0, 200))}" Description="${APPLOCKER_MARKER}" UserOrGroupSid="${sid}" Action="Allow">` +
+    `<Conditions><FilePathCondition Path="${xmlAttr(pathValue)}" /></Conditions>${ex}</FilePathRule>`
+  );
+}
+
+function publisherRule(id: string, name: string, publisher: string, product: string, binary: string, low: string, high: string): string {
+  return (
+    `<FilePublisherRule Id="${xmlAttr(id)}" Name="${xmlAttr(`Endpoint IQ: ${name}`.slice(0, 200))}" Description="${APPLOCKER_MARKER}" UserOrGroupSid="${EVERYONE}" Action="Allow">` +
+    `<Conditions><FilePublisherCondition PublisherName="${xmlAttr(publisher)}" ProductName="${xmlAttr(product)}" BinaryName="${xmlAttr(binary)}">` +
+    `<BinaryVersionRange LowSection="${xmlAttr(low)}" HighSection="${xmlAttr(high)}" /></FilePublisherCondition></Conditions></FilePublisherRule>`
+  );
+}
+
+// The allowlist's program (Exe) rules: the baseline, then the policy's own allow rules.
+export function allowlistExeRules(a: AllowlistWire): string[] {
+  // Windows and what it needs: the Windows folder, Windows' own signed components wherever they
+  // are (Defender's platform, for example), Edge and WebView2 (part of Windows; many apps need
+  // WebView2), .NET, and the agent.
+  const out = [
+    pathRule(BASELINE_IDS.windows, "Windows", EVERYONE, "%WINDIR%\\*", WINDOWS_USER_WRITABLE),
+    publisherRule(BASELINE_IDS.windowsComponents, "Windows components", MICROSOFT_PUBLISHER, WINDOWS_PRODUCT, "*", "*", "*"),
+    publisherRule(BASELINE_IDS.edge, "Microsoft Edge", MICROSOFT_PUBLISHER, "MICROSOFT EDGE", "*", "*", "*"),
+    publisherRule(BASELINE_IDS.webView2, "Microsoft Edge WebView2", MICROSOFT_PUBLISHER, "MICROSOFT EDGE WEBVIEW2", "*", "*", "*"),
+    publisherRule(BASELINE_IDS.edgeUpdate, "Microsoft Edge Update", MICROSOFT_PUBLISHER, "MICROSOFT EDGE UPDATE", "*", "*", "*"),
+    publisherRule(BASELINE_IDS.dotnet, ".NET", MICROSOFT_PUBLISHER, ".NET", "*", "*", "*"),
+    pathRule(BASELINE_IDS.dotnetFolder, ".NET", EVERYONE, "%PROGRAMFILES%\\dotnet\\*"),
+    pathRule(BASELINE_IDS.agent, "Endpoint IQ agent", EVERYONE, `${AGENT_FOLDER}\\*`),
+    // Drivers' own tools (audio, graphics, touchpad, chipset), installed under Program Files.
+    ...DRIVER_VENDOR_FOLDERS.map((f) => pathRule(stableGuid(`baseline:driver:${f.toLowerCase()}`), `Drivers: ${f}`, EVERYONE, `%PROGRAMFILES%\\${f}\\*`)),
+  ];
+  if (a.allowProgramFiles) out.push(pathRule(BASELINE_IDS.programFiles, "Program Files", EVERYONE, "%PROGRAMFILES%\\*"));
+  if (a.exemptAdministrators) out.push(pathRule(BASELINE_IDS.administrators, "Administrators", ADMINISTRATORS, "*"));
+  if (a.microsoftSigned === "ALL") {
+    out.push(publisherRule(BASELINE_IDS.microsoftAll, "Microsoft-signed programs", MICROSOFT_PUBLISHER, "*", "*", "*", "*"));
+  } else if (a.microsoftSigned === "SELECTED") {
+    for (const product of a.microsoftProducts) {
+      out.push(publisherRule(stableGuid(`ms-product:${product.toLowerCase()}`), `Microsoft: ${product}`, MICROSOFT_PUBLISHER, product, "*", "*", "*"));
+    }
+  }
+  for (const r of a.rules) {
+    if (appControlRuleProblem(r.ruleType, r.value)) {
+      console.warn(`App Control: not applying allow rule ${r.ruleId} (${r.value}): ${appControlRuleProblem(r.ruleType, r.value)}`);
+      continue;
+    }
+    if (r.ruleType === "ALLOW_PATH") {
+      out.push(pathRule(r.ruleId, `Allow ${r.value.trim()}`, EVERYONE, allowPattern(r.value)));
+    } else if (r.ruleType === "ALLOW_PUBLISHER") {
+      const v = r.version?.trim();
+      const low = r.versionMatch !== "ANY" && v ? fourPart(v) : "*";
+      const high = r.versionMatch === "EXACT" && v ? fourPart(v) : "*";
+      const label = [r.value.match(/O=("[^"]*"|[^,]*)/i)?.[1] ?? r.value, r.productName].filter(Boolean).join(" - ");
+      out.push(publisherRule(r.ruleId, `Allow ${label}`, r.value.toUpperCase(), r.productName?.trim() || "*", r.fileName?.trim().toUpperCase() || "*", low, high));
+    } else if (r.ruleType === "ALLOW_HASH") {
+      const hash = r.value.replace(/^0x/i, "").toUpperCase();
+      const file = r.fileName?.trim() || "program.exe";
+      out.push(
+        `<FileHashRule Id="${xmlAttr(r.ruleId)}" Name="${xmlAttr(`Endpoint IQ: Allow ${file}`.slice(0, 200))}" Description="${APPLOCKER_MARKER}" UserOrGroupSid="${EVERYONE}" Action="Allow">` +
+          `<Conditions><FileHashCondition><FileHash Type="SHA256" Data="0x${hash}" SourceFileName="${xmlAttr(file)}" SourceFileLength="${Math.max(0, Math.trunc(r.fileSize ?? 0))}" /></FileHashCondition></Conditions></FileHashRule>`,
+      );
+    }
+  }
+  return out;
+}
+
+// Installers: Windows' own installer cache (repairs and updates of installed software), and
+// administrators when they choose to. Any other .msi a user starts is blocked.
+export function allowlistMsiRules(a: AllowlistWire): string[] {
+  const out = [pathRule(BASELINE_IDS.msiCache, "Windows Installer cache", EVERYONE, "%WINDIR%\\Installer\\*")];
+  if (a.exemptAdministrators) out.push(pathRule(BASELINE_IDS.msiAdministrators, "Administrators", ADMINISTRATORS, "*"));
+  return out;
+}
+
+export function desiredAppLocker(advancedRules: AppControlRuleWire[], rules: AppControlRuleWire[], allowlist?: AllowlistWire): Desired {
   const denies: DenyRule[] = [];
   for (const r of rules) {
     if (r.ruleType !== "EXTENSION") continue;
@@ -111,7 +253,10 @@ export function desiredAppLocker(advancedRules: AppControlRuleWire[], rules: App
     if (r.ruleType === "DLL") denies.push({ id: r.ruleId, collection: "Dll", name: `Block ${r.value.trim()}`, path: dllPattern(r.value) });
     else if (r.ruleType === "ALLOW_PATH") allows.push(allowPattern(r.value));
   }
-  return { denies, allows: [...new Set(allows)] };
+  const exe = allowlist
+    ? { rules: allowlistExeRules(allowlist), msiRules: allowlistMsiRules(allowlist), mode: allowlist.enforce ? ("Enabled" as const) : ("AuditOnly" as const) }
+    : null;
+  return { denies, allows: [...new Set(allows)], exe };
 }
 
 // Where a probe file for a rule can be made, to ask AppLocker whether the rule really blocks:
@@ -122,7 +267,7 @@ function probeFor(rule: DenyRule): string | null {
   return rest.startsWith("\\") ? path.join(PROBE_DIR, "probe", rest.slice(1)) : path.join(PROBE_DIR, `probe${rest}`);
 }
 
-function xmlAttr(value: string): string {
+export function xmlAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
@@ -150,10 +295,16 @@ export function buildApplyScript(d: Desired, probes: { id: string; path: string 
       return `Add-Rules '${c}' '${psEscape(allowAll)}' '${psEscape(`<r>${fragments[c].join("")}</r>`)}'`;
     })
     .join("\n");
+  const exeCall = d.exe
+    ? `Add-Allowlist 'Exe' '${d.exe.mode}' '${psEscape(`<r>${d.exe.rules.join("")}</r>`)}'\nAdd-Allowlist 'Msi' '${d.exe.mode}' '${psEscape(`<r>${d.exe.msiRules.join("")}</r>`)}'`
+    : "";
   const probeList = probes.map((p) => `@{ id = '${psEscape(p.id)}'; path = '${psEscape(p.path)}' }`).join(", ");
   return `
 $ErrorActionPreference = 'Stop'
-$result = @{ applied = $false; service = ''; notDenied = @(); testError = $null; foreignAudit = @() }
+$result = @{ applied = $false; service = ''; notDenied = @(); testError = $null; foreignAudit = @(); home = $false; exeMode = '' }
+
+# Windows Home has no AppLocker enforcement.
+try { $result.home = @(98, 99, 100, 101) -contains [int](Get-CimInstance Win32_OperatingSystem).OperatingSystemSKU } catch {}
 
 # The Application Identity service enforces AppLocker.
 try {
@@ -198,6 +349,25 @@ function Add-Rules($type, $allowAll, $denies) {
   foreach ($n in @($doc.r.ChildNodes)) { [void]$c.AppendChild($xml.ImportNode($n, $true)) }
 }
 
+# Allowlist: allow rules only in the Exe and Msi collections; anything else a user starts is
+# blocked. Someone else's rules there stay, with their own mode. Runs before the block rules, so a
+# collection the allowlist uses never gets the "allow everything" rule.
+function Add-Allowlist($type, $mode, $allows) {
+  $c = @($root.RuleCollection) | Where-Object { $_ -and $_.Type -eq $type } | Select-Object -First 1
+  if (-not $c) {
+    $c = $xml.CreateElement('RuleCollection')
+    $c.SetAttribute('Type', $type)
+    $c.SetAttribute('EnforcementMode', 'NotConfigured')
+    [void]$root.AppendChild($c)
+  }
+  $foreign = @($c.ChildNodes | Where-Object { $_.LocalName -like '*Rule' }).Count
+  if ($foreign -eq 0) { $c.SetAttribute('EnforcementMode', $mode) }
+  if ($type -eq 'Exe') { $script:result.exeMode = [string]$c.EnforcementMode }
+  $doc = [xml]$allows
+  foreach ($n in @($doc.r.ChildNodes)) { [void]$c.AppendChild($xml.ImportNode($n, $true)) }
+}
+
+${exeCall}
 ${perCollection}
 
 $file = Join-Path $env:TEMP ('eiq-applocker-' + [guid]::NewGuid().ToString('N') + '.xml')
@@ -230,19 +400,48 @@ try {
 `;
 }
 
-// AppLocker's own record of what it blocked (8004: program or DLL, 8007: script or installer).
-function buildEventsScript(since: string): string {
+// AppLocker's own record of what it blocked (8004: program or DLL, 8007: script or installer) and,
+// with an allowlist in audit mode, what it would have blocked (8003) - with the program's signer
+// (Fqbn), hash and user, so the console can turn it into an allow rule.
+function buildEventsScript(since: string, withAudit: boolean): string {
   return `
 $ErrorActionPreference = 'SilentlyContinue'
 $since = [datetime]::Parse('${psEscape(since)}').ToUniversalTime().ToLocalTime()
-$out = @(Get-WinEvent -FilterHashtable @{ LogName = @('Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script'); Id = @(8004, 8007); StartTime = $since } -MaxEvents 500 | ForEach-Object {
+$names = @{}
+$out = @(Get-WinEvent -FilterHashtable @{ LogName = @('Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script'); Id = @(${withAudit ? "8003, " : ""}8004, 8007); StartTime = $since } -MaxEvents 500 | ForEach-Object {
   $d = ([xml]$_.ToXml()).Event.UserData.RuleAndFileData
   $p = if ($d.FullFilePath) { [string]$d.FullFilePath } else { [string]$d.FilePath }
-  [pscustomobject]@{ ruleId = ([string]$d.RuleId).Trim('{', '}').ToLowerInvariant(); path = $p.Replace('%OSDRIVE%', $env:SystemDrive); at = $_.TimeCreated.ToUniversalTime().ToString('o') }
+  $p = $p.Replace('%OSDRIVE%', $env:SystemDrive)
+  $sid = [string]$d.TargetUser
+  if ($sid -and -not $names.ContainsKey($sid)) {
+    try { $names[$sid] = (New-Object System.Security.Principal.SecurityIdentifier($sid)).Translate([System.Security.Principal.NTAccount]).Value } catch { $names[$sid] = $sid }
+  }
+  $size = $null
+  if ($_.Id -ne 8007) { try { $size = (Get-Item -LiteralPath $p -ErrorAction Stop).Length } catch {} }
+  [pscustomobject]@{
+    ruleId = ([string]$d.RuleId).Trim('{', '}').ToLowerInvariant(); path = $p; at = $_.TimeCreated.ToUniversalTime().ToString('o')
+    id = $_.Id; fqbn = [string]$d.Fqbn; hash = [string]$d.FileHash; user = $(if ($sid) { $names[$sid] } else { $null }); size = $size
+  }
 })
 [Console]::Out.WriteLine((ConvertTo-Json -InputObject $out -Compress))
 `;
 }
+
+// "O=GOOGLE LLC, L=..., C=US\\GOOGLE CHROME\\CHROME.EXE\\131.0.6778.86" (or "-" when unsigned).
+export function parseFqbn(fqbn: string): { publisher: string; productName: string | null; fileVersion: string | null } | null {
+  const parts = (fqbn ?? "").trim().split("\\");
+  if (parts.length < 4 || !/(^|,\s*)O=/i.test(parts[0])) return null;
+  const version = parts[parts.length - 1];
+  const product = parts[parts.length - 3];
+  return {
+    publisher: parts.slice(0, parts.length - 3).join("\\").trim(),
+    productName: product && product !== "*" ? product : null,
+    fileVersion: version && version !== "*" ? version : null,
+  };
+}
+
+const AUDIT_REPORT_EVERY_MS = 60 * 60_000; // one "would have blocked" per program per hour
+const auditReported = new Map<string, number>();
 
 async function runPs(script: string, timeout = 120_000): Promise<string> {
   const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
@@ -269,11 +468,15 @@ let lastProblem: string | null = null;
 
 // advanced: undefined while the server doesn't offer advanced application control (or the agent
 // is paused / suspended by the desktop safety net) - every AppLocker rule we added comes out.
-export async function syncAppLocker(advanced: AppControlRuleWire[] | undefined, rules: AppControlRuleWire[]): Promise<AppLockerResult> {
+export async function syncAppLocker(
+  advanced: AppControlRuleWire[] | undefined,
+  rules: AppControlRuleWire[],
+  allowlist?: AllowlistWire,
+): Promise<AppLockerResult> {
   const state = await readState();
-  const desired = advanced ? desiredAppLocker(advanced, rules) : { denies: [], allows: [] };
+  const desired: Desired = advanced ? desiredAppLocker(advanced, rules, allowlist) : { denies: [], allows: [], exe: null };
 
-  if (desired.denies.length === 0) {
+  if (desired.denies.length === 0 && !desired.exe) {
     if (state) {
       await runPs(`$ErrorActionPreference = 'SilentlyContinue'\n${REMOVE_APPLOCKER_RULES_PS}`, 60_000).catch((err) => console.error("App Control: removing AppLocker rules failed", err));
       await fsp.rm(appLockerStateFile(), { force: true });
@@ -292,12 +495,26 @@ export async function syncAppLocker(advanced: AppControlRuleWire[] | undefined, 
     try {
       const out = await runPs(buildApplyScript(desired, probes));
       const line = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
-      const res = JSON.parse(line ?? "{}") as { applied?: boolean; service?: string; notDenied?: string[] | string; testError?: string | null; foreignAudit?: string[] | string };
+      const res = JSON.parse(line ?? "{}") as {
+        applied?: boolean;
+        service?: string;
+        notDenied?: string[] | string;
+        testError?: string | null;
+        foreignAudit?: string[] | string;
+        home?: boolean;
+        exeMode?: string;
+      };
       if (!res.applied) throw new Error(`AppLocker policy wasn't applied: ${out.trim().slice(0, 300)}`);
       const notDenied = ([] as string[]).concat(res.notDenied ?? []);
       const audit = ([] as string[]).concat(res.foreignAudit ?? []);
       const problems: string[] = [];
-      if (res.service !== "Running") problems.push(`The Application Identity service (AppIDSvc) isn't running (${res.service}), so Windows isn't enforcing DLL and script rules`);
+      if (res.home) problems.push("Windows Home doesn't enforce AppLocker, so DLL, script and allowlist rules aren't in force on this PC");
+      if (res.service !== "Running") problems.push(`The Application Identity service (AppIDSvc) isn't running (${res.service}), so Windows isn't enforcing AppLocker rules`);
+      if (desired.exe && res.exeMode && res.exeMode !== desired.exe.mode) {
+        problems.push(
+          `This device's own AppLocker policy sets program rules to ${res.exeMode === "AuditOnly" ? "audit only" : res.exeMode}, so the allowlist ${desired.exe.mode === "Enabled" ? "only records programs instead of blocking them" : "blocks programs instead of only recording them"}`,
+        );
+      }
       if (notDenied.length) {
         const names = desired.denies.filter((r) => notDenied.includes(r.id)).map((r) => r.path);
         problems.push(`Windows didn't confirm these AppLocker rules block anything: ${names.join(", ")}`);
@@ -306,8 +523,11 @@ export async function syncAppLocker(advanced: AppControlRuleWire[] | undefined, 
       if (res.testError) console.warn(`App Control: couldn't test the AppLocker rules: ${res.testError}`);
       lastProblem = problems.length ? problems.join(". ") : null;
       if (!state) eventsSince = new Date(now - 5_000).toISOString();
-      await writeState({ hash, appliedAt: now, ruleCount: desired.denies.length, eventsSince });
-      console.log(`App Control: AppLocker rules applied (${desired.denies.length} block, ${desired.allows.length} allow)`);
+      await writeState({ hash, appliedAt: now, ruleCount: desired.denies.length + (desired.exe?.rules.length ?? 0), eventsSince });
+      console.log(
+        `App Control: AppLocker rules applied (${desired.denies.length} block, ${desired.allows.length} allow` +
+          `${desired.exe ? `, allowlist ${desired.exe.mode === "Enabled" ? "enforced" : "audit only"} with ${desired.exe.rules.length} rules` : ""})`,
+      );
     } catch (err) {
       lastProblem = `AppLocker rules couldn't be applied: ${err instanceof Error ? err.message : String(err)}`.slice(0, 600);
       console.error(`App Control: ${lastProblem}`);
@@ -320,14 +540,47 @@ export async function syncAppLocker(advanced: AppControlRuleWire[] | undefined, 
   const events: RawEvent[] = [];
   let newest = eventsSince;
   try {
-    const out = await runPs(buildEventsScript(eventsSince), 60_000);
+    type LogEvent = { ruleId: string; path: string; at: string; id?: number; fqbn?: string; hash?: string; user?: string | null; size?: number | null };
+    const out = await runPs(buildEventsScript(eventsSince, desired.exe?.mode === "AuditOnly" || false), 60_000);
     const line = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("[") || l.startsWith("{")).pop();
-    const parsed = line ? (JSON.parse(line) as { ruleId: string; path: string; at: string }[] | { ruleId: string; path: string; at: string }) : [];
-    for (const e of ([] as { ruleId: string; path: string; at: string }[]).concat(parsed)) {
+    const parsed = line ? (JSON.parse(line) as LogEvent[] | LogEvent) : [];
+    for (const e of ([] as LogEvent[]).concat(parsed)) {
       if (e.at > newest) newest = e.at;
-      if (!ours.has(e.ruleId) || !e.path) continue;
-      events.push({ kind: "app", ruleId: e.ruleId, path: e.path, at: e.at, closed: true, sessionId: 0 });
+      if (!e.path) continue;
+      if (ours.has(e.ruleId)) {
+        events.push({ kind: "app", ruleId: e.ruleId, path: e.path, at: e.at, closed: true, sessionId: 0 });
+        continue;
+      }
+      // A program or installer no rule allowed: the allowlist's doing (8004 program blocked, 8007
+      // installer blocked, 8003 would have been).
+      const isProgram = (e.id === 8003 || e.id === 8004) && /\.(exe|com)$/i.test(e.path);
+      const isInstaller = e.id === 8007 && /\.(msi|msp|mst)$/i.test(e.path);
+      if (!desired.exe || e.ruleId !== NO_RULE_ID || (!isProgram && !isInstaller)) continue;
+      const outcome = e.id === 8003 ? "AUDIT" : "BLOCKED";
+      const key = `${outcome}|${e.path.toLowerCase()}`;
+      if (outcome === "AUDIT" && now - (auditReported.get(key) ?? 0) < AUDIT_REPORT_EVERY_MS) continue;
+      auditReported.set(key, now);
+      const signer = parseFqbn(e.fqbn ?? "");
+      const hash = (e.hash ?? "").replace(/^0x/i, "").toUpperCase();
+      events.push({
+        kind: "app",
+        ruleId: null,
+        path: e.path,
+        at: e.at,
+        closed: false,
+        sessionId: 0,
+        allowlist: {
+          outcome,
+          publisher: signer?.publisher ?? null,
+          productName: signer?.productName ?? null,
+          fileVersion: signer?.fileVersion ?? null,
+          fileHash: /^[0-9A-F]{64}$/.test(hash) ? hash : null,
+          fileSize: typeof e.size === "number" ? e.size : null,
+          userName: e.user ?? null,
+        },
+      });
     }
+    if (auditReported.size > 5000) auditReported.clear();
   } catch (err) {
     console.warn("App Control: reading AppLocker events failed", err);
   }

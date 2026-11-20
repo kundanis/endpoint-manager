@@ -207,7 +207,7 @@ export async function collect(cursors: Cursors, resolver: ResolveUser): Promise<
   added += await collectSource(
     cursors,
     "appBlock",
-    (from) => prisma.appControlEvent.findMany({ where: { occurredAt: { gt: from } }, orderBy: { occurredAt: "asc" }, take: BATCH }),
+    (from) => prisma.appControlEvent.findMany({ where: { occurredAt: { gt: from }, outcome: "BLOCKED" }, orderBy: { occurredAt: "asc" }, take: BATCH }),
     (r) => r.occurredAt,
     (r) => [{ agentId: r.agentId, username: null, type: "APP_BLOCKED", summary: `Application blocked: ${r.processName ?? (r.matchedPath ? fileName(r.matchedPath) : "unknown")}`, detail: { process: r.processName, path: r.matchedPath }, occurredAt: r.occurredAt, sourceTable: "AppControlEvent", sourceId: r.id }],
   );

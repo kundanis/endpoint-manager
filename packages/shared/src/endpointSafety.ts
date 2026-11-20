@@ -1,3 +1,4 @@
+import { catalogApp } from "./data/appCatalog";
 import { z } from "zod";
 import { commandProtection } from "./data/commandProtections";
 
@@ -77,6 +78,19 @@ export function appControlRuleProblem(ruleType: string, rawValue: string): strin
     if (PROTECTED_FOLDERS.some((f) => value.includes(f)) || /^[a-z]:\\windows($|\\)/.test(value) || value.includes("%system32%")) {
       return "DLLs in the Windows folder and the Endpoint IQ agent can't be blocked: Windows or the agent would stop working.";
     }
+    return null;
+  }
+  if (ruleType === "ALLOW_PUBLISHER") {
+    if (!/(^|,\s*)o=/.test(value)) {
+      return "Pick the publisher from a program seen on your endpoints or from a program file: Windows needs the signer's full name, such as O=GOOGLE LLC, L=MOUNTAIN VIEW, S=CALIFORNIA, C=US.";
+    }
+    return null;
+  }
+  if (ruleType === "ALLOW_CATALOG") {
+    return catalogApp(value) ? null : "Unknown application.";
+  }
+  if (ruleType === "ALLOW_HASH") {
+    if (!/^(0x)?[0-9a-f]{64}$/.test(value)) return "A hash rule needs the program's SHA-256 hash (64 hexadecimal characters).";
     return null;
   }
   if (ruleType === "ALLOW_PATH") {

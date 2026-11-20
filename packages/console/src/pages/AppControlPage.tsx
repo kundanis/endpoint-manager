@@ -1,4 +1,5 @@
 import { Fragment, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AppWindow, ChevronDown, ChevronRight, ListChecks, Pencil, Plus, Trash2, Users } from "lucide-react";
 import type { AppControlRuleType } from "@em/shared";
 import BulkPolicyAssignPanel from "../components/BulkPolicyAssignPanel";
@@ -20,6 +21,8 @@ import {
   type AppControlRuleInput,
 } from "../api/hooks";
 import AddFromDataTypes from "../components/AddFromDataTypes";
+import { AllowlistRulesPanel, AllowlistSettingsPanel } from "../components/AppAllowlist";
+import UndefinedApplications from "../components/AppUndefined";
 import type { AppControlPolicyDetail, AppControlRuleView } from "../api/types";
 import EndpointLabel from "../components/EndpointLabel";
 import {
@@ -41,8 +44,10 @@ import {
   IconButton,
   Pagination,
   RowMenu,
+  Segmented,
   Skeleton,
   Switch,
+  Tabs,
   useConfirm,
   usePagedList,
 } from "../components/ui";
@@ -61,6 +66,9 @@ const RULE_TYPE_LABEL: Record<AppControlRuleType, string> = {
   EXTENSION: "Script type",
   DLL: "DLL file",
   ALLOW_PATH: "Allow (exception)",
+  ALLOW_PUBLISHER: "Publisher (allow)",
+  ALLOW_HASH: "File hash (allow)",
+  ALLOW_CATALOG: "Common application (allow)",
 };
 
 const RULE_TYPE_HINT: Record<AppControlRuleType, string> = {
@@ -70,6 +78,9 @@ const RULE_TYPE_HINT: Record<AppControlRuleType, string> = {
   EXTENSION: 'A script type including the dot, e.g. ".vbs", ".hta" or ".jar" — stops Windows script hosts and Java from running files of that type.',
   DLL: 'A DLL file name, e.g. "evil.dll" (blocked in any folder), or a path, e.g. "C:\\Users\\*\\AppData\\*\\evil.dll". DLLs in the Windows folder are never blocked.',
   ALLOW_PATH: 'A folder or file that is never blocked by any rule on the endpoint, e.g. "C:\\IT\\Scripts" or "\\\\fileserver\\tools\\*". Use it for scripts and programs your IT team runs.',
+  ALLOW_PUBLISHER: "Allowlist policies only.",
+  ALLOW_HASH: "Allowlist policies only.",
+  ALLOW_CATALOG: "Allowlist policies only.",
 };
 
 const ADVANCED_EXTENSION_HINT =
@@ -82,6 +93,9 @@ const RULE_TYPE_PLACEHOLDER: Record<AppControlRuleType, string> = {
   EXTENSION: 'e.g. ".vbs, .js, .hta"',
   DLL: 'e.g. "evil.dll, C:\\Tools\\hook.dll"',
   ALLOW_PATH: 'e.g. "C:\\IT\\Scripts; \\\\fileserver\\tools"',
+  ALLOW_PUBLISHER: "",
+  ALLOW_HASH: "",
+  ALLOW_CATALOG: "",
 };
 
 const BLANK_RULE_FORM: AppControlRuleInput = { ruleType: "EXECUTABLE", value: "", label: "" };
@@ -291,15 +305,18 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
 function SettingsPanel({ policy }: { policy: AppControlPolicyDetail }) {
   const updatePolicy = useUpdateAppControlPolicy();
   return (
-    <PolicySettingsForm
-      policyId={policy.id}
-      name={policy.name}
-      description={policy.description}
-      onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values })}
-      pending={updatePolicy.isPending}
-      error={updatePolicy.error}
-      saved={updatePolicy.isSuccess}
-    />
+    <div className="app-stack">
+      {policy.mode === "ALLOWLIST" && <AllowlistSettingsPanel key={policy.id} policy={policy} />}
+      <PolicySettingsForm
+        policyId={policy.id}
+        name={policy.name}
+        description={policy.description}
+        onSave={(values) => updatePolicy.mutate({ id: policy.id, ...values })}
+        pending={updatePolicy.isPending}
+        error={updatePolicy.error}
+        saved={updatePolicy.isSuccess}
+      />
+    </div>
   );
 }
 
@@ -485,6 +502,10 @@ export default function AppControlPage() {
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
+  const [newMode, setNewMode] = useState<"BLOCK" | "ALLOWLIST">("BLOCK");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = searchParams.get("view") === "undefined" ? "undefined" : "policies";
+  const advanced = useAppControlFeatures().data?.advanced ?? false;
   const bulkAssign = useAssignAppControlPolicy();
 
   const { data: policy } = useAppControlPolicy(selectedId);
@@ -529,6 +550,14 @@ export default function AppControlPage() {
             versions and product or publisher matches are closed the moment they start. Everything else stays
             allowed, and Windows itself and the Endpoint IQ agent can never be blocked. Needs Windows agent 0.2.18 or
             later.
+            {advanced && (
+              <>
+                {" "}
+                An <b>allowlist</b> policy works the other way round: Windows and what it needs always run, plus the
+                applications you allow; every other program and setup is blocked by Windows. Needs Windows agent 0.2.30
+                or later and Windows Pro, Enterprise or Education.
+              </>
+            )}
           </>
         }
         actions={
@@ -538,6 +567,19 @@ export default function AppControlPage() {
         }
       />
 
+      <Tabs
+        items={[
+          { label: "Policies", value: "policies" },
+          { label: "Undefined applications", value: "undefined" },
+        ]}
+        value={view}
+        onChange={(v) => setSearchParams(v === "undefined" ? { view: "undefined" } : {}, { replace: true })}
+      />
+
+      {view === "undefined" ? (
+        <UndefinedApplications />
+      ) : (
+      <>
       <Card flush title="Policies" hint={policies ? `${policies.length} total` : undefined}>
         {isLoading ? (
           <div className="ep-cb">
@@ -609,7 +651,8 @@ export default function AppControlPage() {
                       />
                     </td>
                     <td className="ep-host">
-                      <b>{p.name}</b>
+                      <b>{p.name}</b>{" "}
+                      {p.mode === "ALLOWLIST" && <Badge tone="high">Allowlist</Badge>}
                       {p.description && <span className="app-row-sub">{p.description}</span>}
                     </td>
                     {/* Paused policies are skipped entirely and don't affect any device. */}
@@ -659,25 +702,67 @@ export default function AppControlPage() {
           policyId={policy.id}
           name={policy.name}
           enabled={policy.enabled}
-          meta={pluralize(policy.rules.length, "rule")}
+          meta={
+            policy.mode === "ALLOWLIST"
+              ? `Allowlist · ${pluralize(policy.rules.length, "allowed application")}`
+              : pluralize(policy.rules.length, "rule")
+          }
           onClose={() => setSelectedId(undefined)}
-          tabs={[
-            { value: "rules", label: "Rules", content: <RulesPanel policy={policy} /> },
-            { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
-            { value: "events", label: "Events", content: <EventsPanel policyId={policy.id} /> },
-            { value: "sync", label: "Sync status", content: <SyncStatusPanel policyId={policy.id} /> },
-            { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
-          ]}
+          tabs={
+            policy.mode === "ALLOWLIST"
+              ? [
+                  { value: "rules", label: "Allowed applications", content: <AllowlistRulesPanel policy={policy} /> },
+                  { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+                  { value: "events", label: "Events", content: <EventsPanel policyId={policy.id} /> },
+                  { value: "sync", label: "Sync status", content: <SyncStatusPanel policyId={policy.id} /> },
+                  { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
+                ]
+              : [
+                  { value: "rules", label: "Rules", content: <RulesPanel policy={policy} /> },
+                  { value: "assignment", label: "Assignment", content: <AssignmentPanel policyId={policy.id} /> },
+                  { value: "events", label: "Events", content: <EventsPanel policyId={policy.id} /> },
+                  { value: "sync", label: "Sync status", content: <SyncStatusPanel policyId={policy.id} /> },
+                  { value: "settings", label: "Settings", content: <SettingsPanel policy={policy} /> },
+                ]
+          }
         />
+      )}
+
+      </>
       )}
 
       {creating && (
         <NewPolicyDialog
-          onClose={() => setCreating(false)}
+          onClose={() => {
+            setCreating(false);
+            setNewMode("BLOCK");
+          }}
           pending={createPolicy.isPending}
           error={createPolicy.error}
-          onCreate={(values) => createPolicy.mutateAsync(values).then((result) => setSelectedId(result.id))}
-        />
+          onCreate={(values) => createPolicy.mutateAsync({ ...values, mode: newMode }).then((result) => setSelectedId(result.id))}
+        >
+          {advanced && (
+            <Field
+              label="Type"
+              htmlFor="new-appctl-mode"
+              help={
+                newMode === "ALLOWLIST"
+                  ? "Windows and what it needs always run. Every other program and setup is blocked unless you allow it, from a list of common applications or your own. Assign it to a test endpoint first."
+                  : "Blocks the programs its rules name; everything else runs."
+              }
+            >
+              <Segmented
+                label="Type"
+                options={[
+                  { value: "BLOCK", label: "Block list" },
+                  { value: "ALLOWLIST", label: "Allowlist" },
+                ]}
+                value={newMode}
+                onChange={setNewMode}
+              />
+            </Field>
+          )}
+        </NewPolicyDialog>
       )}
     </>
   );

@@ -1416,6 +1416,16 @@ model AppControlPolicy {
   name             String                       @db.NVarChar(200)
   description      String?                      @db.NVarChar(1000)
   enabled          Boolean                      @default(true)
+  // BLOCK: the rules name what may not run. ALLOWLIST: only Windows, the baseline below and the
+  // rules may run (Windows AppLocker program rules); everything else is blocked (ENFORCE) or
+  // only recorded (AUDIT).
+  mode                 String  @default("BLOCK") @db.NVarChar(20)
+  allowlistEnforcement String  @default("AUDIT") @db.NVarChar(10)
+  allowProgramFiles    Boolean @default(true)
+  exemptAdministrators Boolean @default(true)
+  // OFF | SELECTED (microsoftProducts, or the preset when null) | ALL
+  microsoftSigned      String  @default("SELECTED") @db.NVarChar(10)
+  microsoftProducts    String? @db.NVarChar(2000)
   createdByAdminId String?
   createdAt        DateTime                     @default(now())
   rules            AppControlRule[]
@@ -1430,6 +1440,14 @@ model AppControlRule {
   ruleType  String           @db.NVarChar(30)
   value     String           @db.NVarChar(500)
   label     String?          @db.NVarChar(200)
+  // Allowlist rules: ALLOW_PUBLISHER (publisher + optional product, file name, version) and
+  // ALLOW_HASH (value = Authenticode SHA-256, with fileName and fileSize).
+  publisher    String?  @db.NVarChar(500)
+  productName  String?  @db.NVarChar(300)
+  fileName     String?  @db.NVarChar(300)
+  versionMatch String?  @db.NVarChar(10)
+  version      String?  @db.NVarChar(50)
+  fileSize     BigInt?
   createdAt DateTime         @default(now())
 }
 
@@ -1463,9 +1481,19 @@ model AppControlEvent {
   ruleId      String?
   matchedPath String?           @db.NVarChar(1000)
   processName String?           @db.NVarChar(300)
+  // BLOCKED, or AUDIT: an allowlist in audit mode would have blocked it. The program's signer,
+  // version and hash (as Windows records them) let the console turn it into an allow rule.
+  outcome     String            @default("BLOCKED") @db.NVarChar(10)
+  publisher   String?           @db.NVarChar(500)
+  productName String?           @db.NVarChar(300)
+  fileVersion String?           @db.NVarChar(50)
+  fileHash    String?           @db.NVarChar(64)
+  fileSize    BigInt?
+  userName    String?           @db.NVarChar(200)
   occurredAt  DateTime          @default(now())
 
   @@index([agentId])
+  @@index([policyId, outcome])
 }
 
 // EPM — Web & Cloud Storage/Email Blocking (hosts-file + browser managed policy).

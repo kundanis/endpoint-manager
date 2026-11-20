@@ -1104,6 +1104,14 @@ export interface AppControlPolicySummary {
   name: string;
   description: string | null;
   enabled: boolean;
+  // ALLOWLIST: only Windows, the baseline and the rules may run (advanced application control).
+  mode: "BLOCK" | "ALLOWLIST";
+  allowlistEnforcement: "AUDIT" | "ENFORCE";
+  allowProgramFiles: boolean;
+  exemptAdministrators: boolean;
+  microsoftSigned: "OFF" | "SELECTED" | "ALL";
+  microsoftProducts: string[];
+  microsoftProductsCustom: boolean;
   ruleCount: number;
   assignedAgentCount: number;
   eventCount: number;
@@ -1115,6 +1123,36 @@ export interface AppControlRuleView {
   ruleType: AppControlRuleType;
   value: string;
   label: string | null;
+  // Publisher and hash allow rules.
+  productName: string | null;
+  fileName: string | null;
+  versionMatch: "ANY" | "MIN" | "EXACT" | null;
+  version: string | null;
+  fileSize: number | null;
+}
+
+// Application control -> Undefined applications.
+export interface UndefinedApplication {
+  name: string;
+  publisher: string | null;
+  versions: string[];
+  endpointCount: number;
+  endpoints: { agentId: string; hostname: string }[];
+  catalogKey: string | null;
+  catalogName: string | null;
+}
+
+export interface UndefinedApplicationsView {
+  endpointCount: number;
+  applications: UndefinedApplication[];
+  definedCount: number;
+  hiddenSystemCount: number;
+}
+
+export interface SeenSigner {
+  publisher: string;
+  productName: string | null;
+  occurrences: number;
 }
 
 export interface AppControlPolicyDetail extends AppControlPolicySummary {

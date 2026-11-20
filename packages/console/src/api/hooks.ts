@@ -179,6 +179,8 @@ import type {
   UserRiskUserDetail,
   UserRiskUserRow,
   SoftwareBlock,
+  SeenSigner,
+  UndefinedApplicationsView,
 } from "./types";
 
 export function useMe() {
@@ -2168,7 +2170,7 @@ export function useAppControlPolicy(id: string | undefined) {
 export function useCreateAppControlPolicy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; description?: string | null; enabled?: boolean }) =>
+    mutationFn: (body: { name: string; description?: string | null; enabled?: boolean; mode?: "BLOCK" | "ALLOWLIST" }) =>
       api.post<AppControlPolicyDetail>("/admin/app-control", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["appControlPolicies"] }),
   });
@@ -2185,6 +2187,11 @@ export function useUpdateAppControlPolicy() {
       name?: string;
       description?: string | null;
       enabled?: boolean;
+      allowlistEnforcement?: "AUDIT" | "ENFORCE";
+      allowProgramFiles?: boolean;
+      exemptAdministrators?: boolean;
+      microsoftSigned?: "OFF" | "SELECTED" | "ALL";
+      microsoftProducts?: string[] | null;
     }) => api.patch<AppControlPolicyDetail>(`/admin/app-control/${id}`, body),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["appControlPolicies"] });
@@ -2205,6 +2212,29 @@ export interface AppControlRuleInput {
   ruleType: AppControlRuleType;
   value: string;
   label?: string | null;
+  // Publisher and hash allow rules.
+  productName?: string | null;
+  fileName?: string | null;
+  versionMatch?: "ANY" | "MIN" | "EXACT" | null;
+  version?: string | null;
+  fileSize?: number | null;
+}
+
+// Installed software no Application control policy names yet.
+export function useUndefinedApplications(includeSystem: boolean) {
+  return useQuery({
+    queryKey: ["appControlUndefined", includeSystem],
+    queryFn: () => api.get<UndefinedApplicationsView>(`/admin/app-control/undefined-applications${includeSystem ? "?all=1" : ""}`),
+  });
+}
+
+// Signers Windows recorded on endpoints, for the publisher field.
+export function useSeenSigners(q: string) {
+  return useQuery({
+    queryKey: ["appControlSigners", q],
+    queryFn: () => api.get<SeenSigner[]>(`/admin/app-control/signers?q=${encodeURIComponent(q)}`),
+    staleTime: 60_000,
+  });
 }
 
 export function useAddAppControlRule() {
@@ -2213,6 +2243,7 @@ export function useAddAppControlRule() {
     mutationFn: ({ policyId, ...body }: { policyId: string } & AppControlRuleInput) =>
       api.post<AppControlPolicyDetail>(`/admin/app-control/${policyId}/rules`, body),
     onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["appControlUndefined"] });
       qc.invalidateQueries({ queryKey: ["appControlPolicies"] });
       qc.invalidateQueries({ queryKey: ["appControlPolicies", variables.policyId] });
     },
@@ -2241,6 +2272,7 @@ export function useDeleteAppControlRule() {
     mutationFn: ({ policyId, ruleId }: { policyId: string; ruleId: string }) =>
       api.del(`/admin/app-control/${policyId}/rules/${ruleId}`),
     onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["appControlUndefined"] });
       qc.invalidateQueries({ queryKey: ["appControlPolicies"] });
       qc.invalidateQueries({ queryKey: ["appControlPolicies", variables.policyId] });
     },
