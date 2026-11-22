@@ -153,13 +153,15 @@ const MODULES: ModuleDef[] = [
   },
 ];
 
-export async function getAppliedPolicies(agentId: string): Promise<{ paused: boolean; policies: AppliedPolicy[] }> {
+// platform: these modules run on the Windows agent only; the console marks them on other endpoints.
+export async function getAppliedPolicies(agentId: string): Promise<{ paused: boolean; platform: string | null; policies: AppliedPolicy[] }> {
   const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, include: { group: { select: { id: true, name: true } } } });
   const groupName = new Map(memberships.map((m) => [m.groupId, m.group.name]));
   const groupIds = [...groupName.keys()];
   const where = { OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] };
 
-  const [paused, exceptions, perModule] = await Promise.all([
+  const [agent, paused, exceptions, perModule] = await Promise.all([
+    prisma.agent.findUnique({ where: { id: agentId }, select: { osPlatform: true } }),
     isAgentPaused(agentId),
     prisma.policyAccessException.findMany({
       where: { agentId, status: "APPROVED", expiresAt: { gt: new Date() } },
@@ -197,5 +199,5 @@ export async function getAppliedPolicies(agentId: string): Promise<{ paused: boo
       });
     }
   });
-  return { paused, policies: out };
+  return { paused, platform: agent?.osPlatform ?? null, policies: out };
 }

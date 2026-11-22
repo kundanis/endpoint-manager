@@ -176,8 +176,14 @@ async function gatherInputs(now: Date): Promise<Map<string, EndpointPostureInput
       prisma.usbControlEvent.groupBy({ by: ["agentId"], where: recent, _count: { _all: true } }),
       prisma.screenshotBlockEvent.groupBy({ by: ["agentId"], where: recent, _count: { _all: true } }),
     ]);
-    for (const id of ids) inputs.get(id)!.policyBlocks = 0;
-    for (const list of groups) for (const g of list) inputs.get(g.agentId)!.policyBlocks! += g._count._all;
+    // Only the Windows agent enforces these policies; Linux and macOS endpoints have no blocking to
+    // count, so the part is left out for them rather than scored a perfect 100.
+    for (const a of included) if (a.osPlatform === "win32") inputs.get(a.id)!.policyBlocks = 0;
+    for (const list of groups)
+      for (const g of list) {
+        const input = inputs.get(g.agentId)!;
+        if (input.policyBlocks !== undefined) input.policyBlocks += g._count._all;
+      }
   }
   return inputs;
 }

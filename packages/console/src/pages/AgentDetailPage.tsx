@@ -613,6 +613,9 @@ function AppliedPoliciesCard({ agentId }: { agentId: string }) {
 
   function status(p: (typeof policies)[number]): { tone: BadgeTone; text: string; title?: string } {
     if (!p.enabled) return { tone: "neu", text: "Disabled" };
+    // Only the Windows agent enforces these modules.
+    if (data?.platform && data.platform !== "win32")
+      return { tone: "neu", text: "Windows only", title: "This module runs on Windows endpoints only, so the policy has no effect here" };
     if (data?.paused) return { tone: "med", text: "Paused" };
     if (p.excepted) return { tone: "med", text: "Exception active", title: "An approved access exception lifts this policy here for now" };
     if (p.syncStatus === "FAILED") return { tone: "crit", text: "Sync failed", title: p.syncError ?? undefined };

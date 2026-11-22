@@ -33,7 +33,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
         items: [
           "Each endpoint gets a score from 0 to 100%; the organisation's score is the average over endpoints that checked in within the last 30 days (retired, in-repair and in-storage endpoints aren't counted).",
           "An endpoint's score weighs: vulnerabilities 25 (each open critical CVE takes 25 points off, high 10, medium 3, low 1), patches 20 (5 points off per available patch), Zero Trust 20 (share of conditions passing), security configuration 15 (share of benchmark rules passing), threats 10 (0 while any threat is open) and policy violations 10 (5 points off per blocked attempt in the last 7 days: applications, commands, DLP, USB and screenshots).",
-          "A part the endpoint has no data for, or whose module isn't licensed, is left out and the rest count proportionally more. A Windows version past end of support caps the endpoint at 50%.",
+          "A part the endpoint has no data for, or whose module isn't licensed, is left out and the rest count proportionally more. Linux and Mac endpoints are scored on vulnerabilities and patches, since the other parts come from Windows-only modules. A Windows version past end of support caps the endpoint at 50%.",
           "The score is recorded every hour and kept per day, starting from the day this version was installed; earlier days have no history. The parts beside the score show the organisation's average for each.",
         ],
       },
@@ -199,7 +199,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
           "Security posture (on Overview): vulnerabilities, Zero Trust, patches, security configuration and, on Windows with Threat Protection, threats detected (open, and in the last 30 days). Select one to open that page for this endpoint. Events opens every module's events for this endpoint.",
-          "Applied Policies (on Overview, below Security Posture): every policy assigned to this endpoint, directly or through one of its groups, with its module and its status (Applied, Assigned, Sync failed, Exception active, Paused or Disabled). Click a policy's name to open it.",
+          "Applied Policies (on Overview, below Security Posture): every policy assigned to this endpoint, directly or through one of its groups, with its module and its status (Applied, Assigned, Sync failed, Exception active, Paused or Disabled). These modules run on Windows endpoints only; on a Linux or Mac endpoint, an assigned policy shows Windows only. Click a policy's name to open it.",
           "Software: installed applications with licence status; uninstall them remotely. System software (Windows components, drivers, runtimes such as .NET and Visual C++, OEM tools, Defender and the Endpoint IQ agent) shows System software instead of Uninstall and can't be removed from the console. Sync now fetches the current list from the device.",
           "Block (software with no licence recorded): the endpoint closes the program whenever it starts and the user sees a message; it stays installed. Release lets it run again. Blocks are kept in an Application control policy named Unlicensed software: <endpoint>, and need access to Application control.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",

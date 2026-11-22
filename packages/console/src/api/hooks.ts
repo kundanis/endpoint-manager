@@ -1194,7 +1194,7 @@ export interface AppliedPolicyView {
 export function useAgentAppliedPolicies(agentId: string | undefined) {
   return useQuery({
     queryKey: ["agentAppliedPolicies", agentId],
-    queryFn: () => api.get<{ paused: boolean; policies: AppliedPolicyView[] }>(`/admin/agents/${agentId}/policies`),
+    queryFn: () => api.get<{ paused: boolean; platform: string | null; policies: AppliedPolicyView[] }>(`/admin/agents/${agentId}/policies`),
     enabled: !!agentId,
   });
 }
