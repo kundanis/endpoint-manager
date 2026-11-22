@@ -220,7 +220,7 @@ function AutomaticModePanel() {
 
   async function handleRemove(id: string, severityLabel: string) {
     const confirmed = await confirm({
-      title: `Remove the "${severityLabel} and above" automatic-mode policy?`,
+      title: `Remove the "${severityLabel} and Above" Automatic-Mode Policy?`,
       body: "Missing patches it would have covered are no longer dispatched automatically. Jobs already dispatched are not affected.",
       confirmLabel: "Remove policy",
       tone: "danger",
@@ -230,7 +230,7 @@ function AutomaticModePanel() {
   }
 
   return (
-    <Card title="Automatic mode" hint={policies ? `${policies.length} ${policies.length === 1 ? "policy" : "policies"}` : undefined}>
+    <Card title="Automatic Mode" hint={policies ? `${policies.length} ${policies.length === 1 ? "policy" : "policies"}` : undefined}>
       <div className="app-stack">
         <p className="app-text">
           A standing policy that auto-dispatches any currently-missing patch at or above the chosen severity, on its own —
@@ -290,7 +290,7 @@ function AutomaticModePanel() {
         )}
 
         <form onSubmit={handleCreate} className="app-inset-form">
-          <span className="app-subhead">Add policy</span>
+          <span className="app-subhead">Add Policy</span>
           <FormGrid>
             <Field label="Minimum severity to auto-deploy" htmlFor="auto-patch-min-severity">
               <select
@@ -309,7 +309,7 @@ function AutomaticModePanel() {
           </FormGrid>
           {groups && groups.length > 0 && (
             <div className="app-stack-sm" role="group" aria-label="Target groups">
-              <span className="app-subhead">Target groups (leave blank for all endpoints)</span>
+              <span className="app-subhead">Target Groups (Leave Blank for All Endpoints)</span>
               <div className="app-check-grid">
                 {groups.map((g) => (
                   <Check
@@ -412,7 +412,7 @@ export default function PatchesPage() {
   async function installOnScope() {
     if (!scopeName || selectedUpdateIds.length === 0) return;
     const ok = await confirm({
-      title: `Install ${selectedUpdateIds.length} update(s) on ${scopeName}?`,
+      title: `Install ${selectedUpdateIds.length} Update(s) on ${scopeName}?`,
       body: "Each endpoint installs them at its next check-in. Some updates need a reboot; the job below shows which.",
       confirmLabel: "Install",
     });
@@ -515,7 +515,7 @@ export default function PatchesPage() {
         />
       </KpiStrip>
 
-      <Card flush title={scopeName ? `Missing on ${scopeName}` : "Missing across the fleet"} hint="newest first">
+      <Card flush title={scopeName ? `Missing on ${scopeName}` : "Missing Across the Fleet"} hint="newest first">
         <Toolbar
           right={
             (agentFilter || environmentFilter) && (
@@ -736,13 +736,13 @@ export default function PatchesPage() {
       {selectedUpdateIds.length > 0 && (
         <div ref={deployFormRef} style={{ scrollMarginTop: 16 }}>
           <Row layout="21">
-            <Card title={`Deploy ${selectedUpdateIds.length} selected update(s)`}>
+            <Card title={`Deploy ${selectedUpdateIds.length} Selected Update(s)`}>
               <form onSubmit={handleDispatch} className="app-settings-form">
                 <FormSection title="Targets" description="Pick groups, individual endpoints, or both.">
                   <div className="app-stack">
                     {groups && groups.length > 0 && (
                       <div className="app-stack-sm" role="group" aria-label="Target groups">
-                        <span className="app-subhead">Target groups</span>
+                        <span className="app-subhead">Target Groups</span>
                         <div className="app-check-grid">
                           {groups.map((g) => (
                             <Check
@@ -813,7 +813,7 @@ export default function PatchesPage() {
                   />
                   {selectedUpdates.length > 0 && (
                     <div className="app-stack-sm">
-                      <span className="app-subhead">Selected updates</span>
+                      <span className="app-subhead">Selected Updates</span>
                       {selectedUpdates.map((u) => (
                         <span key={u.updateId} className="app-text">
                           {u.title}
@@ -831,7 +831,7 @@ export default function PatchesPage() {
 
       <AutomaticModePanel />
 
-      <Card flush title="Patch jobs" hint={jobs ? `${jobs.length} total` : undefined}>
+      <Card flush title="Patch Jobs" hint={jobs ? `${jobs.length} total` : undefined}>
         {jobsLoading ? (
           <div className="ep-cb">
             <Skeleton lines={4} />
@@ -897,7 +897,7 @@ export default function PatchesPage() {
       {jobDetail && (
         <Card
           flush
-          title="Patch job detail"
+          title="Patch Job Detail"
           hint={formatDateTime(jobDetail.createdAt)}
           actions={<IconButton icon={X} label="Close job detail" onClick={() => setSelectedJobId(undefined)} />}
         >

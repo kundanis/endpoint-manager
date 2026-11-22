@@ -84,7 +84,7 @@ export default function UndefinedApplications() {
   return (
     <Card
       flush
-      title="Undefined applications"
+      title="Undefined Applications"
       hint={
         data
           ? `${pluralize(apps.length, "application")} on ${pluralize(data.endpointCount, "endpoint")}`

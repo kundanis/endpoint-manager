@@ -38,6 +38,7 @@ import {
   Tag,
   useConfirm,
 } from "../components/ui";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -150,7 +151,7 @@ function RulesPanel({ policy }: { policy: PiiBlockPolicyDetail }) {
       )}
 
       <form onSubmit={handleAdd} className="app-inset-form">
-        <span className="app-subhead">Add PII category</span>
+        <span className="app-subhead">Add PII Category</span>
         {availablePatterns.length > 0 ? (
           <>
             <Field
@@ -236,7 +237,7 @@ export default function PiiBlockPage() {
   const deletePolicy = useDeletePiiBlockPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignPiiBlockPolicy();
@@ -253,7 +254,7 @@ export default function PiiBlockPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its PII categories stop being blocked on every assigned endpoint at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -271,7 +272,7 @@ export default function PiiBlockPage() {
   return (
     <>
       <SectionHeader
-        title="PII data blocking"
+        title="PII Data Blocking"
         description="Block file writes, clipboard copies, and uploads containing selected categories of personal data — email addresses, card numbers, government IDs, and similar — on assigned endpoints. Each policy is a list of PII categories from the same catalog Data Discovery and DLP already use, so a category means the same thing everywhere in this product."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

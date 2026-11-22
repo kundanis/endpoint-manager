@@ -149,7 +149,7 @@ function RulesPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) {
       )}
 
       <div className="app-inset-form">
-        <span className="app-subhead">Add PII category</span>
+        <span className="app-subhead">Add PII Category</span>
         {availablePatterns.length > 0 ? (
           <form onSubmit={handleAdd} className="app-stack-sm">
             <Field
@@ -275,7 +275,7 @@ function TrustedDomainsPanel({ policy }: { policy: PiiEmailBlockPolicyDetail }) 
       )}
 
       <form onSubmit={handleAdd} className="app-inset-form app-stack-sm">
-        <span className="app-subhead">Add trusted domains</span>
+        <span className="app-subhead">Add Trusted Domains</span>
         <Field label="Domains" htmlFor={`email-trusted-${policy.id}`} help="One per line, or comma/semicolon-separated.">
           <textarea
             id={`email-trusted-${policy.id}`}
@@ -354,7 +354,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
   return (
     <div className="app-stack">
       <div className="app-stack-sm">
-        <span className="app-subhead">Currently assigned</span>
+        <span className="app-subhead">Currently Assigned</span>
         {assignments && assignments.length === 0 ? (
           <EmptyState icon={Inbox} title="Not assigned to any mailbox yet">
             Add email addresses below. A policy does nothing until it's assigned.
@@ -393,7 +393,7 @@ function AssignmentPanel({ policyId }: { policyId: string }) {
       </div>
 
       <form onSubmit={handleAssign} className="app-stack-sm">
-        <span className="app-subhead">Assign to</span>
+        <span className="app-subhead">Assign To</span>
         <Field label="Email addresses" htmlFor={`email-assign-${policyId}`} help="One per line, or comma/semicolon-separated.">
           <textarea
             id={`email-assign-${policyId}`}
@@ -512,7 +512,7 @@ export default function EmailAttachmentBlockPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its categories stop applying to every assigned mailbox. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -528,7 +528,7 @@ export default function EmailAttachmentBlockPage() {
   return (
     <>
       <SectionHeader
-        title="Email attachment blocking"
+        title="Email Attachment Blocking"
         description="Blocks (or warns on) an outgoing email in Outlook — desktop, web, and mobile — when an attachment contains a selected category of personal data. Unlike Content & File Policies (and every endpoint-based policy module in this product), this one targets individual mailboxes by email address rather than enrolled endpoints or groups, since a mailbox has no endpoint agent of its own — scanning happens entirely inside a Microsoft 365 add-in installed on the mailbox, not on any managed device."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

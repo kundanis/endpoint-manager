@@ -44,18 +44,18 @@ export const NAV_MODULES: NavModule[] = [
     licenseModule: "ENDPOINT_MANAGER",
     items: [
       { path: "/endpoints", label: "Endpoints" },
-      { path: "/enrollment-tokens", label: "Enrollment tokens" },
+      { path: "/enrollment-tokens", label: "Enrollment Tokens" },
       { path: "/commands", label: "Commands" },
       { path: "/packages", label: "Packages" },
-      { path: "/agent-updates", label: "Agent updates" },
-      { path: "/asset-settings", label: "Asset settings" },
+      { path: "/agent-updates", label: "Agent Updates" },
+      { path: "/asset-settings", label: "Asset Settings" },
     ],
   },
   {
     key: "network",
     label: "Network Insight",
     licenseModule: "NETWORK_MANAGER",
-    items: [{ path: "/network-scan", label: "Network discovery" }],
+    items: [{ path: "/network-scan", label: "Network Discovery" }],
   },
   {
     key: "security",
@@ -64,7 +64,7 @@ export const NAV_MODULES: NavModule[] = [
     items: [
       { path: "/vulnerabilities", label: "Vulnerabilities" },
       { path: "/patches", label: "Patches" },
-      { path: "/security-config", label: "Security configuration" },
+      { path: "/security-config", label: "Security Configuration" },
       { path: "/zero-trust", label: "Zero Trust" },
       // EDR (Lite) hidden from the menu — every agent had it disabled first (see
       // edrEnabled on the Agent model), so no endpoint is actively scanning even though
@@ -76,12 +76,12 @@ export const NAV_MODULES: NavModule[] = [
     label: "Data Governance",
     licenseModule: "DATA_MANAGER",
     items: [
-      { path: "/data-types", label: "Data types" },
-      { path: "/data-discovery", label: "Data discovery" },
+      { path: "/data-types", label: "Data Types" },
+      { path: "/data-discovery", label: "Data Discovery" },
       { path: "/dlp", label: "DLP" },
-      { path: "/data-movement", label: "Data movement" },
+      { path: "/data-movement", label: "Data Movement" },
       { path: "/epm", label: "EPM" },
-      { path: "/access-exceptions", label: "Access exceptions" },
+      { path: "/access-exceptions", label: "Access Exceptions" },
     ],
   },
   {
@@ -91,7 +91,7 @@ export const NAV_MODULES: NavModule[] = [
     items: [
       { path: "/threat-protection/overview", label: "Overview" },
       { path: "/threat-protection/threats", label: "Threats" },
-      { path: "/threat-protection/activity", label: "Scans and actions" },
+      { path: "/threat-protection/activity", label: "Scans and Actions" },
       { path: "/threat-protection/policies", label: "Policies" },
     ],
   },
@@ -100,16 +100,16 @@ export const NAV_MODULES: NavModule[] = [
     label: "Identity Governance",
     licenseModule: "USER_MANAGER",
     items: [
-      { path: "/user-productivity", label: "User productivity" },
-      { path: "/user-risk", label: "User risk", permission: "USER_RISK" },
-      { path: "/admin-logs", label: "Admin logs", superAdminOnly: true },
+      { path: "/user-productivity", label: "User Productivity" },
+      { path: "/user-risk", label: "User Risk", permission: "USER_RISK" },
+      { path: "/admin-logs", label: "Admin Logs", superAdminOnly: true },
     ],
   },
   {
     key: "software",
     label: "App Center",
     licenseModule: "SOFTWARE_MANAGER",
-    items: [{ path: "/software-licenses", label: "Software licenses" }],
+    items: [{ path: "/software-licenses", label: "Software Licenses" }],
   },
   {
     key: "licensing",

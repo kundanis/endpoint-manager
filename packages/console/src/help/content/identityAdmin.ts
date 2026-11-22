@@ -4,13 +4,13 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
   {
     id: "user-productivity",
     module: "Identity Governance",
-    title: "User productivity",
+    title: "User Productivity",
     path: "/user-productivity",
     summary: "Sign-in sessions and active versus idle time on every endpoint, tracked automatically with no policy to set up.",
     keywords: ["idle", "active time", "total active", "week", "month", "year", "login", "logout", "attendance"],
     sections: [
       {
-        title: "What you can see",
+        title: "What You Can See",
         items: [
           "Endpoints reporting, signed-in users, and today's active and idle time.",
           "Total active for the period you pick at the top: Today, This week (from Monday), This month (from the 1st) or This year (from 1 January). It shows as a tile and as a column in Endpoints, and the active versus idle chart follows the same period.",
@@ -22,7 +22,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "up-period",
-        title: "See total active time this month",
+        title: "See Total Active Time This Month",
         steps: [
           { route: "/user-productivity", text: "At the top of the page, select This month." },
           { text: "Read Total active this month on the tile, or per endpoint in the Endpoints table." },
@@ -30,7 +30,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "up-history",
-        title: "See one user's working hours last week",
+        title: "See One User's Working Hours Last Week",
         steps: [
           { route: "/user-productivity", text: "Select the endpoint in Endpoints." },
           { text: "Open Daily history and set the From and To dates." },
@@ -41,7 +41,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
   {
     id: "user-risk",
     module: "Identity Governance",
-    title: "User risk",
+    title: "User Risk",
     path: "/user-risk",
     summary: "One 0–100 risk score per user, from activity in every module, with alerts for suspicious behaviour.",
     keywords: ["insider", "risk score", "ueba", "alerts", "suspicious", "investigation"],
@@ -55,7 +55,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
         ],
       },
       {
-        title: "How the score works",
+        title: "How the Score Works",
         items: [
           "Each alert adds its points; they fade over 7 days. 75+ is critical, 50+ high, 25+ medium.",
           "Alerts closed as false positives don't count.",
@@ -66,7 +66,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "ur-investigate",
-        title: "Investigate an alert",
+        title: "Investigate an Alert",
         steps: [
           { route: "/user-risk/alerts", text: "Open the Alerts tab.", target: { kind: "tab", label: "Alerts" } },
           { text: "Expand the alert to see exactly what happened." },
@@ -75,7 +75,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "ur-email",
-        title: "Get alert emails",
+        title: "Get Alert Emails",
         steps: [
           { route: "/user-risk/settings", text: "Open Rules & settings and scroll to Email notifications.", target: { kind: "tab", label: "Rules & settings" } },
           { text: "Tick Send email notifications, add recipients and choose which severities to email." },
@@ -84,7 +84,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "ur-tune",
-        title: "Reduce false alerts",
+        title: "Reduce False Alerts",
         steps: [
           { route: "/user-risk/settings", text: "Open Rules & settings.", target: { kind: "tab", label: "Rules & settings" } },
           { text: "Add IT admins and service accounts to Excluded users, check the working hours, and raise the threshold of noisy rules." },
@@ -96,14 +96,14 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
   {
     id: "admin-logs",
     module: "Identity Governance",
-    title: "Admin logs",
+    title: "Admin Logs",
     path: "/admin-logs",
     superAdminOnly: true,
     summary: "Everything administrators do, for super admins only: changes, sign-ins and views of sensitive data.",
     keywords: ["audit", "audit trail", "who changed", "sign-in history", "compliance"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Filter by admin, category, result and date, or search; expand an entry for its details.",
           "Details show readable names, such as the endpoint, user, day and policy behind a view of screenshots. Internal record IDs are left out.",
@@ -115,7 +115,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "al-who",
-        title: "Find who changed a policy",
+        title: "Find Who Changed a Policy",
         steps: [
           { route: "/admin-logs", text: "Search for the policy name, or filter Category to Policies." },
           { text: "Expand the entry to see who changed it, when, from which IP, and the values submitted." },
@@ -135,7 +135,7 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     keywords: ["license key", "activate", "seats", "module visibility", "hide module", "threat protection", "edition"],
     sections: [
       {
-        title: "Threat Protection and editions",
+        title: "Threat Protection and Editions",
         items: [
           "Threat Protection (Microsoft Defender management) is sold separately: it appears once the licence includes it. Where licence enforcement is off, the server's THREAT_PROTECTION=true setting turns it on.",
           "The Endpoint IQ Threat Protection edition (PRODUCT_EDITION=threat-protection) shows only Endpoints, Threat Protection, Licensing and Administrators. Moving to full Endpoint IQ keeps all data and agents: change the edition setting and the licence.",
@@ -146,7 +146,7 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "lic-activate",
-        title: "Activate a licence key",
+        title: "Activate a Licence Key",
         steps: [
           { route: "/licensing", text: "Under License server, select Connect (or Test connection)." },
           { text: "Enter the key under Activate a license key. The key then belongs to this deployment." },
@@ -154,7 +154,7 @@ export const ADMIN_TOPICS: HelpTopic[] = [
       },
       {
         id: "lic-hide",
-        title: "Hide a module you don't use",
+        title: "Hide a Module You Don't Use",
         steps: [
           { route: "/licensing", text: "Scroll to Module visibility (super admins only)." },
           { text: "Turn on Hide for the module or menu item and select Save changes. It disappears for every admin." },
@@ -172,7 +172,7 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     keywords: ["users", "roles", "access", "permissions", "password reset", "signed in", "one at a time", "concurrent sign-in", "can't sign in"],
     sections: [
       {
-        title: "One person per role at a time",
+        title: "One Person per Role at a Time",
         items: [
           "Only one super admin can be signed in to the console at a time.",
           "Only one admin with exactly the same modules can be signed in at a time. Admins with different modules can work together.",
@@ -184,7 +184,7 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "admins-add",
-        title: "Add an administrator with limited access",
+        title: "Add an Administrator With Limited Access",
         steps: [
           { route: "/admin-users", text: "Select Add administrator.", target: { kind: "button", label: "Add administrator" } },
           { text: "Enter their email and a password, keep the role Admin, and tick only the modules they need." },

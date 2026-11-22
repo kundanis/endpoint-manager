@@ -59,7 +59,7 @@ export default function BulkPolicyAssignPanel({
   const plural = policyIds.length === 1 ? "policy" : "policies";
 
   return (
-    <Card title={`Assign ${policyIds.length} selected ${plural}`} hint="to groups or individual endpoints">
+    <Card title={`Assign ${policyIds.length} Selected ${plural}`} hint="to groups or individual endpoints">
       <div className="app-stack">
         {groups && groups.length > 0 && (
           <div className="app-stack-sm">

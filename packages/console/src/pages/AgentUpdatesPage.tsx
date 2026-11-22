@@ -134,7 +134,7 @@ function TaskStatus({ status, label }: { status: string; label?: ReactNode }) {
 function BuildPanel({ platform, build }: { platform: string; build: AgentBuildInfo | null }) {
   const platformLabel = PLATFORM_LABELS[platform] ?? platform;
   return (
-    <Card title={`${platformLabel} build`} hint="latest staged" actions={build ? <Badge tone="ok">Staged</Badge> : <Badge tone="neu">Not staged</Badge>}>
+    <Card title={`${platformLabel} Build`} hint="latest staged" actions={build ? <Badge tone="ok">Staged</Badge> : <Badge tone="neu">Not staged</Badge>}>
       {!build ? (
         <EmptyState icon={PackageX} title={`No ${platformLabel} agent build is staged`}>
           <span>
@@ -153,7 +153,7 @@ function BuildPanel({ platform, build }: { platform: string; build: AgentBuildIn
             ]}
           />
           <div className="app-stack-sm">
-            <span className="app-subhead">What's new</span>
+            <span className="app-subhead">What's New</span>
             <div className="app-text" style={{ whiteSpace: "pre-wrap" }}>
               {build.releaseNotes}
             </div>
@@ -190,7 +190,7 @@ function DuplicateEntriesPanel() {
   async function handleDeleteSelected() {
     if (selectedIds.length === 0) return;
     const confirmed = await confirm({
-      title: `Delete ${selectedIds.length} duplicate agent record(s)?`,
+      title: `Delete ${selectedIds.length} Duplicate Agent Record(s)?`,
       body:
         "These are offline, older-version rows for hostnames that already have a newer, currently-active " +
         "record. This only removes the management record - it does not touch anything on any endpoint." +
@@ -203,7 +203,7 @@ function DuplicateEntriesPanel() {
   }
 
   return (
-    <Collapsible title="Duplicate entries" hint={duplicates ? `${duplicates.length} found` : undefined} defaultOpen={false}>
+    <Collapsible title="Duplicate Entries" hint={duplicates ? `${duplicates.length} found` : undefined} defaultOpen={false}>
       <div className="app-stack">
         <p className="app-text">
           Offline endpoints running an older agent version than a newer record that already exists for the same
@@ -283,7 +283,7 @@ function DuplicateEntriesPanel() {
                           label={`Delete the duplicate record for ${d.hostname}`}
                           onClick={async () => {
                             const confirmed = await confirm({
-                              title: `Delete the duplicate record for ${d.hostname}?`,
+                              title: `Delete the Duplicate Record for ${d.hostname}?`,
                               body: "This cannot be undone.",
                               confirmLabel: "Delete record",
                               tone: "danger",
@@ -429,7 +429,7 @@ export default function AgentUpdatesPage() {
   return (
     <>
       <PageHeader
-        title="Agent updates"
+        title="Agent Updates"
         description="Push a new agent build to any endpoint or group without re-running the installer by hand — the agent downloads the update, applies it, and restarts itself automatically."
       />
 
@@ -503,7 +503,7 @@ export default function AgentUpdatesPage() {
       {anyBuildAvailable && (
         <Card
           flush
-          title="Roll out to endpoints"
+          title="Roll Out to Endpoints"
           hint="Windows, Linux and macOS endpoints can be selected together; each gets its own platform's build"
           actions={
             <Button size="sm" icon={Upload} type="submit" form="agent-update-form" disabled={dispatchUpdate.isPending || nothingSelected}>
@@ -638,7 +638,7 @@ export default function AgentUpdatesPage() {
 
             {groups && groups.length > 0 && (
               <div className="ep-cb app-stack-sm">
-                <span className="app-subhead">Target groups</span>
+                <span className="app-subhead">Target Groups</span>
                 <div className="app-check-grid">
                   {groups.map((g) => (
                     <Check
@@ -688,7 +688,7 @@ export default function AgentUpdatesPage() {
         </Alert>
       )}
 
-      <Card flush title="Update jobs" hint={jobs ? `${jobs.length} dispatched · select a job to see per-endpoint progress` : undefined}>
+      <Card flush title="Update Jobs" hint={jobs ? `${jobs.length} dispatched · select a job to see per-endpoint progress` : undefined}>
         {jobsLoading ? (
           <div className="ep-cb">
             <Skeleton />
@@ -760,7 +760,7 @@ export default function AgentUpdatesPage() {
       {jobDetail && (
         <Card
           flush
-          title="Update job detail"
+          title="Update Job Detail"
           hint={
             <>
               {PLATFORM_LABELS[jobDetail.platform] ?? jobDetail.platform} <span className="ep-mono">v{jobDetail.targetVersion}</span>

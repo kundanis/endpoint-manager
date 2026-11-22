@@ -6,6 +6,7 @@ import {
   APP_CATALOG_CATEGORIES,
 } from "@em/shared/src/data/appCatalog";
 import { NotAProgramError, readPeFileInfo } from "@em/shared/src/peFileInfo";
+import { sha256Ranges } from "@em/shared/src/sha256";
 import {
   useAddAppControlRule,
   useDeleteAppControlRule,
@@ -137,7 +138,7 @@ function CommonApplications({ policy }: { policy: AppControlPolicyDetail }) {
   const chosen = APP_CATALOG.filter((a) => selected.has(a.key));
 
   return (
-    <Card title="Common applications" hint={`${selected.size} selected`}>
+    <Card title="Common Applications" hint={`${selected.size} selected`}>
       <div className="app-stack">
         <p className="app-text app-muted">
           Choose the applications people may use. Each is allowed from the
@@ -252,14 +253,20 @@ interface FileReading {
 async function readProgramFile(file: File): Promise<FileReading> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const info = readPeFileInfo(bytes);
-  const total = info.hashRanges.reduce((n, [s, e]) => n + (e - s), 0);
-  const joined = new Uint8Array(total);
-  let at = 0;
-  for (const [s, e] of info.hashRanges) {
-    joined.set(bytes.subarray(s, e), at);
-    at += e - s;
+  let digest: Uint8Array;
+  if (globalThis.crypto?.subtle) {
+    const total = info.hashRanges.reduce((n, [s, e]) => n + (e - s), 0);
+    const joined = new Uint8Array(total);
+    let at = 0;
+    for (const [s, e] of info.hashRanges) {
+      joined.set(bytes.subarray(s, e), at);
+      at += e - s;
+    }
+    digest = new Uint8Array(await crypto.subtle.digest("SHA-256", joined));
+  } else {
+    // Plain http:// pages (other than localhost) have no crypto.subtle.
+    digest = sha256Ranges(bytes, info.hashRanges);
   }
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", joined));
   const hash = Array.from(digest, (b) => b.toString(16).padStart(2, "0"))
     .join("")
     .toUpperCase();
@@ -315,7 +322,9 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
         set({
           ruleType: "ALLOW_PUBLISHER",
           value: r.publisher,
-          productName: r.productName ?? "",
+          // Empty: a vendor's setup often runs helpers signed under another product name
+          // (TeamViewer's setup starts "TeamViewer Installer"), which a product rule blocks.
+          productName: "",
           fileName: "",
           versionMatch: "ANY",
           version: r.fileVersion ?? "",
@@ -375,7 +384,7 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
 
   return (
     <Card
-      title="Custom applications"
+      title="Custom Applications"
       hint={custom.length ? `${custom.length} allowed` : undefined}
     >
       <div className="app-stack">
@@ -410,7 +419,7 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
                           disabled={deleteRule.isPending}
                           onClick={async () => {
                             const ok = await confirm({
-                              title: "Remove this application?",
+                              title: "Remove This Application?",
                               body: "It stops running on assigned endpoints at their next sync.",
                               confirmLabel: "Remove",
                               tone: "danger",
@@ -432,7 +441,7 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
         )}
 
         <form onSubmit={submit} className="app-inset-form">
-          <span className="app-subhead">Add an application</span>
+          <span className="app-subhead">Add an Application</span>
           <div className="app-actions-row">
             <Button
               icon={FileSearch}
@@ -463,8 +472,10 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
                   {reading.fileVersion
                     ? ` · version ${reading.fileVersion}`
                     : ""}
-                  . A publisher rule keeps working after updates; choose File
-                  hash to allow only this exact file.
+                  . The rule below allows every program this publisher signs,
+                  including the helpers its setup runs, and keeps working after
+                  updates. To allow only one product, type its name in Product;
+                  choose File hash to allow only this exact file.
                 </>
               ) : (
                 <>
@@ -494,7 +505,7 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
                           reading.publisher
                         ? {
                             value: reading.publisher,
-                            productName: reading.productName ?? "",
+                            productName: "",
                             fileName: "",
                             version: reading.fileVersion ?? "",
                           }
@@ -560,7 +571,11 @@ function CustomApplications({ policy }: { policy: AppControlPolicyDetail }) {
                 <Field
                   label="Product"
                   htmlFor="allow-product"
-                  help="Optional. Empty allows every product from this publisher."
+                  help={
+                    reading?.productName
+                      ? `Optional. Empty allows every product from this publisher. This file's product is "${reading.productName}"; setups often run helpers under other product names, which a product here would block.`
+                      : "Optional. Empty allows every product from this publisher. Setups often run helpers under other product names, which a product here would block."
+                  }
                 >
                   <input
                     id="allow-product"

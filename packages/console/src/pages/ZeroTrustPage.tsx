@@ -63,6 +63,7 @@ import {
   usePagedList,
   useToast,
 } from "../components/ui";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Pattern A-lite (design-system/docs/PAGE_PATTERNS.md): KPI strip + per-endpoint trust table,
 // with the policy list → tabbed detail workflow (as WebBlockPage) underneath.
@@ -114,7 +115,7 @@ function BuiltInChecksForm({ policy }: { policy: ZeroTrustPolicyDetail }) {
 
   return (
     <div className="app-inset-form">
-      <span className="app-subhead">Add built-in check</span>
+      <span className="app-subhead">Add Built-In Check</span>
       <div className="app-check-grid">
         {available.map((c) => (
           <Check key={c.conditionKey} checked={selected.includes(c.conditionKey)} onChange={() => toggle(c.conditionKey)} label={c.title} hint={c.description} />
@@ -183,7 +184,7 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
 
   async function handleReset(conditionId: string, title: string) {
     const confirmed = await confirm({
-      title: `Reset "${title}" to the built-in check?`,
+      title: `Reset "${title}" to the Built-In Check?`,
       body: "Its title, description, check and expected value are replaced with the current built-in version. Whether it's switched on stays as it is.",
       confirmLabel: "Reset",
     });
@@ -198,7 +199,7 @@ function ConditionsPanel({ policy }: { policy: ZeroTrustPolicyDetail }) {
 
   async function handleDelete(conditionId: string, title: string) {
     const confirmed = await confirm({
-      title: `Delete condition "${title}"?`,
+      title: `Delete Condition "${title}"?`,
       body: "It stops counting toward this policy's trust decision on every assigned endpoint. This cannot be undone.",
       confirmLabel: "Delete condition",
       tone: "danger",
@@ -516,7 +517,7 @@ function FleetTrust({
       {policies.length > 0 && (
         <Row layout="21">
           <Card
-            title="Compliance by policy"
+            title="Compliance by Policy"
             hint="click a policy to list its non-compliant endpoints"
             actions={
               <Legend
@@ -585,7 +586,7 @@ function FleetTrust({
         </Row>
       )}
 
-      <Card flush title="Device trust" hint="all enabled policies">
+      <Card flush title="Device Trust" hint="all enabled policies">
         <Toolbar
           right={
             <Segmented
@@ -783,7 +784,7 @@ function OverridePanel() {
   const canSubmit = selectedAgentIds.length > 0 && selectedConditionKeys.length > 0;
 
   return (
-    <Card title="Policy check override (bulk)">
+    <Card title="Policy Check Override (Bulk)">
       <div className="app-stack">
         <p className="app-text">
           Force specific policy checks to stop counting against selected devices' compliance verdict, regardless of
@@ -899,7 +900,7 @@ function InstallBuiltInDialog({ onClose }: { onClose: (message?: string) => void
 
   return (
     <Modal
-      title="Add built-in policy"
+      title="Add Built-In Policy"
       description="Baseline Device Trust checks OS currency, firewall, disk encryption, patching and Windows Security, plus the antivirus and management agent you choose here. You can change these later."
       onClose={() => onClose()}
       footer={
@@ -984,7 +985,7 @@ export default function ZeroTrustPage() {
     });
   }
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
 
   // Dashboard deep links: ?trust=trusted / ?trust=not-trusted preselect the trust filter on
@@ -1014,7 +1015,7 @@ export default function ZeroTrustPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its conditions stop counting toward the trust status of every assigned endpoint. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",

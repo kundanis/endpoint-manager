@@ -39,6 +39,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 const REGULATION_LABEL: Record<DataDiscoveryRegulation, string> = {
   DPDP: "DPDP (India)",
@@ -465,7 +466,7 @@ export default function DataDiscoveryPage() {
   const deletePolicy = useDeleteDataDiscoveryPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
   const [dataTypeIds, setDataTypeIds] = useState(DEFAULT_DATA_TYPE_IDS);
   const [pathsText, setPathsText] = useState(pathsToText(DEFAULT_TARGET_PATHS));
@@ -488,7 +489,7 @@ export default function DataDiscoveryPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Assigned endpoints stop scanning for it. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -504,7 +505,7 @@ export default function DataDiscoveryPage() {
   return (
     <>
       <PageHeader
-        title="Data discovery"
+        title="Data Discovery"
         description="Find where personal data lives across your endpoints, for DPDP (India's Digital Personal Data Protection Act) and GDPR"
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

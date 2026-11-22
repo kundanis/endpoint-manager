@@ -92,7 +92,7 @@ export function TopicView({ topic, highlightHowTos }: { topic: HelpTopic; highli
       </div>
       {howTos.length > 0 && (
         <div className="app-stack-sm">
-          <span className="app-subhead">How to</span>
+          <span className="app-subhead">How To</span>
           {howTos.map((h, i) => (
             <HowToItem key={h.id} howTo={h} defaultOpen={i === 0 && !!highlightHowTos?.length} />
           ))}

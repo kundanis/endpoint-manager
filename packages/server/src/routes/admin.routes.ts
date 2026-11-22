@@ -56,6 +56,7 @@ import {
   updateAssetDetails,
 } from "../services/agent.service";
 import { getLatestAgentUpdateTaskByAgent } from "../services/agentUpdate.service";
+import { getAppliedPolicies } from "../services/appliedPolicies.service";
 import { getLastPatchInstalledAtByAgent, getLatestMissingPatchByAgent } from "../services/patch.service";
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "../services/zeroTrustOverride.service";
 import { getAgentRollupsCached } from "../cache/fleetCache";
@@ -520,6 +521,15 @@ adminRouter.put("/agents/:id/custom-fields", async (req, res, next) => {
     const payload = setCustomFieldValuesRequestSchema.parse(req.body);
     await setAgentCustomFieldValues(req.params.id, payload.values);
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Every policy assigned to the endpoint, directly or through its groups (Overview).
+adminRouter.get("/agents/:id/policies", async (req, res, next) => {
+  try {
+    res.json(await getAppliedPolicies(req.params.id));
   } catch (err) {
     next(err);
   }

@@ -65,6 +65,7 @@ import {
   type MenuItem,
 } from "../components/ui";
 import { formatDateTime, formatRelative } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Threat Protection: Microsoft Defender managed from the console.
 //  Overview (Pattern A, list with KPI strip) - every Windows endpoint's protection state, with
@@ -149,7 +150,7 @@ function CustomScanDialog({ agentIds, onClose }: { agentIds: string[]; onClose: 
   const paths = text.split("\n").map((p) => p.trim()).filter(Boolean);
   return (
     <Modal
-      title="Scan folders"
+      title="Scan Folders"
       description={`Microsoft Defender scans these folders or files on ${agentIds.length === 1 ? "the endpoint" : `${agentIds.length} endpoints`}.`}
       onClose={onClose}
       footer={
@@ -474,7 +475,7 @@ export function ThreatsPage() {
   return (
     <>
       <PageHeader title="Threats" description="What Microsoft Defender found on your endpoints, what it did about it, and what still needs action." />
-      <Card flush title={view === "open" ? "Open threats" : "All threats"} hint={data ? `${rows.length} shown` : undefined}>
+      <Card flush title={view === "open" ? "Open Threats" : "All Threats"} hint={data ? `${rows.length} shown` : undefined}>
         <Toolbar>
           <SearchInput placeholder="Search threat, endpoint, file or user" value={search} onChange={(e) => setSearch(e.target.value)} />
           <Segmented<"open" | "all">
@@ -580,7 +581,7 @@ export function ThreatActivityPage() {
 
   return (
     <>
-      <PageHeader title="Scans and actions" description="Every scan, signature update and threat action sent to endpoints from Threat Protection, and what happened." />
+      <PageHeader title="Scans and Actions" description="Every scan, signature update and threat action sent to endpoints from Threat Protection, and what happened." />
       <Card flush title="Requests" hint={data ? `${data.length} in this period` : undefined} actions={<RangeSelect days={days} onChange={setDays} />}>
         {isLoading ? (
           <div className="ep-cb">
@@ -712,7 +713,7 @@ function SettingsFields({ idPrefix, value, onChange }: { idPrefix: string; value
   return (
     <>
       <div className="app-stack-sm" role="group" aria-label="Protection">
-        <span className="app-subhead">Protection (turned on and kept on)</span>
+        <span className="app-subhead">Protection (Turned on and Kept On)</span>
         <Check checked={value.realTimeProtection} onChange={(c) => set({ realTimeProtection: c })} label="Real-time protection" hint="Scans files as they're opened, downloaded or run, and watches program behaviour" />
         <Check checked={value.cloudProtection} onChange={(c) => set({ cloudProtection: c })} label="Cloud protection" hint="Asks Microsoft's cloud about new files and blocks brand-new malware at first sight" />
         <Check checked={value.puaProtection} onChange={(c) => set({ puaProtection: c })} label="Block potentially unwanted apps" hint="Adware, bundled toolbars, coin miners and similar software" />
@@ -755,7 +756,7 @@ function SettingsFields({ idPrefix, value, onChange }: { idPrefix: string; value
           />
         </Field>
       </FormGrid>
-      <span className="app-subhead">Exclusions (not scanned)</span>
+      <span className="app-subhead">Exclusions (Not Scanned)</span>
       <span className="app-muted">Keep these few and narrow: anything excluded is never checked for malware. Whole drives, the Windows folder and Downloads are refused.</span>
       <FormGrid>
         <Field label="Folders or files" htmlFor={`${idPrefix}-paths`} help="One per line">
@@ -850,7 +851,7 @@ export function ThreatPoliciesPage() {
   const updatePolicy = useUpdateThreatProtectionPolicy();
   const deletePolicy = useDeleteThreatProtectionPolicy();
   const confirm = useConfirm();
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
   const [newSettings, setNewSettings] = useState(DEFAULT_SETTINGS);
   const { data: policy } = useThreatProtectionPolicy(selectedId);
@@ -864,7 +865,7 @@ export function ThreatPoliciesPage() {
 
   async function handleDelete(id: string, name: string) {
     const ok = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Endpoints keep Defender's current settings; only the exclusions this policy added are removed. Threats already recorded stay. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",

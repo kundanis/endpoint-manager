@@ -59,7 +59,7 @@ function DataTypeForm({ existing, onClose }: { existing?: DataTypeView; onClose:
   const kindOption = CUSTOM_KIND_OPTIONS.find((k) => k.value === kind)!;
   return (
     <Modal
-      title={existing ? `Edit "${existing.name}"` : "New data type"}
+      title={existing ? `Edit "${existing.name}"` : "New Data Type"}
       description="A named list you can add to DLP and EPM policies in one step."
       onClose={onClose}
       footer={
@@ -138,7 +138,7 @@ export default function DataTypesPage() {
 
   async function handleDelete(d: DataTypeView) {
     const ok = await confirm({
-      title: `Delete data type "${d.name}"?`,
+      title: `Delete Data Type "${d.name}"?`,
       body: "Rules already added to policies from it stay in place. This cannot be undone.",
       confirmLabel: "Delete data type",
       tone: "danger",
@@ -149,7 +149,7 @@ export default function DataTypesPage() {
   return (
     <>
       <PageHeader
-        title="Data types"
+        title="Data Types"
         description="Ready-made and custom lists of file types, personal data, websites and applications. Select “Use in policy” to build a DLP or EPM policy from one, or use “Add from data type” inside a policy’s rules."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setEditing("new")}>
@@ -158,7 +158,7 @@ export default function DataTypesPage() {
         }
       />
 
-      <Card flush title="Data types" hint={dataTypes ? `${dataTypes.length} total` : undefined}>
+      <Card flush title="Data Types" hint={dataTypes ? `${dataTypes.length} total` : undefined}>
         <Toolbar>
           <SearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search names and values…" />
           <select className="ep-select" aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)}>

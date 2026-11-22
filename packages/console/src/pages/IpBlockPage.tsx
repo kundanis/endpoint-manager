@@ -38,6 +38,7 @@ import {
   Switch,
   useConfirm,
 } from "../components/ui";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -160,7 +161,7 @@ function RulesPanel({ policy }: { policy: IpBlockPolicyDetail }) {
       )}
 
       <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? "Edit address" : "Add addresses"}</span>
+        <span className="app-subhead">{isEditing ? "Edit Address" : "Add Addresses"}</span>
         <FormGrid>
           <Field
             label="IP address or CIDR range"
@@ -255,7 +256,7 @@ export default function IpBlockPage() {
   const deletePolicy = useDeleteIpBlockPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignIpBlockPolicy();
@@ -272,7 +273,7 @@ export default function IpBlockPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its addresses are unblocked on every assigned endpoint at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -290,7 +291,7 @@ export default function IpBlockPage() {
   return (
     <>
       <SectionHeader
-        title="IP blocking"
+        title="IP Blocking"
         description="Block specific IP addresses or CIDR ranges on assigned endpoints — regardless of what the endpoint's general firewall policy otherwise allows. Enforced via two dedicated Windows Firewall rules (inbound + outbound) that this tool owns exclusively and re-applies on every sync; an explicit block rule always wins over an allow rule in Windows Firewall, order and specificity aside."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

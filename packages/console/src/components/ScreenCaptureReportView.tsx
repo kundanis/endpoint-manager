@@ -71,7 +71,7 @@ export function ScreenCaptureList({ captures, isLoading }: { captures: ScreenCap
 
   async function removeImages(ids: string[]) {
     const ok = await confirm({
-      title: ids.length === 1 ? "Delete this screenshot image?" : `Delete ${ids.length} screenshot images?`,
+      title: ids.length === 1 ? "Delete This Screenshot Image?" : `Delete ${ids.length} Screenshot Images?`,
       body: "The images are removed from the server. The screenshot records (time, user, file name) stay in the report. This cannot be undone.",
       confirmLabel: ids.length === 1 ? "Delete image" : "Delete images",
       tone: "danger",

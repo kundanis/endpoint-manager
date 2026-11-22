@@ -41,6 +41,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime, pluralize } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -311,7 +312,7 @@ export default function CommandBlockPage() {
   const deletePolicy = useDeleteCommandBlockPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignCommandBlockPolicy();
@@ -336,7 +337,7 @@ export default function CommandBlockPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its rules stop being enforced on every assigned endpoint at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -354,7 +355,7 @@ export default function CommandBlockPage() {
   return (
     <>
       <SectionHeader
-        title="Command blocking"
+        title="Command Blocking"
         description="Block specific commands from running on assigned endpoints. Every 20 seconds the agent scans all running processes against every assigned rule (regex, exact command line, or exact process name); any match is logged, and killed immediately unless the owning policy is in alert-only mode. Because this is a best-effort periodic scan, a matching program can run briefly (up to one scan interval) before being caught. Browsers and core OS/desktop processes can never be matched or killed by any rule, regardless of content."
         actions={
           <Button variant="primary" icon={Plus} onClick={openCreate}>

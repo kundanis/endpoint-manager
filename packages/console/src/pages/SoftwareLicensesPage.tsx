@@ -357,7 +357,7 @@ export default function SoftwareLicensesPage() {
 
   async function handleDelete(license: SoftwareLicenseView) {
     const confirmed = await confirm({
-      title: `Delete license "${license.softwareName}"?`,
+      title: `Delete License "${license.softwareName}"?`,
       body: "Its seat, cost and expiry details are removed from the license register. This cannot be undone.",
       confirmLabel: "Delete license",
       tone: "danger",
@@ -417,7 +417,7 @@ export default function SoftwareLicensesPage() {
   return (
     <>
       <PageHeader
-        title="Software licenses"
+        title="Software Licenses"
         description="Purchased licenses, seats in use across the fleet, renewal dates and cost."
         actions={
           <>
@@ -642,7 +642,7 @@ export default function SoftwareLicensesPage() {
 
       <form ref={formRef} className="ep-card" onSubmit={handleSubmit} style={{ scrollMarginTop: 16 }}>
         <FormSection
-          title={isEditing ? "Edit license" : "Add license"}
+          title={isEditing ? "Edit License" : "Add License"}
           description="Name the software as it appears in installed-software inventory so seats in use can be matched automatically."
         >
           <FormGrid>
@@ -704,7 +704,7 @@ export default function SoftwareLicensesPage() {
         </FormSection>
 
         <FormSection
-          title="Cost and renewal"
+          title="Cost and Renewal"
           description="Enter the cost for one billing cycle (e.g. one month if Monthly) — the yearly total is calculated automatically."
         >
           <FormGrid>

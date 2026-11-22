@@ -39,6 +39,7 @@ import {
   Switch,
   useConfirm,
 } from "../components/ui";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -159,7 +160,7 @@ function RulesPanel({ policy }: { policy: WebBlockPolicyDetail }) {
       )}
 
       <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? "Edit domain" : "Add domains"}</span>
+        <span className="app-subhead">{isEditing ? "Edit Domain" : "Add Domains"}</span>
         <FormGrid>
           <Field
             label="Domain"
@@ -254,7 +255,7 @@ export default function WebBlockPage() {
   const deletePolicy = useDeleteWebBlockPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignWebBlockPolicy();
@@ -271,7 +272,7 @@ export default function WebBlockPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its domains are unblocked on every assigned endpoint at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -289,7 +290,7 @@ export default function WebBlockPage() {
   return (
     <>
       <SectionHeader
-        title="Web & email blocking"
+        title="Web & Email Blocking"
         description="Block specific domains — cloud storage, webmail, or any other site — on assigned endpoints. Each domain is blocked two ways: a hosts-file entry (covers any application) and a Chrome/Edge managed URL blocklist entry (survives a hosts-file bypass attempt). Both are re-applied on every sync."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

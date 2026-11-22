@@ -182,7 +182,7 @@ export default function EventsPage() {
       <Card flush>
         <Tabs
           items={[
-            { value: "events", label: "By event" },
+            { value: "events", label: "By Event" },
             { value: "timeline", label: "Timeline" },
           ]}
           value={view}

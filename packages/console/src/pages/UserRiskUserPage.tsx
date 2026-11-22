@@ -104,7 +104,7 @@ export default function UserRiskUserPage() {
         }
       />
 
-      <Card title="Risk score, last 14 days" hint="End-of-day score">
+      <Card title="Risk Score, Last 14 Days" hint="End-of-day score">
         <ScoreTrend history={user.history} />
       </Card>
 
@@ -116,7 +116,7 @@ export default function UserRiskUserPage() {
         )}
       </Card>
 
-      <Card flush title="Activity timeline" hint={timeline ? `${timeline.length}${timeline.length === 1000 ? "+" : ""} events` : undefined}>
+      <Card flush title="Activity Timeline" hint={timeline ? `${timeline.length}${timeline.length === 1000 ? "+" : ""} events` : undefined}>
         <Toolbar>
           <select className="ep-select" aria-label="Activity type" value={group} onChange={(e) => setGroup(Number(e.target.value))}>
             {TYPE_GROUPS.map((g, i) => (

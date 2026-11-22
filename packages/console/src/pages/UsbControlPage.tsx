@@ -38,6 +38,7 @@ import {
   Switch,
   useConfirm,
 } from "../components/ui";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -158,7 +159,7 @@ function RulesPanel({ policy }: { policy: UsbControlPolicyDetail }) {
       )}
 
       <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? "Edit serial number" : "Add serial numbers"}</span>
+        <span className="app-subhead">{isEditing ? "Edit Serial Number" : "Add Serial Numbers"}</span>
         <FormGrid>
           <Field
             label="USB drive serial number"
@@ -253,7 +254,7 @@ export default function UsbControlPage() {
   const deletePolicy = useDeleteUsbControlPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const bulkAssign = useAssignUsbControlPolicy();
@@ -270,7 +271,7 @@ export default function UsbControlPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its endpoints stop enforcing this serial whitelist at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -288,7 +289,7 @@ export default function UsbControlPage() {
   return (
     <>
       <SectionHeader
-        title="USB device control"
+        title="USB Device Control"
         description="Whitelist specific USB storage devices by serial number on assigned endpoints — any USB drive not on the list is disabled shortly after it's inserted. Enforced by an agent poll loop that disables the specific Windows PnP device instance of any unrecognized drive, and reported as an audit event on the endpoint's own detail page."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

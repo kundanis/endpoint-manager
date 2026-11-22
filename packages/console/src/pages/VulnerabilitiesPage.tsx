@@ -151,7 +151,7 @@ function MarkExceptionDialog({
 
   return (
     <Modal
-      title={`Mark ${cveId} as…`}
+      title={`Mark ${cveId} As…`}
       description={`Currently matched on ${affectedAgentCount} endpoint${affectedAgentCount === 1 ? "" : "s"}${filterAgent || filterGroupId ? " in this filter" : ""}. Marked findings leave the counts, are never uninstalled by Remediate, and stay marked after every sync and rescan. Remove the exception under Exceptions to undo it.`}
       onClose={() => onClose()}
       footer={
@@ -215,7 +215,7 @@ function ExceptionsCard({ onOpenCve }: { onOpenCve: (vulnerabilityDefinitionId: 
 
   async function handleRemove(x: VulnerabilityExceptionView) {
     const ok = await confirm({
-      title: `Remove the exception for ${x.cveId}?`,
+      title: `Remove the Exception for ${x.cveId}?`,
       body: "The findings it covered come back as open and can be remediated again.",
       confirmLabel: "Remove exception",
       tone: "danger",
@@ -419,7 +419,7 @@ export default function VulnerabilitiesPage() {
   async function handleRemediateSeverities() {
     if (selectedSeverities.length === 0) return;
     const confirmed = await confirm({
-      title: `Uninstall the vulnerable software for every OPEN ${selectedSeverities.join("/")} finding ${scopeLabel ? `on ${scopeLabel}` : "across the fleet"}?`,
+      title: `Uninstall the Vulnerable Software for Every OPEN ${selectedSeverities.join("/")} Finding ${scopeLabel ? `on ${scopeLabel}` : "Across the Fleet"}?`,
       body:
         "This dispatches a real uninstall command to every affected endpoint. Lower-confidence (name-only) matches " +
         "are skipped automatically.",
@@ -437,7 +437,7 @@ export default function VulnerabilitiesPage() {
     const agentCount = new Set(selected.map((f) => f.agentId)).size;
     const nameOnlyCount = selected.filter((f) => f.matchConfidence !== "PRODUCT_AND_VERSION").length;
     const confirmed = await confirm({
-      title: `Uninstall the software matched to ${detail.cveId} on ${agentCount} selected endpoint(s)?`,
+      title: `Uninstall the Software Matched to ${detail.cveId} on ${agentCount} Selected Endpoint(s)?`,
       body:
         "This dispatches a real uninstall command to each selected endpoint." +
         (nameOnlyCount > 0
@@ -494,7 +494,7 @@ export default function VulnerabilitiesPage() {
       </KpiStrip>
 
       <Card
-        title="Remediate by severity"
+        title="Remediate by Severity"
         hint="uninstalls the matched software"
         actions={
           <Button
@@ -527,7 +527,7 @@ export default function VulnerabilitiesPage() {
         </div>
       </Card>
 
-      <Card flush title={scopeLabel ? "Findings" : "Fleet findings"} hint={scopeLabel ? `possible matches on ${scopeLabel}` : "possible matches"}>
+      <Card flush title={scopeLabel ? "Findings" : "Fleet Findings"} hint={scopeLabel ? `possible matches on ${scopeLabel}` : "possible matches"}>
         <Toolbar
           right={
             scope && (
@@ -878,7 +878,7 @@ export default function VulnerabilitiesPage() {
 
       <ExceptionsCard onOpenCve={openCve} />
 
-      <Card title="CVE catalog" hint="synced from NVD and Microsoft's Security Update Guide">
+      <Card title="CVE Catalog" hint="synced from NVD and Microsoft's Security Update Guide">
         <div className="app-stack">
           <form onSubmit={handleSync} className="app-actions-row" style={{ alignItems: "flex-end" }}>
             <div style={{ minWidth: 280 }}>
@@ -901,7 +901,7 @@ export default function VulnerabilitiesPage() {
           {triggerSync.isError && <Alert tone="critical">{(triggerSync.error as Error).message}</Alert>}
 
           <div className="app-stack-sm">
-            <span className="app-subhead">Sync history</span>
+            <span className="app-subhead">Sync History</span>
             {syncRunsLoading ? (
               <Skeleton lines={2} />
             ) : !syncRuns || syncRuns.length === 0 ? (

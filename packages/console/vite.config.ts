@@ -25,6 +25,8 @@ export default defineConfig({
     // other machines on the LAN at http://<this-machine-ip>:5173.
     host: true,
     port: 5173,
+    // Tailscale names (e.g. http://<machine>.<tailnet>.ts.net:5173), for admins on the tailnet.
+    allowedHosts: [".ts.net"],
     proxy: {
       "/api": {
         // Plain HTTP for now — TLS_PFX_PATH is unset in packages/server/.env, see

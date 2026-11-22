@@ -100,7 +100,7 @@ If the app runs offline or on-premises, self-host the same two families (woff2) 
 |---|---|---|---|
 | `.ep-text-metric-xl` | 32px / 36px | 600 | Hero KPI value. Tabular figures. |
 | `.ep-text-page-title` | 22px / 28px | 600 | One per page. |
-| `.ep-text-card-title` | 14px / 20px | 600 | Card and panel headings. Sentence case, never all caps. |
+| `.ep-text-card-title` | 14px / 20px | 600 | Card and panel headings. Title Case, never all caps. |
 | `.ep-text-body` | 14px / 20px | 400 | Default UI text. |
 | `.ep-text-body-sm` | 13px / 18px | 400 | Table cells, legends, helper text. |
 | `.ep-text-label` | 12px / 16px | 500 | KPI labels, form labels. |
@@ -193,7 +193,7 @@ ApexCharts or ECharts need the same values: font family, 12px labels in `ink-sub
 
 ## 7. Content and voice
 
-- Sentence case everywhere ("Agent coverage by VLAN", "Run network scan").
+- Title Case for headings, tabs, dialog titles and the sidebar menu ("Agent Coverage by VLAN"); sentence case for buttons, labels and text ("Run network scan"). See rule 5 in ../CLAUDE.md.
 - Buttons start with a verb: Export, Enroll endpoint, Create token, Remove agent.
 - Destructive confirmations name the object and the consequence: "Remove agent from 2 endpoints? They will stop reporting and lose their policies."
 - Errors say how to fix them: "Enter a number between 1 and 1,000", not "Invalid value".

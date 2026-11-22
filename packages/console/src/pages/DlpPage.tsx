@@ -13,7 +13,7 @@ export default function DlpPage() {
   return (
     <>
       <PageHeader
-        title="Data loss prevention"
+        title="Data Loss Prevention"
         description="Stop sensitive data leaving through local file writes, clipboard copies and uploads on endpoints."
       />
       <Tabs items={DLP_TABS} />

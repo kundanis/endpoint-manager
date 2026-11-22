@@ -94,7 +94,7 @@ function ManageTemplatesPanel() {
 
   async function handleDelete(t: CommandTemplateView) {
     const confirmed = await confirm({
-      title: `Delete predefined command "${t.name}"?`,
+      title: `Delete Predefined Command "${t.name}"?`,
       body: "This cannot be undone.",
       confirmLabel: "Delete command",
       tone: "danger",
@@ -107,7 +107,7 @@ function ManageTemplatesPanel() {
 
   return (
     <Collapsible
-      title="Manage predefined commands"
+      title="Manage Predefined Commands"
       hint={templates ? pluralize(templates.length, "command") : undefined}
       defaultOpen={false}
     >
@@ -156,7 +156,7 @@ function ManageTemplatesPanel() {
         )}
 
         <form onSubmit={handleSubmit} className="app-inset-form">
-          <span className="app-subhead">{editingId ? "Edit predefined command" : "Add predefined command"}</span>
+          <span className="app-subhead">{editingId ? "Edit Predefined Command" : "Add Predefined Command"}</span>
           <FormGrid>
             <Field label="Name" htmlFor="template-name" required>
               <input id="template-name" className="ep-input" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -242,7 +242,7 @@ export default function CommandsPage() {
 
     if (predefined === ISOLATE_OPTION) {
       const confirmed = await confirm({
-        title: `Isolate ${targetCount} target(s) from the network?`,
+        title: `Isolate ${targetCount} Target(s) From the Network?`,
         body: "This locks down outbound access to DNS and this server only, until released.",
         confirmLabel: "Isolate targets",
         tone: "danger",
@@ -257,7 +257,7 @@ export default function CommandsPage() {
 
     if (predefined === RELEASE_OPTION) {
       const confirmed = await confirm({
-        title: `Release ${targetCount} target(s) from quarantine?`,
+        title: `Release ${targetCount} Target(s) From Quarantine?`,
         body: "This restores normal network access.",
         confirmLabel: "Release targets",
       });
@@ -295,7 +295,7 @@ export default function CommandsPage() {
       />
 
       <form className="ep-card" onSubmit={handleSubmit}>
-        <FormSection title="Run a command" description="Pick a predefined command, or write a custom script.">
+        <FormSection title="Run a Command" description="Pick a predefined command, or write a custom script.">
           <div className="app-stack">
             <FormGrid>
               <Field label="Predefined command" htmlFor="command-predefined" span2>
@@ -361,7 +361,7 @@ export default function CommandsPage() {
           <div className="app-stack-sm">
             {groups && groups.length > 0 && (
               <>
-                <span className="app-subhead">Target groups</span>
+                <span className="app-subhead">Target Groups</span>
                 <div className="app-check-grid">
                   {groups.map((g) => (
                     <Check
@@ -402,7 +402,7 @@ export default function CommandsPage() {
         </FormFooter>
       </form>
 
-      <Card flush title="Recent jobs" hint="last 24 hours">
+      <Card flush title="Recent Jobs" hint="last 24 hours">
         {jobsLoading ? (
           <div className="ep-cb">
             <Skeleton />
@@ -484,7 +484,7 @@ export default function CommandsPage() {
 
       {jobDetail && (
         <Card
-          title="Job detail"
+          title="Job Detail"
           hint={formatDateTime(jobDetail.createdAt)}
           actions={
             <Button size="sm" icon={X} onClick={() => setSelectedJobId(undefined)}>
@@ -531,7 +531,7 @@ export default function CommandsPage() {
                             {task.stdout && <pre className="app-pre">{task.stdout}</pre>}
                             {task.stderr && (
                               <>
-                                <span className="app-subhead">Error output</span>
+                                <span className="app-subhead">Error Output</span>
                                 <pre className="app-pre app-pre-error">
                                   {task.stderr}
                                 </pre>

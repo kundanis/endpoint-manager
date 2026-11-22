@@ -66,7 +66,7 @@ function DevicesWithoutAgentCard() {
   );
 
   return (
-    <Card title="Devices without the agent" actions={openLink}>
+    <Card title="Devices Without the Agent" actions={openLink}>
       {!scanned ? (
         <EmptyState icon={Radar} title="No network scans yet">
           Scan your VLANs on the Network discovery page to find devices that still need the agent.
@@ -205,7 +205,7 @@ function ServerConnectionPanel() {
   return (
     <form className="ep-card" onSubmit={handleSubmit}>
       <FormSection
-        title="Server connection details"
+        title="Server Connection Details"
         description="Agents get every address below automatically — in each token's setup file and, for agents already installed, on their next check-in. An endpoint in the office connects over the local address; one outside (WAN) falls back to the web URL, then the public IP. Nobody has to type a server address during setup."
       >
         {settings && !settings.configured && (
@@ -284,7 +284,7 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
   return (
     <form className="ep-card" onSubmit={handleSubmit}>
       <FormSection
-        title="Install on endpoint (optional)"
+        title="Install on Endpoint (Optional)"
         description="Have this server reach out over PowerShell Remoting (WinRM) and install the agent directly on one or more machines already on the network — no need to copy anything or touch the target machine yourself. Requires WinRM enabled on the targets and an admin credential valid on all of them."
       >
         <div className="app-stack">
@@ -339,7 +339,7 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
         </div>
       </FormSection>
       {job && (
-        <FormSection title="Install status">
+        <FormSection title="Install Status">
           <RemoteInstallStatusTable tasks={job.tasks} />
         </FormSection>
       )}
@@ -589,7 +589,7 @@ export default function EnrollmentTokensPage() {
 
   async function handleRevoke(id: string, tokenLabel: string) {
     const confirmed = await confirm({
-      title: `Revoke token "${tokenLabel}"?`,
+      title: `Revoke Token "${tokenLabel}"?`,
       body: "New agents can no longer enroll with it. Endpoints that already enrolled keep working. This cannot be undone.",
       confirmLabel: "Revoke token",
       tone: "danger",
@@ -605,7 +605,7 @@ export default function EnrollmentTokensPage() {
   return (
     <>
       <PageHeader
-        title="Enrollment tokens"
+        title="Enrollment Tokens"
         description="A new agent needs one of these tokens to enroll. Once enrolled, the agent persists its own identity and never needs the token again."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
@@ -615,7 +615,7 @@ export default function EnrollmentTokensPage() {
       />
 
       {justCreated && (
-        <Card title={`Token created for "${justCreated.label}"`}>
+        <Card title={`Token Created for "${justCreated.label}"`}>
           <div className="app-stack">
             <Alert tone="info" title="Available again later">
               You can download this token's setup file or copy the token any time while it's active, from its{" "}
@@ -814,7 +814,7 @@ export default function EnrollmentTokensPage() {
       <Row layout="21">
         <ServerConnectionPanel />
         <div className="app-stack" style={{ alignSelf: "start" }}>
-        <Card title="Download the agent installer">
+        <Card title="Download the Agent Installer">
           <div className="app-stack">
             <p className="app-text">
               The self-elevating installer (<span className="ep-mono">EndpointProAgentSetup.exe</span>). It already
@@ -848,7 +848,7 @@ export default function EnrollmentTokensPage() {
 
       {creating && (
         <Modal
-          title="Create enrollment token"
+          title="Create Enrollment Token"
           description="The quickest path: create a token, then download its setup file — it already contains this server's addresses and the token, so running it on the target machine needs no typing at all."
           onClose={() => setCreating(false)}
           footer={

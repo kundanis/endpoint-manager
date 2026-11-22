@@ -22,7 +22,7 @@ export default function UserRiskDashboardCard() {
 
   return (
     <Card
-      title="User risk"
+      title="User Risk"
       hint="Riskiest users, last 7 days"
       actions={
         <Link className="ep-link" to="/user-risk/alerts">

@@ -61,7 +61,7 @@ export default function UseInPolicyDialog({ dataType, onClose }: { dataType: Dat
 
   return (
     <Modal
-      title={`Use "${dataType.name}" in a policy`}
+      title={`Use "${dataType.name}" in a Policy`}
       description="Each ticked value becomes a rule in the policy."
       onClose={onClose}
       footer={

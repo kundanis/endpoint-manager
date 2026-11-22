@@ -54,7 +54,7 @@ function AddFromDataTypesDialog({ target, policyId, onClose }: { target: DataTyp
 
   return (
     <Modal
-      title="Add from data type"
+      title="Add From Data Type"
       description="Each value of the chosen data types becomes a rule in this policy. Values the policy already has are skipped."
       onClose={onClose}
       footer={

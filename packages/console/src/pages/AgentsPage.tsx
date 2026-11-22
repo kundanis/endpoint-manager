@@ -381,7 +381,7 @@ function NetworkDevicesPanel() {
   return (
     <Collapsible
       id={NETWORK_DEVICES_PANEL_ID}
-      title="Unmanaged network devices"
+      title="Unmanaged Network Devices"
       hint={`${totalCount} seen without an agent`}
       defaultOpen={false}
     >
@@ -568,7 +568,7 @@ export default function AgentsPage() {
   async function handleQuarantineToggle(agent: AgentListItem) {
     if (agent.quarantined) {
       const confirmed = await confirm({
-        title: `Release ${agent.hostname} from quarantine?`,
+        title: `Release ${agent.hostname} From Quarantine?`,
         body: "This restores normal outbound network access on the endpoint.",
         confirmLabel: "Release endpoint",
       });

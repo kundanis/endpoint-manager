@@ -40,7 +40,7 @@ Build or restyle each shared component once, then reuse it:
 | Red sidebar, red active pill | `.ep-sb`, with `.ep-ni.ep-on` (pink tint plus a 3px brand bar) |
 | Top-right "Log out" pill | Avatar menu in `.ep-tb` |
 | Stat boxes (Total endpoints 292…) | `.ep-kpi` with ratio and trend |
-| Card titles in UPPERCASE | `.ep-ch h3`, sentence case |
+| Card titles in UPPERCASE | `.ep-ch h3`, Title Case |
 | Donut per category (device type, OS) | Ranked bars `.ep-bl` |
 | Donut per VLAN (6 donuts) | One coverage table `.ep-cov` + `.ep-sbar` |
 | "Other — 243 (83%)" slice | Neutral bar at the end, plus an `ep-b-med` "243 unclassified" badge |
@@ -80,7 +80,7 @@ After all pages are done, remove the unused legacy CSS files and any dead colour
 - [ ] Brand red appears only on the logo, the primary button, the active nav or tab, and checkbox/switch fills.
 - [ ] Every status has a word, and severity uses `ep-badge` with the fixed vocabulary.
 - [ ] Numbers use `.ep-num`, and hostnames, IPs, CVEs and versions use `.ep-mono`.
-- [ ] Titles and buttons are in sentence case, and buttons start with a verb.
+- [ ] Headings, tabs and dialog titles are in Title Case; buttons are in sentence case and start with a verb.
 - [ ] Empty, loading (skeleton) and error states exist for every card and table.
 - [ ] Keyboard: everything can be reached with Tab, the focus ring is visible, Esc closes menus and modals, and icon buttons have `aria-label`.
 - [ ] The page works at 1440px, 1280px and 960px wide.

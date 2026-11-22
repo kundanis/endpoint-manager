@@ -246,7 +246,7 @@ export async function confirmLargeBlockingAssignment(
   const count = agentIds.length + groups.filter((g) => groupIds.includes(g.id)).reduce((n, g) => n + g.memberCount, 0);
   if (count < LARGE_BLOCKING_ASSIGNMENT) return true;
   return confirm({
-    title: `Apply a blocking policy to about ${count} endpoints?`,
+    title: `Apply a Blocking Policy to About ${count} Endpoints?`,
     body: "Its rules take effect on every one of them within a minute. If you haven't yet, assign it to a few test devices first and check they still work normally. Endpoints can be released at once with Pause, or from EPM with Emergency release.",
     confirmLabel: "Assign",
     tone: "danger",
@@ -298,7 +298,7 @@ export function AssignmentEditor({
   return (
     <div className="app-stack">
       <div className="app-stack-sm">
-        <span className="app-subhead">Currently assigned</span>
+        <span className="app-subhead">Currently Assigned</span>
         {rows && rows.length === 0 ? (
           <EmptyState icon={Users} title="Not assigned yet">
             Pick groups or endpoints below. A policy does nothing until it's assigned.
@@ -339,7 +339,7 @@ export function AssignmentEditor({
       </div>
 
       <div className="app-stack-sm">
-        <span className="app-subhead">Assign to</span>
+        <span className="app-subhead">Assign To</span>
         {hiddenCount > 0 && (
           <p className="app-text app-muted">
             {hiddenCount} already-assigned {hiddenCount === 1 ? "target is" : "targets are"} not listed (assigned directly or

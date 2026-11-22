@@ -35,6 +35,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // EPM -> Screenshot blocking: policy list -> selected policy's Activity / Assignment / Settings.
 // Endpoints swallow the screenshot keys, close screenshot tools and (optionally) clear pictures
@@ -90,7 +91,7 @@ function SettingsFields({ idPrefix, value, onChange }: { idPrefix: string; value
   return (
     <>
       <div className="app-stack-sm" role="group" aria-label="What to block">
-        <span className="app-subhead">What to block</span>
+        <span className="app-subhead">What to Block</span>
         <Check
           checked={value.blockKeys}
           onChange={(c) => set({ blockKeys: c })}
@@ -368,7 +369,7 @@ export default function ScreenshotBlockPage() {
   const deletePolicy = useDeleteScreenshotBlockPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
   const [newSettings, setNewSettings] = useState(DEFAULT_SETTINGS);
   const { data: policy } = useScreenshotBlockPolicy(selectedId);
@@ -382,7 +383,7 @@ export default function ScreenshotBlockPage() {
 
   async function handleDelete(id: string, name: string) {
     const ok = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its endpoints can take screenshots again within a minute, unless another policy still blocks them. The blocked attempts already recorded stay. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -393,7 +394,7 @@ export default function ScreenshotBlockPage() {
   return (
     <>
       <SectionHeader
-        title="Screenshot blocking"
+        title="Screenshot Blocking"
         description="Stop users taking screenshots on assigned endpoints: the Print Screen and Win+Shift+S keys do nothing, screenshot tools are closed when they open and, optionally, pictures copied to the clipboard are removed. Users are told each time, and every attempt is listed under Activity."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

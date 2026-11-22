@@ -62,7 +62,7 @@ function LicenseApiPanel() {
 
   if (isLoading) {
     return (
-      <Card title="License server">
+      <Card title="License Server">
         <Skeleton lines={3} />
       </Card>
     );
@@ -73,7 +73,7 @@ function LicenseApiPanel() {
   return (
     <form className="ep-card" onSubmit={handleConnect}>
       <FormSection
-        title="License server"
+        title="License Server"
         description="Enter the address of the vendor's central License Server. A key can only be activated once a connection to it is confirmed."
       >
         <div className="app-stack">
@@ -157,7 +157,7 @@ function ModuleVisibilityPanel() {
 
   if (isLoading) {
     return (
-      <Card title="Module visibility">
+      <Card title="Module Visibility">
         <Skeleton lines={3} />
       </Card>
     );
@@ -165,14 +165,14 @@ function ModuleVisibilityPanel() {
 
   if (me?.role !== "SUPER_ADMIN") {
     return (
-      <Card title="Module visibility">
+      <Card title="Module Visibility">
         <p className="app-text">Only a super admin can hide/unhide modules. Ask one to change this if needed.</p>
       </Card>
     );
   }
 
   return (
-    <Card title="Module visibility" hint="applies to every admin on this deployment">
+    <Card title="Module Visibility" hint="applies to every admin on this deployment">
       <div className="app-settings-form">
         <div className="app-stack">
           <p className="app-text">
@@ -346,7 +346,7 @@ export default function LicenseActivationPage() {
           {canActivate ? (
             <form className="ep-card" onSubmit={handleActivate}>
               <FormSection
-                title={status?.activated ? "Activate a replacement key" : "Activate a license key"}
+                title={status?.activated ? "Activate a Replacement Key" : "Activate a License Key"}
                 description="Activation is one-time-use — once a key is redeemed here, it locks to this deployment."
               >
                 <div className="app-stack">
@@ -372,7 +372,7 @@ export default function LicenseActivationPage() {
               </FormFooter>
             </form>
           ) : (
-            <Card title="Activate a license key">
+            <Card title="Activate a License Key">
               <EmptyState icon={PlugZap} title="Not connected to the License Server">
                 Connect to the License Server above first.
               </EmptyState>
@@ -382,7 +382,7 @@ export default function LicenseActivationPage() {
           {status?.activated && (
             <form className="ep-card" onSubmit={handleUnlockRequest}>
               <FormSection
-                title="Request an unlock"
+                title="Request an Unlock"
                 description="If this deployment is being migrated to new hardware, or the license needs to be re-activated for any other reason, send an unlock request to the vendor. A vendor admin reviews and approves it manually before the key can be activated again."
               >
                 <div className="app-stack">

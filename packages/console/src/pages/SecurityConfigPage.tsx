@@ -170,7 +170,7 @@ function GpoImportModal({
 
   return (
     <Modal
-      title="Import from Group Policy backup"
+      title="Import From Group Policy Backup"
       description="Each computer setting becomes a rule with a check and a fix. Choose the GPOs to import."
       onClose={() => onClose()}
       footer={
@@ -290,7 +290,7 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
 
   async function handleDeleteRule(ruleId: string, ruleTitle: string) {
     const confirmed = await confirm({
-      title: `Delete rule "${ruleTitle}"?`,
+      title: `Delete Rule "${ruleTitle}"?`,
       body: "Its pass/fail results are no longer reported for this benchmark. This cannot be undone.",
       confirmLabel: "Delete rule",
       tone: "danger",
@@ -354,7 +354,7 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
       )}
 
       <div className="app-inset-form">
-        <span className="app-subhead">Import rules</span>
+        <span className="app-subhead">Import Rules</span>
         <p className="app-text">Start from the JSON template, then import a file containing an array of rule objects.</p>
         <div className="app-actions-row">
           <Button icon={Download} onClick={downloadTemplate}>
@@ -378,7 +378,7 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
       </div>
 
       <div className="app-inset-form">
-        <span className="app-subhead">Import from Group Policy</span>
+        <span className="app-subhead">Import From Group Policy</span>
         <p className="app-text">
           Upload a Group Policy backup as a .zip — a Microsoft Security Compliance Toolkit baseline, a CIS Build Kit, or
           your own <span className="ep-mono">Backup-GPO</span> export. Its computer settings (administrative templates,
@@ -415,7 +415,7 @@ function RulesPanel({ benchmark }: { benchmark: SecurityBenchmarkDetail }) {
       )}
 
       <form onSubmit={handleAddRule} className="app-inset-form">
-        <span className="app-subhead">Add rule manually</span>
+        <span className="app-subhead">Add Rule Manually</span>
         <FormGrid>
           <Field label="Rule key" htmlFor="sec-rule-key" required>
             <input id="sec-rule-key" className="ep-input ep-mono" type="text" value={ruleKey} onChange={(e) => setRuleKey(e.target.value)} required />
@@ -543,7 +543,7 @@ function AgentFailedRules({ benchmarkId, agentId, hostname }: { benchmarkId: str
     const ruleIds = [...selected];
     if (ruleIds.length === 0) return;
     const confirmed = await confirm({
-      title: `Run remediation for ${ruleIds.length} rule(s) on ${hostname}?`,
+      title: `Run Remediation for ${ruleIds.length} Rule(s) on ${hostname}?`,
       body: "Each selected rule's remediation PowerShell runs on the endpoint and changes its configuration.",
       confirmLabel: "Remediate",
       tone: "danger",
@@ -665,7 +665,7 @@ function CompliancePanel({
 
   async function handleRemediateAll(agentId: string, hostname: string, failCount: number) {
     const confirmed = await confirm({
-      title: `Remediate all ${failCount} failing rule(s) on ${hostname}?`,
+      title: `Remediate All ${failCount} Failing Rule(s) on ${hostname}?`,
       body: "Every failing rule that has a remediation PowerShell script runs it on the endpoint and changes its configuration.",
       confirmLabel: "Remediate all",
       tone: "danger",
@@ -878,7 +878,7 @@ function BenchmarkDetail({
           items={[
             { value: "rules", label: `Rules (${benchmark.rules.length})` },
             { value: "assignment", label: "Assignment" },
-            { value: "compliance", label: "Compliance by endpoint" },
+            { value: "compliance", label: "Compliance by Endpoint" },
           ]}
           value={tab}
           onChange={setTab}
@@ -937,7 +937,7 @@ export default function SecurityConfigPage() {
 
   async function handleDelete(id: string, benchmarkName: string) {
     const confirmed = await confirm({
-      title: `Delete benchmark "${benchmarkName}"?`,
+      title: `Delete Benchmark "${benchmarkName}"?`,
       body: "Its rules, assignments and compliance results are removed. This cannot be undone.",
       confirmLabel: "Delete benchmark",
       tone: "danger",
@@ -966,7 +966,7 @@ export default function SecurityConfigPage() {
   return (
     <>
       <PageHeader
-        title="Security configuration"
+        title="Security Configuration"
         description="Scan endpoints against a security benchmark — the built-in CIS-aligned baselines, a Group Policy baseline you import, or rules you define — and track pass/fail compliance per rule."
         actions={
           <>
@@ -1094,7 +1094,7 @@ export default function SecurityConfigPage() {
 
       {creating && (
         <Modal
-          title="New custom benchmark"
+          title="New Custom Benchmark"
           description="Pick the platform its rules check, then add or import rules once it's created."
           onClose={() => setCreating(false)}
           footer={

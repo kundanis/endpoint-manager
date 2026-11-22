@@ -55,7 +55,7 @@ function AgentRow({ agent }: { agent: EdrAgentSummaryView }) {
   async function handleIsolateToggle() {
     if (agent.quarantined) {
       const confirmed = await confirm({
-        title: `Release ${agent.hostname} from quarantine?`,
+        title: `Release ${agent.hostname} From Quarantine?`,
         body: "This restores normal outbound network access on the endpoint.",
         confirmLabel: "Release endpoint",
       });
@@ -125,7 +125,7 @@ export default function EdrPage() {
   return (
     <>
       <PageHeader
-        title="EDR (lite)"
+        title="EDR (Lite)"
         description="Process-tree and command-line heuristics plus a new-persistence-entry watch, scanned every 30 seconds on each endpoint"
       />
 

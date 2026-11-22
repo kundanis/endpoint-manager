@@ -7,22 +7,38 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
     title: "Dashboard",
     path: "/dashboard",
     summary: "A live view of the whole estate. Every tile, bar and chart segment opens the matching filtered list.",
-    keywords: ["alerts", "notifications", "bell", "violations", "alarm"],
+    keywords: ["alerts", "notifications", "bell", "violations", "alarm", "posture", "score", "trend", "graph", "security score", "sidebar", "menu", "collapse", "navigation"],
     sections: [
       {
-        title: "What's on it",
+        title: "What's on It",
         items: [
           "Headline tiles: total endpoints, online now, endpoints with vulnerabilities, Zero Trust status and unmanaged devices.",
           "Device type and Operating system: click a bar to see those endpoints.",
           "Vulnerability exposure, Zero Trust status, Patch status and Configuration compliance.",
           "Connectivity and Agent coverage by VLAN: managed and unmanaged hosts per network segment.",
-          "Unmanaged devices: devices on the network without the agent.",
+          "Organisation Security Posture: the organisation's overall score and its rise or fall over the period, drawn like a stock chart; choose 1W, 1M, 3M, 6M or 1Y under it. The line and its shaded area are green at 80% and above, orange from 60% to 79% and red below 60%; the dotted line marks where the period started. Move the pointer along the chart to see that day's score at the top; Show as table lists every day.",
           "User risk: the riskiest users and open alerts (only for admins with User risk access).",
           "Cards hide automatically when their module is hidden or not licensed.",
         ],
       },
       {
-        title: "Alert bell (top bar, every page)",
+        title: "Getting Around",
+        items: [
+          "The collapse button at the top left, beside the page path, folds the left menu to a strip of module icons so pages get more room. Select a module's icon to bring the full menu back with that module open, or select the button again.",
+          "Your browser remembers whether the menu is folded. On narrow screens the menu opens from the menu button instead.",
+        ],
+      },
+      {
+        title: "How the Security Posture Score Works",
+        items: [
+          "Each endpoint gets a score from 0 to 100%; the organisation's score is the average over endpoints that checked in within the last 30 days (retired, in-repair and in-storage endpoints aren't counted).",
+          "An endpoint's score weighs: vulnerabilities 25 (each open critical CVE takes 25 points off, high 10, medium 3, low 1), patches 20 (5 points off per available patch), Zero Trust 20 (share of conditions passing), security configuration 15 (share of benchmark rules passing), threats 10 (0 while any threat is open) and policy violations 10 (5 points off per blocked attempt in the last 7 days: applications, commands, DLP, USB and screenshots).",
+          "A part the endpoint has no data for, or whose module isn't licensed, is left out and the rest count proportionally more. A Windows version past end of support caps the endpoint at 50%.",
+          "The score is recorded every hour and kept per day, starting from the day this version was installed; earlier days have no history. The parts beside the score show the organisation's average for each.",
+        ],
+      },
+      {
+        title: "Alert Bell (Top Bar, Every Page)",
         items: [
           "The bell lists policy violations and matches from the last 7 days, one line per kind: DLP matches, files moved out, users over the screenshot limit, blocked screenshots, apps, commands and USB devices, emails with personal data, high and critical EDR detections and user risk alerts, and pause or access requests waiting for approval.",
           "A red dot means something new arrived since you last opened the bell; each line shows how many are new. Click a line to open its page.",
@@ -33,7 +49,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "dashboard-bell",
-        title: "Check new policy violations",
+        title: "Check New Policy Violations",
         steps: [
           { text: "Click the bell at the top right of any page." },
           { text: "Lines marked new arrived since you last looked. Click one to open that module's page." },
@@ -41,7 +57,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
       },
       {
         id: "dashboard-drill",
-        title: "Find the endpoints behind a number",
+        title: "Find the Endpoints Behind a Number",
         steps: [
           { route: "/dashboard", text: "Click any headline tile, bar or chart segment on the dashboard." },
           { text: "The matching list opens already filtered. Remove a filter chip to widen it again." },
@@ -49,10 +65,10 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
       },
       {
         id: "dashboard-scan",
-        title: "Look for devices without the agent",
+        title: "Look for Devices Without the Agent",
         steps: [
           { route: "/dashboard", text: "Select Run network scan to scan every enabled VLAN.", target: { kind: "button", label: "Run network scan" } },
-          { text: "When it finishes, the Unmanaged devices card lists what was found. Install the agent on them from Endpoints." },
+          { text: "When it finishes, the Unmanaged devices tile shows how many were found. Select it to open Network discovery with the list, and install the agent on them from there." },
         ],
       },
     ],
@@ -67,7 +83,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
     keywords: ["activity", "alerts", "violations", "timeline", "log", "siem", "audit", "incidents", "history"],
     sections: [
       {
-        title: "By event",
+        title: "By Event",
         items: [
           "Each kind of event appears once, with its severity, category, how many endpoints it happened on, how many times and when it was last seen.",
           "Click a row to see the endpoints it happened on. Click an endpoint to show only that endpoint's events.",
@@ -81,21 +97,21 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
         ],
       },
       {
-        title: "Filters and period",
+        title: "Filters and Period",
         items: [
           "Filter by endpoint, group, category, severity and event type. The filters stay in the page address, so you can bookmark or share a filtered view.",
           "Period: the last 24 hours, 7 days (the default), 30 days or 90 days.",
           "Endpoint and group filters leave out events that aren't tied to an endpoint: user risk alerts and email attachment blocks.",
           "Zero Trust and security configuration failures are states rather than one-off events: they appear while a check is still failing, at the last time it was seen failing.",
           "Admin actions are not shown here: they are in Identity Governance → Admin logs.",
-          "You only see events from modules you have access to, that are licensed and not hidden. An endpoint's Security posture card links here with that endpoint selected.",
+          "You only see events from modules you have access to, that are licensed and not hidden. An endpoint's Security Posture card links here with that endpoint selected.",
         ],
       },
     ],
     howTos: [
       {
         id: "events-endpoint",
-        title: "See everything that happened on one endpoint",
+        title: "See Everything That Happened on One Endpoint",
         steps: [
           { route: "/events", text: "Choose the endpoint in the Endpoint filter.", target: { kind: "field", label: "Endpoint" } },
           { text: "Switch to Timeline to see each event in order.", target: { kind: "tab", label: "Timeline" } },
@@ -103,7 +119,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
       },
       {
         id: "events-spread",
-        title: "Find out how many endpoints an event happened on",
+        title: "Find Out How Many Endpoints an Event Happened On",
         steps: [
           { route: "/events", text: "On By event, read the Endpoints column.", target: { kind: "tab", label: "By event" } },
           { text: "Click the row to list those endpoints, with how often it happened on each." },
@@ -111,7 +127,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
       },
       {
         id: "events-critical",
-        title: "Review critical and high events",
+        title: "Review Critical and High Events",
         steps: [
           { route: "/events", text: "Click the Critical and high tile to filter to them.", target: { kind: "text", label: "Critical and high" } },
           { text: "Open each event's module page with the arrow icon to act on it." },
@@ -131,7 +147,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     keywords: ["devices", "inventory", "computers", "laptops", "quarantine", "export", "csv"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Search by hostname, IP or user; filter by group, device type and online or offline.",
           "Choose which columns to show with Columns (processor, memory, storage, warranty, OS end of support and more).",
@@ -145,7 +161,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "endpoints-columns",
-        title: "Show more columns in the list",
+        title: "Show More Columns in the List",
         steps: [
           { route: "/endpoints", text: "Select Columns above the table.", target: { kind: "button", label: "Columns" } },
           { text: "Tick the columns you want. Your choice is remembered for you." },
@@ -153,7 +169,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "endpoints-export",
-        title: "Export the endpoint inventory",
+        title: "Export the Endpoint Inventory",
         steps: [
           { route: "/endpoints", text: "Filter the list first if you only want some endpoints." },
           { text: "Select Export CSV. The file includes about 30 inventory fields.", target: { kind: "button", label: "Export CSV" } },
@@ -161,7 +177,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "endpoints-quarantine",
-        title: "Quarantine a compromised device",
+        title: "Quarantine a Compromised Device",
         steps: [
           { route: "/endpoints", text: "Find the device in the list." },
           { text: "Open its row menu (the three dots at the end of the row) and select Quarantine." },
@@ -173,7 +189,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
   {
     id: "endpoint-detail",
     module: "Endpoint Hub",
-    title: "Endpoint detail",
+    title: "Endpoint Detail",
     path: "/endpoints/",
     summary: "Everything about one device, in seven tabs, plus remote actions.",
     keywords: ["remote desktop", "rdp", "uninstall", "pause", "notes", "asset", "warranty", "history", "sync", "uninstalled apps", "system software"],
@@ -183,6 +199,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
           "Security posture (on Overview): vulnerabilities, Zero Trust, patches, security configuration and, on Windows with Threat Protection, threats detected (open, and in the last 30 days). Select one to open that page for this endpoint. Events opens every module's events for this endpoint.",
+          "Applied Policies (on Overview, below Security Posture): every policy assigned to this endpoint, directly or through one of its groups, with its module and its status (Applied, Assigned, Sync failed, Exception active, Paused or Disabled). Click a policy's name to open it.",
           "Software: installed applications with licence status; uninstall them remotely. System software (Windows components, drivers, runtimes such as .NET and Visual C++, OEM tools, Defender and the Endpoint IQ agent) shows System software instead of Uninstall and can't be removed from the console. Sync now fetches the current list from the device.",
           "Block (software with no licence recorded): the endpoint closes the program whenever it starts and the user sees a message; it stays installed. Release lets it run again. Blocks are kept in an Application control policy named Unlicensed software: <endpoint>, and need access to Application control.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
@@ -196,7 +213,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "detail-rdp",
-        title: "Connect to a device with Remote Desktop",
+        title: "Connect to a Device With Remote Desktop",
         steps: [
           { text: "Open the endpoint and go to the Manage tab.", target: { kind: "tab", label: "Manage" } },
           { text: "Select Enable remote access. Port 3389 opens on that device for your IP address only.", target: { kind: "button", label: "Enable remote access" } },
@@ -206,7 +223,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "detail-uninstall-app",
-        title: "Uninstall software from a device",
+        title: "Uninstall Software From a Device",
         steps: [
           { text: "Open the endpoint and go to the Software tab.", target: { kind: "tab", label: "Software" } },
           { text: "Find the application and select Uninstall on its row. MSI installs are removed silently. Rows marked System software can't be uninstalled." },
@@ -215,7 +232,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "detail-block-app",
-        title: "Block unlicensed software on a device",
+        title: "Block Unlicensed Software on a Device",
         steps: [
           { text: "Open the endpoint and go to the Software tab.", target: { kind: "tab", label: "Software" } },
           { text: "Set the licence filter to No licence recorded and select Block on the application's row." },
@@ -225,7 +242,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "detail-update-agent",
-        title: "Update the agent on one device",
+        title: "Update the Agent on One Device",
         steps: [
           { text: "Open the endpoint. On the Overview tab, the Agent card shows the version.", target: { kind: "tab", label: "Overview" } },
           { text: "If a newer build is available, select Update to vX and watch the progress there." },
@@ -236,13 +253,13 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
   {
     id: "enrollment-tokens",
     module: "Endpoint Hub",
-    title: "Enrollment tokens",
+    title: "Enrollment Tokens",
     path: "/enrollment-tokens",
     summary: "Tokens that let new devices join, the agent installers, and the addresses agents use to reach this server.",
     keywords: ["install agent", "enroll", "setup exe", "deploy agent", "mac", "linux", "winrm", "server url", "blocked by group policy", "without powershell"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Create a token with an expiry, a usage limit and a group new devices join automatically. Choose New group… in Target group to create one there.",
           "Download a ready-to-run Windows setup file for a token: nothing to type on the device.",
@@ -257,7 +274,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "tokens-windows",
-        title: "Install the agent on a Windows PC",
+        title: "Install the Agent on a Windows PC",
         steps: [
           { route: "/enrollment-tokens", text: "Select Create token.", target: { kind: "button", label: "Create token" } },
           { text: "Give it a label, choose how long it's valid and how many devices may use it, and optionally a group. To make a new group, choose New group…, type its name and select Create group. Create the token." },
@@ -267,7 +284,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "tokens-windows-no-powershell",
-        title: "Install on a PC where PowerShell is blocked",
+        title: "Install on a PC Where PowerShell Is Blocked",
         steps: [
           { route: "/enrollment-tokens", text: "If setup says \"This program is blocked by group policy\", the PC's Group Policy blocks PowerShell." },
           { text: "In the token list, open the token's ⋯ menu and select Download Windows setup without PowerShell. Without a token, use Without PowerShell under Download the agent installer." },
@@ -277,7 +294,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "tokens-linux-mac",
-        title: "Install the agent on a Mac or Linux machine",
+        title: "Install the Agent on a Mac or Linux Machine",
         steps: [
           { route: "/enrollment-tokens", text: "Scroll to Install on Mac or Linux and choose macOS or Linux." },
           { text: "Pick the token to use and select Copy command." },
@@ -286,7 +303,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "tokens-push",
-        title: "Push-install to many Windows PCs at once",
+        title: "Push-Install to Many Windows PCs at Once",
         steps: [
           { route: "/enrollment-tokens", text: "Create a token, then open Install on endpoint (optional)." },
           { text: "List the hostnames or IP addresses, enter an administrator account and start the install. Progress shows per machine." },
@@ -295,7 +312,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "tokens-addresses",
-        title: "Change the address agents connect to",
+        title: "Change the Address Agents Connect To",
         steps: [
           { route: "/enrollment-tokens", text: "Find Server connection details." },
           { text: "Enter the LAN address, the HTTPS web address and the public IP. Agents try them in that order." },
@@ -313,7 +330,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     keywords: ["script", "powershell", "bash", "isolate", "run", "remote command"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Run PowerShell or cmd on Windows, bash or sh on macOS and Linux, with a timeout.",
           "Use predefined actions such as isolate from network and release from quarantine.",
@@ -325,7 +342,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "commands-run",
-        title: "Run a script on several endpoints",
+        title: "Run a Script on Several Endpoints",
         steps: [
           { route: "/commands", text: "Under Run a command, keep Custom script and choose the shell." },
           { text: "Type or paste the script and set a timeout." },
@@ -336,7 +353,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "commands-template",
-        title: "Save a script as a reusable command",
+        title: "Save a Script as a Reusable Command",
         steps: [
           { route: "/commands", text: "Open Manage predefined commands." },
           { text: "Add a command with a name, description, shell and script. It then appears in the Predefined command list." },
@@ -353,7 +370,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     keywords: ["software deployment", "msi", "exe", "deb", "rpm", "pkg", "install software"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Upload EXE or MSI (Windows), DEB or RPM (Linux), PKG (macOS) or shell scripts, with silent-install arguments.",
           "Deploy a package to groups or endpoints.",
@@ -364,7 +381,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "packages-deploy",
-        title: "Deploy software to a group",
+        title: "Deploy Software to a Group",
         steps: [
           { route: "/packages", text: "Select Upload package and choose the installer.", target: { kind: "button", label: "Upload package" } },
           { text: "Enter its name, version and silent-install arguments (for MSI, usually none are needed)." },
@@ -377,13 +394,13 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
   {
     id: "agent-updates",
     module: "Endpoint Hub",
-    title: "Agent updates",
+    title: "Agent Updates",
     path: "/agent-updates",
     summary: "Push new agent builds to endpoints without reinstalling: the agent downloads, applies and restarts itself.",
     keywords: ["upgrade agent", "version", "duplicate", "defender", "antivirus", "false positive", "trojan", "quarantined"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "See which endpoints are up to date, have an update available or failed their last attempt.",
           "Read the release notes and checksum of the current Windows, macOS and Linux builds.",
@@ -392,7 +409,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         ],
       },
       {
-        title: "Antivirus alerts about the agent",
+        title: "Antivirus Alerts About the Agent",
         items: [
           "Microsoft Defender can flag the agent's own data files, such as app-control-rules.json (the list of programs your policies block), as a trojan with a name ending in !ml. This is a false alarm: the files are data, not programs.",
           "Windows agent 0.2.26 and later exclude their data folder (C:\\ProgramData\\EndpointPro\\Agent\\app\\.state) from Defender scanning. On older agents, allow or restore the file in Windows Security → Protection history, then update the agent.",
@@ -403,7 +420,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "updates-push",
-        title: "Update agents across the fleet",
+        title: "Update Agents Across the Fleet",
         steps: [
           { route: "/agent-updates", text: "Select the Update available tile to list endpoints that need the update.", target: { kind: "text", label: "Update available" } },
           { text: "Tick the endpoints (or select all), or choose target groups." },
@@ -416,7 +433,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
   {
     id: "asset-settings",
     module: "Endpoint Hub",
-    title: "Asset settings",
+    title: "Asset Settings",
     path: "/asset-settings",
     summary: "Tamper protection, asset groups and custom fields for every managed endpoint.",
     keywords: ["groups", "uninstall password", "tamper", "custom field", "remote install", "install account", "winrm"],
@@ -434,16 +451,16 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "assets-group",
-        title: "Create a group and add endpoints",
+        title: "Create a Group and Add Endpoints",
         steps: [
-          { route: "/asset-settings", text: "Open the Asset groups tab.", target: { kind: "tab", label: "Asset groups" } },
+          { route: "/asset-settings", text: "Open the Asset Groups tab.", target: { kind: "tab", label: "Asset groups" } },
           { text: "Create the group with a name and description." },
           { text: "Select Manage group on it, tick the endpoints under Add members and select Add selected." },
         ],
       },
       {
         id: "assets-tamper",
-        title: "Stop users uninstalling the agent",
+        title: "Stop Users Uninstalling the Agent",
         steps: [
           { route: "/asset-settings", text: "Open the Tamper protection tab.", target: { kind: "tab", label: "Tamper protection" } },
           { text: "Select Set password and enter an uninstall password. Uninstalling then requires it, including from this console." },
@@ -451,7 +468,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "assets-remote-install",
-        title: "Install the agent without typing an admin account",
+        title: "Install the Agent Without Typing an Admin Account",
         steps: [
           { route: "/asset-settings", text: "Open the Remote install tab.", target: { kind: "tab", label: "Remote install" } },
           { text: "As a super admin, enter a Windows account that is a local administrator on the workstations, and its password. Select Save account." },
@@ -460,9 +477,9 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       },
       {
         id: "assets-field",
-        title: "Add a custom field to every endpoint",
+        title: "Add a Custom Field to Every Endpoint",
         steps: [
-          { route: "/asset-settings", text: "Open the Custom fields tab.", target: { kind: "tab", label: "Custom fields" } },
+          { route: "/asset-settings", text: "Open the Custom Fields tab.", target: { kind: "tab", label: "Custom fields" } },
           { text: "Choose a name and type (text, number, date or list) and select Create field." },
           { text: "Fill it in for each device on the endpoint's Manage tab." },
         ],

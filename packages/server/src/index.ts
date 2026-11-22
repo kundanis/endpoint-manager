@@ -10,6 +10,7 @@ import { reconcileStaleAgentUpdateTasks } from "./services/agentUpdate.service";
 import { removeRemotelyUninstalledAgents } from "./services/agent.service";
 import { failInterruptedSyncRuns } from "./services/vulnerability.service";
 import { startFleetCache } from "./cache/fleetCache";
+import { schedulePostureSnapshots } from "./services/posture.service";
 import { startPresenceFlush } from "./presence/presence";
 import { scheduleUserRisk } from "./services/userRisk/userRisk.service";
 import { scheduleAuditRetention } from "./services/adminAudit.service";
@@ -66,6 +67,7 @@ scheduleAuditRetention();
 scheduleScreenCaptureImageRetention();
 startFleetCache();
 startPresenceFlush();
+schedulePostureSnapshots();
 
 // Once activated, the license is never re-checked against the License Server - it stays
 // valid offline, and a revoke arrives as a notice pushed to this server instead. This loop

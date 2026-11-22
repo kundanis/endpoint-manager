@@ -52,6 +52,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime, pluralize } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -242,7 +243,7 @@ function RulesPanel({ policy }: { policy: AppControlPolicyDetail }) {
       )}
 
       <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? "Edit rule" : "Add rule"}</span>
+        <span className="app-subhead">{isEditing ? "Edit Rule" : "Add Rule"}</span>
         <FormGrid>
           <Field
             label="Rule type"
@@ -499,7 +500,7 @@ export default function AppControlPage() {
   const deletePolicy = useDeleteAppControlPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [newMode, setNewMode] = useState<"BLOCK" | "ALLOWLIST">("BLOCK");
@@ -524,7 +525,7 @@ export default function AppControlPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its rules stop being enforced on every assigned endpoint at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -542,7 +543,7 @@ export default function AppControlPage() {
   return (
     <>
       <SectionHeader
-        title="Application control"
+        title="Application Control"
         description={
           <>
             Block programs on assigned endpoints by name, product, publisher or script type. A program named in a rule
@@ -570,7 +571,7 @@ export default function AppControlPage() {
       <Tabs
         items={[
           { label: "Policies", value: "policies" },
-          { label: "Undefined applications", value: "undefined" },
+          { label: "Undefined Applications", value: "undefined" },
         ]}
         value={view}
         onChange={(v) => setSearchParams(v === "undefined" ? { view: "undefined" } : {}, { replace: true })}
@@ -627,9 +628,6 @@ export default function AppControlPage() {
                   <th scope="col" style={{ textAlign: "right" }}>
                     Assigned endpoints
                   </th>
-                  <th scope="col" style={{ textAlign: "right" }}>
-                    Events
-                  </th>
                   <th scope="col">
                     <span className="app-vh">Actions</span>
                   </th>
@@ -668,9 +666,6 @@ export default function AppControlPage() {
                     </td>
                     <td className="ep-num" style={{ textAlign: "right" }}>
                       {p.assignedAgentCount}
-                    </td>
-                    <td className="ep-num" style={{ textAlign: "right" }}>
-                      {p.eventCount}
                     </td>
                     <td>
                       <div className="app-cell-actions">

@@ -459,7 +459,7 @@ button.ep-link.app-link-btn {
 
 .app-check-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
   gap: 8px 16px;
 }
 
@@ -1156,4 +1156,178 @@ a.app-legend-link:hover {
   padding: 10px;
   color: var(--ep-ink-subtle);
   font-size: 13px;
+}
+
+/* Dashboard -> Organisation Security Posture (components/PostureTrendCard.tsx), stock-chart style. */
+.app-posture-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.app-posture-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.app-posture-score {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ep-ink);
+}
+.app-posture-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.app-posture-change {
+  font-weight: 600;
+  color: var(--ep-ink-muted);
+}
+.app-posture-change.is-up {
+  color: var(--ep-ok);
+}
+.app-posture-change.is-down {
+  color: var(--ep-sev-critical);
+}
+.app-posture-chart {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+.app-posture-chart svg {
+  display: block;
+  cursor: crosshair;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .app-posture-pulse {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: app-posture-pulse 2s ease-out infinite;
+  }
+}
+@keyframes app-posture-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+.app-posture-ranges {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ep-border);
+}
+.app-posture-ranges button {
+  min-width: 44px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ep-ink-muted);
+  cursor: pointer;
+}
+.app-posture-ranges button:hover {
+  background: var(--ep-surface-2);
+  color: var(--ep-ink);
+}
+.app-posture-ranges button.is-on {
+  background: var(--ep-ink);
+  color: var(--ep-surface);
+}
+.app-posture-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 8px 24px;
+  font-size: 13px;
+  color: var(--ep-ink-muted);
+}
+.app-posture-parts li {
+  display: grid;
+  grid-template-columns: 1fr 64px 40px;
+  gap: 8px;
+  align-items: center;
+}
+.app-posture-parts .ep-num {
+  text-align: right;
+  color: var(--ep-ink);
+}
+.app-posture-part-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ep-surface-2);
+  overflow: hidden;
+}
+.app-posture-part-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.app-posture-table summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ep-accent);
+}
+.app-posture-table table {
+  margin-top: 8px;
+}
+
+/* Collapsible sidebar (components/Layout.tsx): on wide screens the sidebar folds to an icon rail;
+   selecting a module icon expands it again with that module open. Below 960px the drawer is used. */
+.app-rail-toggle {
+  display: grid;
+}
+@media (max-width: 960px) {
+  .app-rail-toggle {
+    display: none;
+  }
+}
+@media (min-width: 961px) {
+  .ep-app.app-rail {
+    grid-template-columns: 64px 1fr;
+  }
+  .app-rail .ep-sb {
+    padding: 16px 8px;
+  }
+  .app-rail .ep-brandrow {
+    justify-content: center;
+    padding: 4px 0 18px;
+  }
+  .app-rail .ep-brandrow > div,
+  .app-rail .ep-ni > span,
+  .app-rail .ep-ni .ep-chev,
+  .app-rail .ep-ni > svg:not(:first-child),
+  .app-rail .app-sbfoot-id {
+    display: none;
+  }
+  .app-rail .ep-ov {
+    font-size: 0;
+    padding: 0;
+    margin: 10px 6px;
+    border-top: 1px solid var(--ep-sidebar-border);
+  }
+  .app-rail .ep-ni {
+    justify-content: center;
+    padding: 9px 0;
+  }
+  .app-rail .ep-ni.ep-on:before {
+    left: -8px;
+  }
+  .app-rail .ep-sbfoot {
+    justify-content: center;
+    padding: 12px 0 0;
+  }
 }

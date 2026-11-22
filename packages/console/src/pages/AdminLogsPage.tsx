@@ -119,7 +119,7 @@ function RetentionCard() {
 
   async function handleClear() {
     const ok = await confirm({
-      title: `Clear admin log entries older than ${before}?`,
+      title: `Clear Admin Log Entries Older Than ${before}?`,
       body: "They're removed permanently. The clearing itself is recorded as a new entry with your name.",
       confirmLabel: "Clear entries",
       tone: "danger",
@@ -128,7 +128,7 @@ function RetentionCard() {
   }
 
   return (
-    <Card title="Keeping logs" hint={`${data.totalEntries} entries${data.oldestEntryAt ? `, oldest ${formatDateTime(data.oldestEntryAt)}` : ""}`}>
+    <Card title="Keeping Logs" hint={`${data.totalEntries} entries${data.oldestEntryAt ? `, oldest ${formatDateTime(data.oldestEntryAt)}` : ""}`}>
       <div className="app-stack">
         <FormGrid>
           <Field label="Keep entries for (days)" htmlFor="al-days" help={`Older entries are removed automatically. ${data.minRetentionDays} days minimum.`}>
@@ -195,7 +195,7 @@ export default function AdminLogsPage() {
   return (
     <>
       <PageHeader
-        title="Admin logs"
+        title="Admin Logs"
         description="Every change made in the console, sign-ins and views of sensitive data, by administrator. Entries can't be edited or deleted one by one."
       />
       <div className="app-stack">

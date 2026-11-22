@@ -1174,6 +1174,54 @@ export function useSetAgentCustomFields() {
   });
 }
 
+export interface AppliedPolicyView {
+  module: string;
+  navPath: string;
+  link: string;
+  policyId: string;
+  name: string;
+  enabled: boolean;
+  detail: string | null;
+  direct: boolean;
+  groups: { id: string; name: string }[];
+  excepted: boolean;
+  syncStatus: string | null;
+  lastSyncedAt: string | null;
+  syncError: string | null;
+}
+
+// Every policy assigned to the endpoint, directly or through its groups.
+export function useAgentAppliedPolicies(agentId: string | undefined) {
+  return useQuery({
+    queryKey: ["agentAppliedPolicies", agentId],
+    queryFn: () => api.get<{ paused: boolean; policies: AppliedPolicyView[] }>(`/admin/agents/${agentId}/policies`),
+    enabled: !!agentId,
+  });
+}
+
+export type PostureRange = "week" | "month" | "quarter" | "half" | "year";
+export type PosturePart = "vulnerabilities" | "patches" | "zeroTrust" | "securityConfig" | "threats" | "policyBlocks";
+export interface PostureHistory {
+  current: {
+    score: number | null;
+    parts: Partial<Record<PosturePart, number>>;
+    endpointCount: number;
+    eolCappedCount: number;
+    computedAt: string;
+  } | null;
+  previous: number | null;
+  points: { day: string; score: number; endpointCount: number | null }[];
+}
+
+// Dashboard -> Organisation Security Posture.
+export function useDashboardPosture(range: PostureRange) {
+  return useQuery({
+    queryKey: ["dashboardPosture", range],
+    queryFn: () => api.get<PostureHistory>(`/admin/dashboard/posture?range=${range}`),
+    refetchInterval: 5 * 60_000,
+  });
+}
+
 export function useAgentNotes(agentId: string | undefined) {
   return useQuery({
     queryKey: ["agentNotes", agentId],
@@ -3649,11 +3697,18 @@ export function useEventTimeline(qs: string, before: string | null) {
 // surfaces data belonging to a specific nav item, outside that item's own route, should
 // gate its display with this rather than just relying on RequireModule/the nav filter.
 export function useIsItemHidden(path: string): boolean {
+  return useItemHiddenCheck()(path);
+}
+
+// The same check for a list of sidebar paths.
+export function useItemHiddenCheck(): (path: string) => boolean {
   const { data } = useModuleVisibility();
-  if (!data) return false;
-  if (data.hiddenItemPaths.includes(path)) return true;
-  const parentModule = NAV_MODULES.find((m) => m.items?.some((item) => item.path === path));
-  return !!parentModule?.licenseModule && data.hiddenModuleKeys.includes(parentModule.licenseModule);
+  return (path: string) => {
+    if (!data) return false;
+    if (data.hiddenItemPaths.includes(path)) return true;
+    const parentModule = NAV_MODULES.find((m) => m.items?.some((item) => item.path === path));
+    return !!parentModule?.licenseModule && data.hiddenModuleKeys.includes(parentModule.licenseModule);
+  };
 }
 
 // ---- Data Governance -> Data types (built-in catalogue + custom lists) and "Add from data type".

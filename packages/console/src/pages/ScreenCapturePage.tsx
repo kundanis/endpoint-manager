@@ -43,6 +43,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatBytes, formatDateTime } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // DLP -> Screen capture: policy list -> selected policy's Report / Assignment / Settings tabs.
 // The agent records screenshots as they are saved (so deleting one doesn't hide it), deletions,
@@ -141,7 +142,7 @@ function SettingsFields({ idPrefix, value, onChange }: { idPrefix: string; value
         </Field>
       </FormGrid>
       <div className="app-stack-sm" role="group" aria-label="Screenshot sources">
-        <span className="app-subhead">Screenshot sources</span>
+        <span className="app-subhead">Screenshot Sources</span>
         <Check checked={value.monitorWindows} onChange={(c) => set({ monitorWindows: c })} label="Windows screenshots" hint="Win + PrtScn, and screenshots saved to OneDrive" />
         <Check checked={value.monitorSnippingTool} onChange={(c) => set({ monitorSnippingTool: c })} label="Snipping Tool" hint="Win + Shift + S and PrtScn on Windows 11, including captures that were never saved" />
         <Check checked={value.monitorGameBar} onChange={(c) => set({ monitorGameBar: c })} label="Xbox Game Bar" hint="Win + Alt + PrtScn screenshots and recordings" />
@@ -425,7 +426,7 @@ export default function ScreenCapturePage() {
   const deletePolicy = useDeleteScreenCapturePolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
   const [newSettings, setNewSettings] = useState(DEFAULT_SETTINGS);
 
@@ -440,7 +441,7 @@ export default function ScreenCapturePage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Assigned endpoints stop recording screenshots for it. Screenshots already recorded stay in the reports of other policies that cover them. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -452,7 +453,7 @@ export default function ScreenCapturePage() {
   return (
     <>
       <SectionHeader
-        title="Screen capture"
+        title="Screen Capture"
         description="Reports users who take many screenshots in a day, delete them soon after, or open them in other programs such as a browser, WhatsApp or Outlook. Only details about each screenshot are collected, unless a super admin sets a policy to keep the images."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

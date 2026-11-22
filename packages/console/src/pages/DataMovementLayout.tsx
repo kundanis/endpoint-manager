@@ -12,7 +12,7 @@ export default function DataMovementLayout() {
   return (
     <>
       <PageHeader
-        title="Data movement"
+        title="Data Movement"
         description="Track files leaving an endpoint via USB or removable drives, cloud-sync folders and mapped network drives, and how screenshots are taken and used."
       />
       <Tabs items={DATA_MOVEMENT_TABS} />

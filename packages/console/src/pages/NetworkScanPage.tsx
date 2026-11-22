@@ -354,7 +354,7 @@ function LatestVlanScanPanel({ vlan }: { vlan: NetworkVlanListItem }) {
 
   return (
     <Collapsible
-      title={`${vlan.name} — latest scan`}
+      title={`${vlan.name} — Latest Scan`}
       hint={vlan.cidr}
       actions={latestRun ? <ScanStatusPill status={latestRun.status} /> : undefined}
       defaultOpen={false}
@@ -604,7 +604,7 @@ export default function NetworkScanPage() {
 
   const header = (
     <PageHeader
-      title="Network discovery"
+      title="Network Discovery"
       description="Scan VLANs for hosts and see which ones don't have the agent installed yet."
       actions={
         <>
@@ -702,7 +702,7 @@ export default function NetworkScanPage() {
       )}
 
       {legacyRuns && legacyRuns.length > 0 && (
-        <Collapsible title="No VLAN — manual scans" hint={`${legacyRuns.length} runs`} defaultOpen={false}>
+        <Collapsible title="No VLAN — Manual Scans" hint={`${legacyRuns.length} runs`} defaultOpen={false}>
           <ScanRunsTable runs={legacyRuns} />
         </Collapsible>
       )}

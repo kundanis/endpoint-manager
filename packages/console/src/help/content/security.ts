@@ -4,13 +4,13 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
   {
     id: "network-discovery",
     module: "Network Insight",
-    title: "Network discovery",
+    title: "Network Discovery",
     path: "/network-scan",
     summary: "Scan network segments (VLANs) for hosts and see which ones don't have the agent yet.",
     keywords: ["vlan", "scan", "unmanaged", "discovery", "subnet", "cidr"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Add VLANs by name and range; the range is suggested automatically.",
           "Scan from the server, or from a managed endpoint inside the segment for remote sites.",
@@ -24,7 +24,7 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "network-add-vlan",
-        title: "Add a VLAN and scan it",
+        title: "Add a VLAN and Scan It",
         steps: [
           { route: "/network-scan", text: "Select Add VLAN.", target: { kind: "button", label: "Add VLAN" } },
           { text: "Enter a name and the range (for example 10.10.6.0/24). Choose an endpoint inside that network to scan from, or the server." },
@@ -34,7 +34,7 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
       },
       {
         id: "network-install-agent",
-        title: "Install the agent on an unmanaged device",
+        title: "Install the Agent on an Unmanaged Device",
         steps: [
           { route: "/network-scan", text: "Open the VLAN and find the device marked Unmanaged." },
           { text: "Select Install agent on its row. With a remote install account saved in Asset settings, no login is asked; otherwise enter a Windows administrator account for that device." },
@@ -47,13 +47,13 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
   {
     id: "software-licenses",
     module: "App Center",
-    title: "Software licenses",
+    title: "Software Licenses",
     path: "/software-licenses",
     summary: "Purchased licences against what is actually installed, with renewal dates and cost.",
     keywords: ["licence", "license", "compliance", "renewal", "seats", "cost"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "Record licences: product, version, vendor, key, type and seats bought.",
           "Seats in use are counted automatically from installed software; you can override the count.",
@@ -65,7 +65,7 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "licenses-add",
-        title: "Add a licence",
+        title: "Add a Licence",
         steps: [
           { route: "/software-licenses", text: "Select Add license.", target: { kind: "button", label: "Add license" } },
           { text: "Enter the software name as it appears in installed software, so seats in use are counted automatically." },
@@ -74,7 +74,7 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
       },
       {
         id: "licenses-import",
-        title: "Import many licences at once",
+        title: "Import Many Licences at Once",
         steps: [
           { route: "/software-licenses", text: "Select Download template and fill in one row per licence.", target: { kind: "button", label: "Download template" } },
           { text: "Select Import from CSV and choose the file." },
@@ -94,7 +94,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
     keywords: ["cve", "nvd", "cvss", "remediate", "vulnerable software", "endpoint", "group", "filter", "false positive", "not applicable", "risk accepted", "exception"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "See CVEs by severity with CVSS score and the endpoints affected.",
           "Filter to one endpoint or one group with the Endpoint and Group lists above the findings. Counts, the affected endpoints and Remediate by severity then cover only that endpoint or group. Show all endpoints clears the filter.",
@@ -112,7 +112,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "vuln-one-endpoint",
-        title: "See the vulnerabilities on one endpoint or group",
+        title: "See the Vulnerabilities on One Endpoint or Group",
         steps: [
           { route: "/vulnerabilities", text: "Above Fleet findings, pick the endpoint in Endpoint, or the group in Group." },
           { text: "Select a CVE to see the matched software on just those endpoints. Select Show all endpoints to go back to the whole fleet." },
@@ -120,7 +120,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "vuln-false-positive",
-        title: "Mark a vulnerability as a false positive",
+        title: "Mark a Vulnerability as a False Positive",
         steps: [
           { route: "/vulnerabilities", text: "Find the CVE in the findings list and select Mark as… on its row." },
           { text: "Choose False positive (or Not applicable, or Risk accepted)." },
@@ -130,7 +130,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "vuln-remediate-critical",
-        title: "Remove all critical vulnerable software",
+        title: "Remove All Critical Vulnerable Software",
         steps: [
           { route: "/vulnerabilities", text: "Under Remediate by severity, tick Critical." },
           { text: "Select Remediate selected severities. Low-confidence matches are skipped automatically." },
@@ -139,7 +139,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "vuln-rescan",
-        title: "Check the fleet again after changes",
+        title: "Check the Fleet Again After Changes",
         steps: [{ route: "/vulnerabilities", text: "Select Rescan fleet.", target: { kind: "button", label: "Rescan fleet" } }],
       },
     ],
@@ -153,7 +153,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
     keywords: ["windows update", "kb", "patching", "schedule", "automatic", "reboot", "endpoint", "group", "filter"],
     sections: [
       {
-        title: "What you can do",
+        title: "What You Can Do",
         items: [
           "See every missing Windows update with severity, KB article, size and the endpoints missing it.",
           "Filter to one endpoint or one group with the Endpoint and Group lists. Tick updates one by one or all at once with the header checkbox, then select Install on <endpoint or group>. Show all endpoints clears the filter.",
@@ -167,7 +167,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "patches-one-endpoint",
-        title: "Install the missing updates on one endpoint or group",
+        title: "Install the Missing Updates on One Endpoint or Group",
         steps: [
           { route: "/patches", text: "Pick the endpoint in Endpoint, or the group in Group, above the list." },
           { text: "Tick the updates you want, or the header checkbox for all of them." },
@@ -176,7 +176,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "patches-deploy",
-        title: "Deploy critical patches tonight",
+        title: "Deploy Critical Patches Tonight",
         steps: [
           { route: "/patches", text: "Filter by severity Critical, then tick the updates." },
           { text: "Select Choose targets and pick the groups or endpoints." },
@@ -185,7 +185,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "patches-auto",
-        title: "Patch automatically",
+        title: "Patch Automatically",
         steps: [
           { route: "/patches", text: "Find Automatic mode and select Add policy.", target: { kind: "button", label: "Add policy" } },
           { text: "Choose the minimum severity and the groups (or all endpoints), then save. Missing patches at that level are deployed automatically." },
@@ -196,13 +196,13 @@ export const SECURITY_TOPICS: HelpTopic[] = [
   {
     id: "security-config",
     module: "Security Posture",
-    title: "Security configuration",
+    title: "Security Configuration",
     path: "/security-config",
     summary: "Check endpoints against hardening benchmarks and fix what fails.",
     keywords: ["cis", "benchmark", "hardening", "gpo", "compliance", "baseline", "remediate"],
     sections: [
       {
-        title: "Benchmark tabs",
+        title: "Benchmark Tabs",
         items: [
           "Rules: every check with its severity and pass/fail counts; import a GPO backup or JSON, or add rules by hand.",
           "Assignment: apply the benchmark to groups or endpoints.",
@@ -210,14 +210,14 @@ export const SECURITY_TOPICS: HelpTopic[] = [
         ],
       },
       {
-        title: "Built-in benchmarks (CIS-aligned)",
+        title: "Built-In Benchmarks (CIS-aligned)",
         items: ["Windows Security Baseline", "Windows 11 Additional Hardening", "Windows Server Hardening", "SQL Server Hardening"],
       },
     ],
     howTos: [
       {
         id: "secconf-builtin",
-        title: "Start with the built-in CIS benchmarks",
+        title: "Start With the Built-In CIS Benchmarks",
         steps: [
           { route: "/security-config", text: "Select Add built-in benchmarks.", target: { kind: "button", label: "Add built-in benchmarks" } },
           { text: "Open a benchmark, go to its Assignment tab and assign it to a group.", target: { kind: "tab", label: "Assignment" } },
@@ -226,7 +226,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "secconf-fix",
-        title: "Fix failing settings",
+        title: "Fix Failing Settings",
         steps: [
           { route: "/security-config", text: "Open the benchmark and go to Compliance by endpoint.", target: { kind: "tab", label: "Compliance by endpoint" } },
           { text: "Select Remediate all failing, or Select & remediate to choose rules. The status of each fix shows per rule." },
@@ -234,7 +234,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "secconf-gpo",
-        title: "Import your own Group Policy baseline",
+        title: "Import Your Own Group Policy Baseline",
         steps: [
           { route: "/security-config", text: "Select New benchmark and create it.", target: { kind: "button", label: "New benchmark" } },
           { text: "On its Rules tab, select Upload GPO backup (.zip) and pick which GPOs to import." },
@@ -251,7 +251,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
     keywords: ["trust", "compliance", "firewall", "bitlocker", "antivirus", "posture", "conditions"],
     sections: [
       {
-        title: "Policy tabs",
+        title: "Policy Tabs",
         items: [
           "Conditions: the checks that make up the policy; switch each on or off, tick built-in checks to add them, or add your own.",
           "Built-in checks can be switched off or edited, but not deleted. Changed means a built-in check differs from the current version; Reset puts it back.",
@@ -261,13 +261,13 @@ export const SECURITY_TOPICS: HelpTopic[] = [
         ],
       },
       {
-        title: "Also on this page",
+        title: "Also on This Page",
         items: [
           "Trusted, not trusted and not assessed counts, and which conditions fail most.",
         ],
       },
       {
-        title: "Windows Security checks",
+        title: "Windows Security Checks",
         items: [
           "Virus & threat protection: antivirus and real-time protection on, signatures at most 7 days old.",
           "Firewall & network protection: all three Windows Firewall profiles on.",
@@ -281,7 +281,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
     howTos: [
       {
         id: "zt-builtin",
-        title: "Set up device trust in a few clicks",
+        title: "Set Up Device Trust in a Few Clicks",
         steps: [
           { route: "/zero-trust", text: "Select Add built-in policy.", target: { kind: "button", label: "Add built-in policy" } },
           { text: "Choose your antivirus and management agent from the lists, and create the policy." },
@@ -291,7 +291,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "zt-add-builtin-check",
-        title: "Add a built-in check to a policy",
+        title: "Add a Built-In Check to a Policy",
         steps: [
           { route: "/zero-trust", text: "Open the policy and go to Conditions.", target: { kind: "tab", label: "Conditions" } },
           { text: "Under Add built-in check, tick the checks you want, for example Device security or App & browser control." },
@@ -300,7 +300,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "zt-reset-check",
-        title: "Undo changes to a built-in check",
+        title: "Undo Changes to a Built-In Check",
         steps: [
           { route: "/zero-trust", text: "Open the policy and go to Conditions.", target: { kind: "tab", label: "Conditions" } },
           { text: "Find the check marked Changed and select its reset button. Its on/off switch stays as it is." },
@@ -308,7 +308,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       },
       {
         id: "zt-why",
-        title: "See why a device isn't trusted",
+        title: "See Why a Device Isn't Trusted",
         steps: [
           { route: "/zero-trust", text: "In Device trust, find the device. The failing conditions are listed on its row." },
         ],

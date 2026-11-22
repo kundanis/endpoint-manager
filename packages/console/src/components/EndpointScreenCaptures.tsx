@@ -41,7 +41,7 @@ export default function EndpointScreenCaptures({ agentId }: { agentId: string })
     : undefined;
 
   return (
-    <Card title="Screen capture" hint={hint} actions={period}>
+    <Card title="Screen Capture" hint={hint} actions={period}>
       {isLoading ? (
         <Skeleton />
       ) : error ? (

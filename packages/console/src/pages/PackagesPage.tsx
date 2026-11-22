@@ -109,7 +109,7 @@ export default function PackagesPage() {
 
   async function handleDelete(id: string, label: string) {
     const confirmed = await confirm({
-      title: `Delete package "${label}"?`,
+      title: `Delete Package "${label}"?`,
       body: "It can no longer be deployed. This cannot be undone.",
       confirmLabel: "Delete package",
       tone: "danger",
@@ -234,7 +234,7 @@ export default function PackagesPage() {
       {selectedPackageId && (
         <form className="ep-card" onSubmit={handleDeploy}>
           <FormSection
-            title="Deploy selected package"
+            title="Deploy Selected Package"
             description={
               selectedPackage ? (
                 <>
@@ -249,7 +249,7 @@ export default function PackagesPage() {
             <div className="app-stack-sm">
               {groups && groups.length > 0 && (
                 <>
-                  <span className="app-subhead">Target groups</span>
+                  <span className="app-subhead">Target Groups</span>
                   <div className="app-check-grid">
                     {groups.map((g) => (
                       <Check
@@ -288,7 +288,7 @@ export default function PackagesPage() {
         </form>
       )}
 
-      <Card flush title="Deployment jobs" hint={jobs ? `${jobs.length} total` : undefined}>
+      <Card flush title="Deployment Jobs" hint={jobs ? `${jobs.length} total` : undefined}>
         {jobsLoading ? (
           <div className="ep-cb">
             <Skeleton />
@@ -368,7 +368,7 @@ export default function PackagesPage() {
 
       {jobDetail && (
         <Card
-          title="Deployment detail"
+          title="Deployment Detail"
           hint={
             <>
               {jobDetail.packageName} <span className="ep-mono">v{jobDetail.packageVersion}</span>
@@ -426,7 +426,7 @@ export default function PackagesPage() {
 
       {uploading && (
         <Modal
-          title="Upload a package"
+          title="Upload a Package"
           description="The installer is stored on this server and can then be deployed silently to any endpoint."
           onClose={() => setUploading(false)}
           footer={

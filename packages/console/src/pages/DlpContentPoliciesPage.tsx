@@ -40,6 +40,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -135,7 +136,7 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
 
   async function handleDeleteRule(r: DlpRuleView) {
     const confirmed = await confirm({
-      title: `Delete rule "${r.label ?? displayValue(r)}"?`,
+      title: `Delete Rule "${r.label ?? displayValue(r)}"?`,
       body: "Assigned endpoints stop applying it at their next sync.",
       confirmLabel: "Delete rule",
       tone: "danger",
@@ -189,7 +190,7 @@ function RulesPanel({ policy }: { policy: DlpPolicyDetail }) {
       )}
 
       <form onSubmit={handleSubmit} className="app-inset-form">
-        <span className="app-subhead">{isEditing ? "Edit rule" : "Add rule"}</span>
+        <span className="app-subhead">{isEditing ? "Edit Rule" : "Add Rule"}</span>
         <FormGrid>
           <Field label="Rule type" htmlFor="dlp-rule-type" help={RULE_TYPE_HINT[form.ruleType]}>
             <select
@@ -466,7 +467,7 @@ export default function DlpContentPoliciesPage() {
   const deletePolicy = useDeleteDlpPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
   const [enforcementMode, setEnforcementMode] = useState<DlpEnforcementMode>("ALERT_ONLY");
   const [removableMediaOnly, setRemovableMediaOnly] = useState(true);
@@ -479,7 +480,7 @@ export default function DlpContentPoliciesPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Its rules stop applying on every assigned endpoint at their next sync. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -495,7 +496,7 @@ export default function DlpContentPoliciesPage() {
   return (
     <>
       <SectionHeader
-        title="Content & file policies"
+        title="Content & File Policies"
         description="Real-time data loss prevention — each policy is a set of rules you define (content keywords/patterns to detect, destination paths to always block, trusted processes to exempt, file types to restrict to) and can alert or block matching writes on assigned endpoints. Content matches only ever report masked previews, never the raw matched value."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

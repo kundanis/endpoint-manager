@@ -148,6 +148,45 @@ export function combineAllowlists(policies: (AppControlPolicy & { rules: AppCont
   };
 }
 
+// Windows logs one attempt to start a program more than once (the launch itself, and again for a
+// program that asks for administrator rights), within milliseconds of each other. The same
+// program, path, outcome and rule within REPEAT_WINDOW_MS - in this report or already stored -
+// counts as one attempt.
+const REPEAT_WINDOW_MS = 10_000;
+type ScanEvent = AppControlScanResultPayload["events"][number];
+
+export async function withoutRepeats(agentId: string, events: ScanEvent[]): Promise<ScanEvent[]> {
+  if (events.length === 0) return events;
+  const keyOf = (path: string | null | undefined, outcome: string | null | undefined, ruleId: string | null | undefined) =>
+    `${(outcome ?? "BLOCKED").toUpperCase()}|${(path ?? "").toLowerCase()}|${(ruleId ?? "").toLowerCase()}`;
+  const seen = new Map<string, number[]>();
+  const add = (key: string, at: number) => seen.set(key, [...(seen.get(key) ?? []), at]);
+  const near = (key: string, at: number) => (seen.get(key) ?? []).some((t) => Math.abs(t - at) < REPEAT_WINDOW_MS);
+
+  const times = events.map((e) => new Date(e.occurredAt).getTime()).filter((t) => Number.isFinite(t));
+  if (times.length > 0) {
+    const stored = await prisma.appControlEvent.findMany({
+      where: {
+        agentId,
+        occurredAt: { gte: new Date(Math.min(...times) - REPEAT_WINDOW_MS), lte: new Date(Math.max(...times) + REPEAT_WINDOW_MS) },
+      },
+      select: { matchedPath: true, outcome: true, ruleId: true, occurredAt: true },
+    });
+    for (const s of stored) add(keyOf(s.matchedPath, s.outcome, s.ruleId), s.occurredAt.getTime());
+  }
+
+  const out: ScanEvent[] = [];
+  for (const e of [...events].sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime())) {
+    const at = new Date(e.occurredAt).getTime();
+    // Stored allowlist events have no rule id, whatever the agent sent.
+    const key = keyOf(e.matchedPath, e.outcome, e.allowlist ? null : e.ruleId);
+    if (Number.isFinite(at) && near(key, at)) continue;
+    add(key, at);
+    out.push(e);
+  }
+  return out;
+}
+
 // Every sync stamps the endpoint's assignment rows (Sync status tab; the agent says APPLIED,
 // stored as SUCCESS like the other blocking modules), then stores any blocked programs (Activity).
 export async function recordScanResult(agentId: string, payload: AppControlScanResultPayload): Promise<void> {
@@ -162,12 +201,13 @@ export async function recordScanResult(agentId: string, payload: AppControlScanR
       },
     });
   }
-  if (payload.events.length === 0) return;
+  const events = await withoutRepeats(agentId, payload.events);
+  if (events.length === 0) return;
 
   // Resolve each event's ruleId to its CURRENT policyId at ingestion time (the agent
   // doesn't carry policyId itself) — if the rule's since been deleted, policyId is left
   // null rather than failing the batch.
-  const ruleIds = [...new Set(payload.events.map((e) => e.ruleId).filter((id): id is string => Boolean(id)))];
+  const ruleIds = [...new Set(events.map((e) => e.ruleId).filter((id): id is string => Boolean(id)))];
   const rules =
     ruleIds.length > 0
       ? await prisma.appControlRule.findMany({ where: { id: { in: ruleIds } }, select: { id: true, policyId: true } })
@@ -176,7 +216,7 @@ export async function recordScanResult(agentId: string, payload: AppControlScanR
 
   // Allowlist events name no rule: they belong to the agent's allowlist policy - an enforcing one
   // for a block, an auditing one for an audit record.
-  const allowlists = payload.events.some((e) => e.allowlist)
+  const allowlists = events.some((e) => e.allowlist)
     ? await prisma.appControlPolicy.findMany({
         where: { id: { in: policyIds }, mode: "ALLOWLIST" },
         select: { id: true, allowlistEnforcement: true },
@@ -187,7 +227,7 @@ export async function recordScanResult(agentId: string, payload: AppControlScanR
     (allowlists.find((p) => p.allowlistEnforcement === (outcome === "AUDIT" ? "AUDIT" : "ENFORCE")) ?? allowlists[0])?.id ?? null;
 
   await prisma.appControlEvent.createMany({
-    data: payload.events.map((e) => {
+    data: events.map((e) => {
       const outcome = e.outcome ?? "BLOCKED";
       return {
         agentId,

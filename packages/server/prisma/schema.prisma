@@ -2199,3 +2199,20 @@ model VulnerabilityException {
 
   @@index([vulnerabilityDefinitionId])
 }
+
+// Dashboard -> Organisation security posture over time. One row per endpoint per day (agentId set)
+// and one for the whole organisation (agentId null), each holding that day's latest score (0-100)
+// and its parts as JSON. Written by services/posture.service.ts; nothing is back-filled.
+// agentId is a plain string (no FK) so a removed endpoint's past days still count in the history.
+model PostureSnapshot {
+  id            String   @id @default(uuid())
+  day           DateTime @db.Date
+  agentId       String?
+  score         Float
+  parts         String   @db.NVarChar(2000)
+  endpointCount Int?
+  updatedAt     DateTime @default(now())
+
+  @@index([day, agentId])
+  @@index([agentId, day])
+}

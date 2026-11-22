@@ -83,7 +83,7 @@ export default function RequireModule({
   if (superAdminOnly && me?.role !== "SUPER_ADMIN") {
     return (
       <>
-        <PageHeader title="Admin logs" />
+        <PageHeader title="Admin Logs" />
         <Card>
           <EmptyState icon={ShieldOff} title="Super admins only">
             Admin logs record what every administrator does, so only super admins can open them.

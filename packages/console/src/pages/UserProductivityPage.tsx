@@ -80,10 +80,10 @@ function AppUsageCard({ agentId, hostname, from, to }: { agentId?: string; hostn
       title={
         hostname ? (
           <>
-            Applications and websites — <span className="ep-mono">{hostname}</span>
+            Applications and Websites — <span className="ep-mono">{hostname}</span>
           </>
         ) : (
-          "Applications and websites today"
+          "Applications and Websites Today"
         )
       }
       hint={`active time ${period}, most used first`}
@@ -223,7 +223,7 @@ export default function UserProductivityPage() {
   if (isLoading) {
     return (
       <>
-        <PageHeader title="User productivity" description={description} />
+        <PageHeader title="User Productivity" description={description} />
         <Card>
           <Skeleton lines={6} />
         </Card>
@@ -233,7 +233,7 @@ export default function UserProductivityPage() {
   if (error) {
     return (
       <>
-        <PageHeader title="User productivity" description={description} />
+        <PageHeader title="User Productivity" description={description} />
         <Alert tone="critical" title="Couldn't load user productivity" action={<Button size="sm" onClick={() => refetch()}>Retry</Button>}>
           {(error as Error).message}
         </Alert>
@@ -244,7 +244,7 @@ export default function UserProductivityPage() {
   return (
     <>
       <PageHeader
-        title="User productivity"
+        title="User Productivity"
         description={description}
         actions={<Segmented label="Total active for" value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />}
       />
@@ -279,7 +279,7 @@ export default function UserProductivityPage() {
       </KpiStrip>
 
       <Card
-        title={`Active vs idle ${periodText}`}
+        title={`Active vs Idle ${periodText}`}
         hint={rows.length > CHART_ROWS ? `top ${CHART_ROWS} endpoints by time signed in` : "time signed in per endpoint"}
         actions={
           <Legend

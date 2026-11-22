@@ -37,6 +37,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime } from "../format";
+import { useLinkedPolicySelection } from "../usePolicyLink";
 
 function pathsToText(paths: string[]): string {
   return paths.join("\n");
@@ -62,7 +63,7 @@ function ChannelToggles({
 }) {
   return (
     <div className="app-stack-sm" role="group" aria-label="Channels to monitor">
-      <span className="app-subhead">Channels to monitor</span>
+      <span className="app-subhead">Channels to Monitor</span>
       <Check
         checked={monitorUsb}
         onChange={(checked) => onChange({ monitorUsb: checked, monitorCloudSync, monitorNetworkShare })}
@@ -332,7 +333,7 @@ export default function DataMovementPage() {
   const deletePolicy = useDeleteDataMovementPolicy();
   const confirm = useConfirm();
 
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useLinkedPolicySelection();
   const [creating, setCreating] = useState(false);
   const [monitorUsb, setMonitorUsb] = useState(true);
   const [monitorCloudSync, setMonitorCloudSync] = useState(true);
@@ -363,7 +364,7 @@ export default function DataMovementPage() {
 
   async function handleDelete(id: string, name: string) {
     const confirmed = await confirm({
-      title: `Delete policy "${name}"?`,
+      title: `Delete Policy "${name}"?`,
       body: "Assigned endpoints stop tracking data movement for it. This cannot be undone.",
       confirmLabel: "Delete policy",
       tone: "danger",
@@ -379,7 +380,7 @@ export default function DataMovementPage() {
   return (
     <>
       <SectionHeader
-        title="File movement"
+        title="File Movement"
         description="Files copied to USB or removable drives, cloud-sync folders and mapped network drives."
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>

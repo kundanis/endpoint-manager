@@ -185,7 +185,7 @@ function RequestForm() {
   return (
     <form className="ep-card" onSubmit={handleSubmit}>
       <div className="ep-section">
-        <h4>Request an access exception</h4>
+        <h4>Request an Access Exception</h4>
         <p>
           Temporarily carve out an endpoint, or every endpoint in a group, from one EPM or DLP policy's enforcement, for a
           fixed window. A group creates one request per endpoint. Nothing takes effect until an admin approves it above.
@@ -331,7 +331,7 @@ export default function AccessExceptionsPage() {
 
   async function handleEnd(r: PolicyAccessExceptionView) {
     const confirmed = await confirm({
-      title: `End the exception for ${r.hostname ?? "this endpoint"} now?`,
+      title: `End the Exception for ${r.hostname ?? "this endpoint"} Now?`,
       body: `"${r.policyName}" applies to it again within about 20 seconds, before the exception would have expired (${formatDateTime(r.expiresAt)}).`,
       confirmLabel: "End exception",
       tone: "danger",
@@ -342,7 +342,7 @@ export default function AccessExceptionsPage() {
 
   async function handleReject(r: PolicyAccessExceptionView) {
     const confirmed = await confirm({
-      title: `Reject the exception for ${r.hostname ?? "this endpoint"}?`,
+      title: `Reject the Exception for ${r.hostname ?? "this endpoint"}?`,
       body: `The request to exempt it from "${r.policyName}" is closed and never takes effect.`,
       confirmLabel: "Reject request",
       tone: "danger",
@@ -359,7 +359,7 @@ export default function AccessExceptionsPage() {
   return (
     <>
       <PageHeader
-        title="Access exceptions"
+        title="Access Exceptions"
         description="Time-bound, admin-approved carve-outs from an EPM or DLP policy's enforcement for one endpoint"
       />
 

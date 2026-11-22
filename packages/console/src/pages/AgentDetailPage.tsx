@@ -54,6 +54,7 @@ import type { AgentDetail, AgentHistory, InstalledSoftwareEntry, LifecycleStatus
 import {
   useAddAgentNote,
   useAgent,
+  useAgentAppliedPolicies,
   useAgentAppControlEvents,
   useAgentCommandBlockEvents,
   useAgentDataDiscoveryFindings,
@@ -71,6 +72,7 @@ import {
   useDispatchAgentUpdate,
   useEnableRemoteAccess,
   useIsItemHidden,
+  useItemHiddenCheck,
   useThreatDetections,
   usePauseAgent,
   useResumeAgent,
@@ -321,7 +323,7 @@ function OperatingSystemCard({ agent }: { agent: AgentDetail }) {
     );
   }
   return (
-    <Card title="Operating system">
+    <Card title="Operating System">
       <KeyValueList items={items} />
     </Card>
   );
@@ -594,8 +596,78 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
   });
 
   return (
-    <Card title="Security posture">
+    <Card title="Security Posture">
       {items.length > 0 ? <KeyValueList items={items} /> : <p className="app-muted">The security modules are hidden for your account.</p>}
+    </Card>
+  );
+}
+
+// Every policy assigned to this endpoint, directly or through a group, each opening its policy.
+// Modules hidden for the admin (licence or module visibility) are left out.
+function AppliedPoliciesCard({ agentId }: { agentId: string }) {
+  const { data, isLoading, error } = useAgentAppliedPolicies(agentId);
+  const isHidden = useItemHiddenCheck();
+  const policies = (data?.policies ?? [])
+    .filter((p) => !isHidden(p.navPath))
+    .sort((a, b) => a.module.localeCompare(b.module) || a.name.localeCompare(b.name));
+
+  function status(p: (typeof policies)[number]): { tone: BadgeTone; text: string; title?: string } {
+    if (!p.enabled) return { tone: "neu", text: "Disabled" };
+    if (data?.paused) return { tone: "med", text: "Paused" };
+    if (p.excepted) return { tone: "med", text: "Exception active", title: "An approved access exception lifts this policy here for now" };
+    if (p.syncStatus === "FAILED") return { tone: "crit", text: "Sync failed", title: p.syncError ?? undefined };
+    if (p.syncStatus === "SUCCESS") return { tone: "ok", text: "Applied", title: p.lastSyncedAt ? `Last synced ${formatDateTime(p.lastSyncedAt)}` : undefined };
+    return { tone: "ok", text: "Assigned" };
+  }
+
+  return (
+    <Card title="Applied Policies" hint={policies.length > 0 ? `${policies.length} ${plural(policies.length, "policy", "policies")}` : undefined}>
+      {isLoading ? (
+        <Skeleton lines={4} />
+      ) : error ? (
+        <Alert tone="critical" title="Couldn't load the policies">
+          {(error as Error).message}
+        </Alert>
+      ) : policies.length === 0 ? (
+        <EmptyState icon={ShieldCheck} title="No policies apply to this endpoint">
+          Assign a policy to this endpoint or one of its groups from the policy's Assignment tab.
+        </EmptyState>
+      ) : (
+        <div className="app-table-scroll">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Policy</th>
+                <th scope="col">Module</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {policies.map((p) => {
+                const s = status(p);
+                return (
+                  <tr key={`${p.module}|${p.policyId}`}>
+                    <td>
+                      <Link className="ep-link" to={p.link}>
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td>
+                      {p.module}
+                      {p.detail && <span className="app-muted"> · {p.detail}</span>}
+                    </td>
+                    <td>
+                      <span title={s.title}>
+                        <Badge tone={s.tone}>{s.text}</Badge>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
@@ -751,7 +823,7 @@ function AssetDetailsForm({ agent }: { agent: AgentDetail }) {
   }
 
   return (
-    <Card title="Asset details">
+    <Card title="Asset Details">
       <form onSubmit={handleSave} className="app-settings-form">
         <FormSection title="Classification" description="These save as soon as you change them.">
           <FormGrid>
@@ -790,7 +862,7 @@ function AssetDetailsForm({ agent }: { agent: AgentDetail }) {
           </FormGrid>
         </FormSection>
 
-        <FormSection title="Ownership and warranty">
+        <FormSection title="Ownership and Warranty">
           <FormGrid>
             <Field
               label="Location"
@@ -882,7 +954,7 @@ function CustomFieldsForm({ agentId, values }: { agentId: string; values: { fiel
   if (!definitions || definitions.length === 0) return null;
 
   return (
-    <Card title="Custom fields">
+    <Card title="Custom Fields">
       <form onSubmit={handleSave} className="app-settings-form">
         <FormGrid>
           {definitions.map((def) => (
@@ -937,7 +1009,7 @@ function GroupMembershipEditor({ agentId, currentGroupIds }: { agentId: string; 
   if (!groups || groups.length === 0) return null;
 
   return (
-    <Card title="Group membership" hint={`${selected.length} selected`}>
+    <Card title="Group Membership" hint={`${selected.length} selected`}>
       <div className="app-stack">
         <div className="app-check-grid">
           {groups.map((g) => (
@@ -1005,7 +1077,7 @@ function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
   }
 
   return (
-    <Card title="Remote access">
+    <Card title="Remote Access">
       <div className="app-stack">
         <p className="app-text">
           Enable Remote Desktop on this endpoint, scoped to a firewall exception for your current IP address only.
@@ -1103,7 +1175,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
 
   async function handleUninstall() {
     const confirmed = await confirm({
-      title: `Uninstall the Endpoint IQ agent from ${agent.hostname}?`,
+      title: `Uninstall the Endpoint IQ Agent From ${agent.hostname}?`,
       body:
         "This removes management of this endpoint entirely - it will stop checking in and disappear from monitoring. " +
         "This cannot be undone from here; re-enrolling requires running the installer on the endpoint again. " +
@@ -1114,7 +1186,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
     if (!confirmed) return;
 
     const password = await prompt({
-      title: "Enter the uninstall password",
+      title: "Enter the Uninstall Password",
       label: "Uninstall password",
       type: "password",
       help: "Leave blank if none is configured for this deployment.",
@@ -1131,7 +1203,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
   }
 
   return (
-    <Card title="Uninstall agent">
+    <Card title="Uninstall Agent">
       <div className="app-stack">
         <p className="app-text">
           Remotely removes the Endpoint IQ agent (and its watchdog task) from this endpoint. Requires the endpoint to
@@ -1215,7 +1287,7 @@ function InstalledSoftwareSection({
 
   async function handleUninstall(name: string) {
     const confirmed = await confirm({
-      title: `Uninstall "${name}" from this endpoint?`,
+      title: `Uninstall "${name}" From This Endpoint?`,
       body:
         "This runs the software's own uninstaller unattended. MSI-based installs run fully silently; " +
         "other installers run whatever uninstall command is registered, which may not support a silent flag " +
@@ -1274,7 +1346,7 @@ function InstalledSoftwareSection({
   return (
     <Card
       flush
-      title="Installed software"
+      title="Installed Software"
       hint={`${software.length} ${plural(software.length, "application")}${collectedAt ? ` · reported ${formatRelative(collectedAt)}` : ""}`}
       actions={
         <Button
@@ -1463,7 +1535,7 @@ function DataDiscoveryFindingsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="Data discovery" hint={`${findings.length} ${plural(findings.length, "file")} with personal data`}>
+    <Card flush title="Data Discovery" hint={`${findings.length} ${plural(findings.length, "file")} with personal data`}>
       <div className="ep-cb">
         <p className="app-text">Samples below are masked previews (e.g. "••••••••6789") — the unmasked value never leaves the endpoint.</p>
       </div>
@@ -1616,7 +1688,7 @@ function DataMovementEventsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="Data movement" hint={`${events.length} ${plural(events.length, "file")} · newest first`}>
+    <Card flush title="Data Movement" hint={`${events.length} ${plural(events.length, "file")} · newest first`}>
       <DataMovementEventTable events={paged.pageItems} showPolicy />
       <ListPager paged={paged} noun="files" />
     </Card>
@@ -1651,7 +1723,7 @@ function AppControlEventsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="Application control" hint={`${events.length} ${plural(events.length, "event")}`}>
+    <Card flush title="Application Control" hint={`${events.length} ${plural(events.length, "event")}`}>
       <div className="app-table-scroll">
         <table className="ep-tbl">
           <thead>
@@ -1707,7 +1779,7 @@ function CommandBlockEventsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="Command blocking" hint={`${events.length} ${plural(events.length, "event")}`}>
+    <Card flush title="Command Blocking" hint={`${events.length} ${plural(events.length, "event")}`}>
       <div className="app-table-scroll">
         <table className="ep-tbl">
           <thead>
@@ -1765,7 +1837,7 @@ function UsbControlEventsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="USB device control" hint={`${events.length} ${plural(events.length, "event")}`}>
+    <Card flush title="USB Device Control" hint={`${events.length} ${plural(events.length, "event")}`}>
       <div className="app-table-scroll">
         <table className="ep-tbl">
           <thead>
@@ -1825,7 +1897,7 @@ function UserSessionsSection({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card flush title="User productivity" hint={`${sessions.length} ${plural(sessions.length, "session")}`}>
+    <Card flush title="User Productivity" hint={`${sessions.length} ${plural(sessions.length, "session")}`}>
       <div className="app-table-scroll">
         <table className="ep-tbl">
           <thead>
@@ -1956,7 +2028,7 @@ function CommandHistoryCard({ commands, showAdmin }: { commands: AgentHistory["c
                               )}
                               {c.stderr && (
                                 <>
-                                  <span className="app-subhead">Error output</span>
+                                  <span className="app-subhead">Error Output</span>
                                   <pre className="app-pre app-pre-error">{c.stderr}</pre>
                                 </>
                               )}
@@ -1992,7 +2064,7 @@ function HistorySection({ agentId }: { agentId: string }) {
 
   return (
     <div className="app-stack">
-      <Card flush title="Software changes" hint={`${data.softwareChanges.length} ${plural(data.softwareChanges.length, "change")}`}>
+      <Card flush title="Software Changes" hint={`${data.softwareChanges.length} ${plural(data.softwareChanges.length, "change")}`}>
         <Toolbar>
           <select className="ep-select" aria-label="Change" style={{ width: "auto" }} value={changeFilter} onChange={(e) => setChangeFilter(e.target.value as typeof changeFilter)}>
             <option value="">All changes</option>
@@ -2057,7 +2129,7 @@ function HistorySection({ agentId }: { agentId: string }) {
       <CommandHistoryCard commands={data.commands ?? []} showAdmin={!!data.adminActions} />
 
       {data.adminActions && (
-        <Card flush title="Admin actions on this endpoint" hint={`${data.adminActions.length} ${plural(data.adminActions.length, "action")} · super admins only`}>
+        <Card flush title="Admin Actions on This Endpoint" hint={`${data.adminActions.length} ${plural(data.adminActions.length, "action")} · super admins only`}>
           {data.adminActions.length === 0 ? (
             <EmptyState icon={History} title="No admin actions recorded">
               Changes made to this endpoint from the console (pause, uninstall, commands, groups, remote access) appear here.
@@ -2171,7 +2243,7 @@ export default function AgentDetailPage() {
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview" },
     { value: "software", label: "Software" },
-    ...(dataTabVisible ? [{ value: "data", label: "Data protection" }] : []),
+    ...(dataTabVisible ? [{ value: "data", label: "Data Protection" }] : []),
     { value: "manage", label: "Manage" },
     { value: "history", label: "History" },
     ...(activityTabVisible ? [{ value: "activity", label: "User Productivity" }] : []),
@@ -2213,6 +2285,7 @@ export default function AgentDetailPage() {
           </div>
           <div className="app-stack">
             <SecurityPostureCard agent={agent} />
+            <AppliedPoliciesCard agentId={agent.id} />
             <NotesFeed agentId={agent.id} />
           </div>
         </Row>

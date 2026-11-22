@@ -17,19 +17,18 @@ import {
   KpiStrip,
   Legend,
   PageHeader,
-  Pagination,
   RankedBars,
   Row,
   Skeleton,
   type ChartDatum,
   type CoverageRow,
 } from "../components/ui";
+import PostureTrendCard from "../components/PostureTrendCard";
 
 // Pattern A — overview dashboard (design-system/docs/PAGE_PATTERNS.md, reference/dashboard.html).
 
 // The server's label for endpoints whose OS edition couldn't be read (dashboard.service.ts).
 const UNKNOWN_OS_LABEL = "Unknown";
-const UNMANAGED_PAGE_SIZE = 10;
 
 function percentOf(value: number, total: number): number {
   return total > 0 ? Math.round((value / total) * 100) : 0;
@@ -64,10 +63,10 @@ function LoadingDashboard() {
         ))}
       </KpiStrip>
       <Row layout="21">
-        <Card title="Agent coverage by VLAN">
+        <Card title="Agent Coverage by VLAN">
           <Skeleton />
         </Card>
-        <Card title="Security posture">
+        <Card title="Security Posture">
           <Skeleton />
         </Card>
       </Row>
@@ -97,7 +96,7 @@ function CoverageCard({ summary, onOpenNetworkScan }: { summary: DashboardSummar
 
   return (
     <Card
-      title="Agent coverage by VLAN"
+      title="Agent Coverage by VLAN"
       hint="managed vs. unenrolled hosts from latest scan"
       actions={
         rows.length > 0 && (
@@ -163,7 +162,7 @@ function PostureCard({
 
   return (
     <Card
-      title={showVulnerabilities ? "Vulnerability exposure" : "Zero Trust status"}
+      title={showVulnerabilities ? "Vulnerability Exposure" : "Zero Trust Status"}
       actions={
         showVulnerabilities && (
           <Link className="ep-link" to="/vulnerabilities">
@@ -201,74 +200,6 @@ function PostureCard({
   );
 }
 
-function UnmanagedDevicesCard({ summary, onOpenNetworkScan }: { summary: DashboardSummary; onOpenNetworkScan: () => void }) {
-  const [page, setPage] = useState(1);
-  const hosts = summary.unmanagedHosts;
-  const anyScanned = summary.networkDeviceSummary.some((v) => v.hasScan);
-  const pageCount = Math.max(1, Math.ceil(hosts.length / UNMANAGED_PAGE_SIZE));
-  // Live updates can shrink the list under the current page.
-  const currentPage = Math.min(page, pageCount);
-  const visible = hosts.slice((currentPage - 1) * UNMANAGED_PAGE_SIZE, currentPage * UNMANAGED_PAGE_SIZE);
-
-  return (
-    <Card
-      flush
-      title="Unmanaged devices"
-      hint="seen by network scan without an agent"
-      actions={
-        <Link className="ep-link" to="/network-scan">
-          Open network discovery
-        </Link>
-      }
-    >
-      {hosts.length === 0 ? (
-        <EmptyState
-          icon={ShieldCheck}
-          title={anyScanned ? "No unmanaged devices" : "No scan results yet"}
-          action={
-            <Button size="sm" onClick={onOpenNetworkScan}>
-              Run network scan
-            </Button>
-          }
-        >
-          {anyScanned
-            ? "Every host found on a scanned VLAN has the agent. Scan again after network changes."
-            : "Run a network scan to find devices on your network that don't have the agent."}
-        </EmptyState>
-      ) : (
-        <>
-          <table className="ep-tbl">
-            <thead>
-              <tr>
-                <th scope="col">Device</th>
-                <th scope="col">MAC address</th>
-                <th scope="col">VLAN</th>
-                <th scope="col">Open ports</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((h) => (
-                <tr key={`${h.vlanName}-${h.ipAddress}`}>
-                  <td className="ep-host">
-                    <b className={h.hostname ? undefined : "app-unnamed"}>{h.hostname ?? "Unknown hostname"}</b>
-                    <small>{h.ipAddress}</small>
-                  </td>
-                  <td className="ep-mono">{h.macAddress ?? "—"}</td>
-                  <td>{h.vlanName}</td>
-                  <td className="ep-mono">{h.openPorts.length > 0 ? h.openPorts.join(", ") : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {hosts.length > UNMANAGED_PAGE_SIZE && (
-            <Pagination page={currentPage} pageSize={UNMANAGED_PAGE_SIZE} total={hosts.length} noun="devices" onPageChange={setPage} />
-          )}
-        </>
-      )}
-    </Card>
-  );
-}
-
 // Patch and security-configuration posture, clickable like Vulnerability exposure and Zero
 // Trust: each segment (and its legend entry) opens its module - Patches (filtered by severity
 // for the bars) or Security configuration.
@@ -298,7 +229,7 @@ function PatchStatusCard({
 
   return (
     <Card
-      title="Patch status"
+      title="Patch Status"
       actions={
         <Link className="ep-link" to="/patches">
           View all
@@ -341,7 +272,7 @@ function ConfigurationComplianceCard({
   const notAssessed = Math.max(summary.totalAgents - c.assessedEndpoints, 0);
   return (
     <Card
-      title="Configuration compliance"
+      title="Configuration Compliance"
       actions={
         <Link className="ep-link" to="/security-config">
           View all
@@ -532,10 +463,10 @@ export default function DashboardPage() {
           Stacks earlier than the default breakpoint so the pair keeps two readable columns. */}
       <Row layout="21" className={postureCard ? "app-dash-top" : "app-r1"}>
         <div className="ep-row app-r2">
-          <Card title="Device type">
+          <Card title="Device Type">
             {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={deviceTypeData} total={total} />}
           </Card>
-          <Card title="Operating system" actions={unknownOsCount > 0 && <Badge tone="med">{unknownOsCount} unclassified</Badge>}>
+          <Card title="Operating System" actions={unknownOsCount > 0 && <Badge tone="med">{unknownOsCount} unclassified</Badge>}>
             {total === 0 ? <span className="ep-nodata">No endpoints enrolled yet</span> : <RankedBars data={osData} tail={osTail} total={total} />}
           </Card>
         </div>
@@ -557,7 +488,7 @@ export default function DashboardPage() {
         {coverageCard}
       </Row>
 
-      {!networkScanHidden && <UnmanagedDevicesCard summary={summary} onOpenNetworkScan={openNetworkScan} />}
+      <PostureTrendCard />
 
       <UserRiskDashboardCard />
     </>

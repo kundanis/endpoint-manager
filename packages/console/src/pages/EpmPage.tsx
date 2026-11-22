@@ -29,7 +29,7 @@ function EmergencyRelease() {
         disabled={resumeAll.isPending}
         onClick={async () => {
           const ok = await confirm({
-            title: "Resume all paused endpoints?",
+            title: "Resume All Paused Endpoints?",
             body: "Every paused endpoint starts enforcing its policies again within a minute. Fix the policy that caused trouble first.",
             confirmLabel: "Resume all",
           });
@@ -44,7 +44,7 @@ function EmergencyRelease() {
         disabled={release.isPending}
         onClick={async () => {
           const ok = await confirm({
-            title: "Release all blocking on every endpoint?",
+            title: "Release All Blocking on Every Endpoint?",
             body: "Every endpoint is paused: within about a minute they stop enforcing all policies (application, web, IP, USB and command blocking, quarantine). Commands, deployments and patches wait until they're resumed. Use this when a policy is stopping devices from working.",
             confirmLabel: "Release everything",
             tone: "danger",
@@ -62,7 +62,7 @@ export default function EpmPage() {
   return (
     <>
       <PageHeader
-        title="Endpoint privilege management"
+        title="Endpoint Privilege Management"
         description="Restrict which software can execute, which sites are reachable, which commands can run, which USB storage devices are trusted and whether screenshots can be taken on assigned endpoints."
         actions={<EmergencyRelease />}
       />

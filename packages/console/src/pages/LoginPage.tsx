@@ -31,7 +31,7 @@ export default function LoginPage() {
           </div>
         </div>
         <div className="ep-section">
-          <h1>Sign in</h1>
+          <h1>Sign In</h1>
           {login.isError && (
             <div className="ep-alert ep-alert-critical" role="alert">
               <TriangleAlert size={16} strokeWidth={1.7} className="ep-ic" aria-hidden />

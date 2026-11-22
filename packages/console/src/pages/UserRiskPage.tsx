@@ -99,7 +99,7 @@ export default function UserRiskPage() {
   return (
     <>
       <PageHeader
-        title="User risk"
+        title="User Risk"
         description="Combines activity from screen capture, data movement, DLP, EPM blocking, threat detection and sign-ins into one risk score per user, and raises alerts for suspicious patterns."
         actions={
           <Button
@@ -282,7 +282,7 @@ function AlertDetail({ alert }: { alert: UserRiskAlert }) {
   return (
     <div className="app-stack">
       <div className="app-stack-sm">
-        <span className="app-subhead">What happened</span>
+        <span className="app-subhead">What Happened</span>
         {isLoading ? (
           <Skeleton lines={3} />
         ) : !events || events.length === 0 ? (
@@ -515,7 +515,7 @@ function EmailNotifications() {
   }
 
   return (
-    <Card title="Email notifications" hint="Alert emails and a weekly summary, sent through your own mail server">
+    <Card title="Email Notifications" hint="Alert emails and a weekly summary, sent through your own mail server">
       <div className="app-stack">
         <Check checked={form.enabled} onChange={(c) => set({ enabled: c })} label="Send email notifications" />
         <FormGrid>
@@ -552,7 +552,7 @@ function EmailNotifications() {
           </select>
         </div>
 
-        <span className="app-subhead">Mail server (SMTP)</span>
+        <span className="app-subhead">Mail Server (SMTP)</span>
         <FormGrid>
           <Field label="Server" htmlFor="ur-smtp-host" help="e.g. smtp.office365.com or smtp.gmail.com">
             <input id="ur-smtp-host" className="ep-input" value={form.smtp.host} onChange={(e) => setSmtp({ host: e.target.value })} />
@@ -617,7 +617,7 @@ function IdentityLinks({ settings, onChange }: { settings: UserRiskSettings; onC
   }
 
   return (
-    <Card title="Email addresses" hint="Email blocking reports senders by address; link each to the Windows user it belongs to">
+    <Card title="Email Addresses" hint="Email blocking reports senders by address; link each to the Windows user it belongs to">
       <div className="app-stack">
         <Check
           checked={settings.autoLinkEmails}
@@ -706,7 +706,7 @@ export function UserRiskSettingsTab() {
 
   return (
     <div className="app-stack">
-      <Card title="Working hours and users">
+      <Card title="Working Hours and Users">
         <div className="app-stack">
           <FormGrid>
             <Field label="Time zone" htmlFor="ur-tz" help="Used for working hours and per-day counts, e.g. Asia/Kolkata.">
@@ -743,7 +743,7 @@ export function UserRiskSettingsTab() {
             </Field>
           </FormGrid>
           <div className="app-stack-sm" role="group" aria-label="Working days">
-            <span className="app-subhead">Working days</span>
+            <span className="app-subhead">Working Days</span>
             <div className="app-badge-row">
               {WEEKDAYS.map((d, i) => (
                 <Check

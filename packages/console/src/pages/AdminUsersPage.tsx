@@ -119,7 +119,7 @@ export default function AdminUsersPage() {
 
   async function handleResetPassword(admin: AdminUserListItem) {
     const newPassword = await prompt({
-      title: `Reset password for ${admin.email}?`,
+      title: `Reset Password for ${admin.email}?`,
       label: "New password",
       type: "password",
       help: "At least 8 characters.",
@@ -132,7 +132,7 @@ export default function AdminUsersPage() {
 
   async function handleDelete(admin: AdminUserListItem) {
     const confirmed = await confirm({
-      title: `Delete admin account "${admin.email}"?`,
+      title: `Delete Admin Account "${admin.email}"?`,
       body: "This cannot be undone.",
       confirmLabel: "Delete account",
       tone: "danger",
@@ -157,7 +157,7 @@ export default function AdminUsersPage() {
 
       <Card
         flush
-        title="Console administrators"
+        title="Console Administrators"
         hint="only super admins can see or change this page — a super admin has access to every module and can create other super admins"
       >
         {del.isError && (
@@ -299,7 +299,7 @@ export default function AdminUsersPage() {
 
       {formOpen && (
         <Modal
-          title={isEditing ? `Edit ${editingEmail}` : "Add administrator"}
+          title={isEditing ? `Edit ${editingEmail}` : "Add Administrator"}
           description={
             isEditing
               ? "Change this administrator's role and the modules they can access."
@@ -352,7 +352,7 @@ export default function AdminUsersPage() {
                 </Field>
               </FormGrid>
             </FormSection>
-            <FormSection title="Module access" description={role === "ADMIN" ? "Choose which modules this admin can open." : undefined}>
+            <FormSection title="Module Access" description={role === "ADMIN" ? "Choose which modules this admin can open." : undefined}>
               {role === "ADMIN" ? (
                 <div className="app-check-grid">
                   {MODULE_KEYS.map((key) => (
@@ -364,7 +364,7 @@ export default function AdminUsersPage() {
               )}
             </FormSection>
             {role === "ADMIN" && (
-              <FormSection title="Sensitive access" description="Areas that show individual people's activity. Give them only to admins who investigate users.">
+              <FormSection title="Sensitive Access" description="Areas that show individual people's activity. Give them only to admins who investigate users.">
                 <Check
                   checked={moduleGrants.has("USER_RISK")}
                   onChange={() => toggleModule("USER_RISK")}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Activity, ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, PanelLeftClose, PanelLeftOpen, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck } from "lucide-react";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
 import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
@@ -8,6 +8,8 @@ import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
 import NotificationBell from "./NotificationBell";
 import { HelpProvider, useHelp } from "../help/HelpProvider";
+
+const RAIL_KEY = "ep.sidebar.collapsed";
 
 // Lucide icon per nav module (design-system/docs/COMPONENTS.md §18).
 const MODULE_ICONS: Record<string, LucideIcon> = {
@@ -158,6 +160,22 @@ export default function Layout() {
   const [expandedKey, setExpandedKey] = useState<string | null>(() => (matchedModule?.items ? matchedModule.key : null));
   // Below 960px the sidebar is a drawer (ep-open), toggled from the top bar.
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Wider screens can collapse the sidebar to an icon rail; remembered in this browser only.
+  const [rail, setRail] = useState(() => {
+    try {
+      return localStorage.getItem(RAIL_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  function saveRail(next: boolean) {
+    setRail(next);
+    try {
+      localStorage.setItem(RAIL_KEY, next ? "1" : "0");
+    } catch {
+      /* storage unavailable: the choice lasts for this page only */
+    }
+  }
 
   useEffect(() => {
     if (matchedModule?.items) setExpandedKey(matchedModule.key);
@@ -180,7 +198,7 @@ export default function Layout() {
 
     if (module.path) {
       return (
-        <NavLink key={module.key} to={module.path} className={({ isActive }) => `ep-ni ${isActive ? "ep-on" : ""}`}>
+        <NavLink key={module.key} to={module.path} title={rail ? module.label : undefined} className={({ isActive }) => `ep-ni ${isActive ? "ep-on" : ""}`}>
           <Icon {...ICON_PROPS} />
           <span>{module.label}</span>
         </NavLink>
@@ -194,22 +212,29 @@ export default function Layout() {
     // A module with an active sub-page stays un-highlighted itself; only the sub-item gets
     // ep-on-sub (COMPONENTS.md §2). Collapsed, the module is the only place to show where
     // you are, so it takes ep-on until expanded.
-    const showActive = module.key === matchedModule?.key && !isExpanded;
+    const showActive = module.key === matchedModule?.key && (rail || !isExpanded);
     return (
       <div key={module.key}>
         <button
           type="button"
           className={`ep-ni ${showActive ? "ep-on" : ""} ${locked || ungranted ? "app-ni-locked" : ""}`}
-          aria-expanded={isExpanded}
-          onClick={() => toggleModule(module.key)}
-          title={locked ? "Not included in your license" : ungranted ? "You don't have access to this module" : undefined}
+          aria-expanded={!rail && isExpanded}
+          aria-label={rail ? `${module.label} (expands the menu)` : undefined}
+          onClick={() => {
+            // Folded: expand the menu with this module open, as the expand button does.
+            if (rail) {
+              saveRail(false);
+              setExpandedKey(module.key);
+            } else toggleModule(module.key);
+          }}
+          title={locked ? "Not included in your license" : ungranted ? "You don't have access to this module" : rail ? module.label : undefined}
         >
           <Icon {...ICON_PROPS} />
           <span>{module.label}</span>
           {(locked || ungranted) && <Lock {...ICON_PROPS} size={13} aria-label="Locked" aria-hidden={false} />}
           <Chevron {...ICON_PROPS} className="ep-ic ep-chev" />
         </button>
-        {isExpanded && (
+        {!rail && isExpanded && (
           <div className="ep-sub">
             {visibleItems(module, visibility, me).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => (isActive ? "ep-on-sub" : "")}>
@@ -227,7 +252,7 @@ export default function Layout() {
 
   return (
     <HelpProvider>
-    <div className="ep-app">
+    <div className={`ep-app ${rail ? "app-rail" : ""}`}>
       <aside className={`ep-sb ${drawerOpen ? "ep-open" : ""}`} aria-label="Main navigation">
         <div className="ep-brandrow">
           <Logo size={28} />
@@ -242,7 +267,9 @@ export default function Layout() {
           {administration.map(renderModule)}
         </nav>
         <div className="ep-sbfoot">
-          <div className="ep-av">{initialsFor(me?.email)}</div>
+          <div className="ep-av" title={rail ? me?.email : undefined}>
+            {initialsFor(me?.email)}
+          </div>
           <div className="app-sbfoot-id">
             <b>{roleLabel(me?.role)}</b>
             <small>{me?.email}</small>
@@ -260,6 +287,16 @@ export default function Layout() {
             onClick={() => setDrawerOpen((v) => !v)}
           >
             <Menu {...ICON_PROPS} />
+          </button>
+          <button
+            type="button"
+            className="ep-iconbtn app-rail-toggle"
+            aria-label={rail ? "Expand navigation" : "Collapse navigation"}
+            aria-pressed={rail}
+            title={rail ? "Expand navigation" : "Collapse navigation"}
+            onClick={() => saveRail(!rail)}
+          >
+            {rail ? <PanelLeftOpen {...ICON_PROPS} /> : <PanelLeftClose {...ICON_PROPS} />}
           </button>
           <nav className="ep-crumb" aria-label="Breadcrumb">
             {matchedModule && activeItem ? (

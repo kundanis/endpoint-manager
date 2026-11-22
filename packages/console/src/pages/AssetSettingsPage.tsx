@@ -80,7 +80,7 @@ function TamperProtectionSection() {
 
   async function handleRemove() {
     const confirmed = await confirm({
-      title: "Remove uninstall protection?",
+      title: "Remove Uninstall Protection?",
       body: "Anyone with admin access to a managed endpoint will be able to uninstall the agent without a password.",
       confirmLabel: "Remove protection",
       tone: "danger",
@@ -93,7 +93,7 @@ function TamperProtectionSection() {
     <Row layout="21">
       <form className="ep-card" onSubmit={handleSubmit}>
         <FormSection
-          title="Uninstall password"
+          title="Uninstall Password"
           description="Whoever runs the uninstaller on an endpoint must also enter this password."
         >
           <div className="app-stack">
@@ -153,7 +153,7 @@ function TamperProtectionSection() {
         </FormFooter>
       </form>
 
-      <Card title="How tamper protection works">
+      <Card title="How Tamper Protection Works">
         <p className="app-text">
           Managed endpoints resist casual attempts to stop or remove the agent — the Scheduled Task and a watchdog task
           restore each other if either is disabled, and the installed files are locked against deletion by anything
@@ -187,7 +187,7 @@ function GroupSettingsPanel({ group }: { group: { id: string; name: string; desc
 
   return (
     <form className="ep-card" onSubmit={handleSave}>
-      <FormSection title="Group settings" description="Rename the group or change its description.">
+      <FormSection title="Group Settings" description="Rename the group or change its description.">
         <div className="app-stack">
           <Field label="Name" htmlFor={`group-name-${group.id}`} required>
             <input id={`group-name-${group.id}`} className="ep-input" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -241,7 +241,7 @@ function GroupsSection() {
 
   async function handleDelete(id: string, groupName: string) {
     const confirmed = await confirm({
-      title: `Delete group "${groupName}"?`,
+      title: `Delete Group "${groupName}"?`,
       body: "The endpoints in it stay enrolled; only the group is removed. This cannot be undone.",
       confirmLabel: "Delete group",
       tone: "danger",
@@ -270,7 +270,7 @@ function GroupsSection() {
   return (
     <div className="app-stack">
       <Row layout="21">
-        <Card flush title="Asset groups" hint={groups ? `${groups.length} total · select a group to manage its members` : undefined}>
+        <Card flush title="Asset Groups" hint={groups ? `${groups.length} total · select a group to manage its members` : undefined}>
           {deleteGroup.isError && (
             <div className="ep-cb">
               <Alert tone="critical">{(deleteGroup.error as Error).message}</Alert>
@@ -360,7 +360,7 @@ function GroupsSection() {
         </Card>
 
         <form className="ep-card" onSubmit={handleCreate}>
-          <FormSection title="Create group" description="Groups let you target policies, packages and updates at many endpoints at once.">
+          <FormSection title="Create Group" description="Groups let you target policies, packages and updates at many endpoints at once.">
             <div className="app-stack">
               <Field label="Name" htmlFor="new-group-name" required>
                 <input id="new-group-name" className="ep-input" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -381,7 +381,7 @@ function GroupsSection() {
 
       {groupDetail && (
         <Row layout="21">
-          <Card flush title={`${groupDetail.name} members`} hint={`${groupDetail.members.length} ${groupDetail.members.length === 1 ? "endpoint" : "endpoints"}`}>
+          <Card flush title={`${groupDetail.name} Members`} hint={`${groupDetail.members.length} ${groupDetail.members.length === 1 ? "endpoint" : "endpoints"}`}>
             {removeMember.isError && (
               <div className="ep-cb">
                 <Alert tone="critical">{(removeMember.error as Error).message}</Alert>
@@ -426,7 +426,7 @@ function GroupsSection() {
               </div>
             )}
             <div className="ep-cb app-stack-sm">
-              <span className="app-subhead">Add members</span>
+              <span className="app-subhead">Add Members</span>
               <EndpointCheckboxList
                 agents={availableAgents}
                 selectedAgentIds={memberPickerAgentIds}
@@ -474,7 +474,7 @@ function CustomFieldsSection() {
 
   async function handleDelete(id: string, fieldName: string) {
     const confirmed = await confirm({
-      title: `Delete custom field "${fieldName}"?`,
+      title: `Delete Custom Field "${fieldName}"?`,
       body: "This cannot be undone.",
       confirmLabel: "Delete field",
       tone: "danger",
@@ -485,7 +485,7 @@ function CustomFieldsSection() {
 
   return (
     <Row layout="21">
-      <Card flush title="Custom fields" hint={fields ? `${fields.length} defined` : undefined}>
+      <Card flush title="Custom Fields" hint={fields ? `${fields.length} defined` : undefined}>
         {deleteField.isError && (
           <div className="ep-cb">
             <Alert tone="critical">{(deleteField.error as Error).message}</Alert>
@@ -563,7 +563,7 @@ function CustomFieldsSection() {
       </Card>
 
       <form className="ep-card" onSubmit={handleCreate}>
-        <FormSection title="Create field" description="Custom fields appear on every endpoint's asset details.">
+        <FormSection title="Create Field" description="Custom fields appear on every endpoint's asset details.">
           <div className="app-stack">
             <Field label="Name" htmlFor="new-field-name" required>
               <input id="new-field-name" className="ep-input" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -646,7 +646,7 @@ function RemoteInstallSection() {
 
   async function handleRemove() {
     const ok = await confirm({
-      title: "Remove the remote install account?",
+      title: "Remove the Remote Install Account?",
       body: "Install agent will ask for a Windows admin account each time again. The saved password is deleted from the server.",
       confirmLabel: "Remove account",
       tone: "danger",
@@ -659,7 +659,7 @@ function RemoteInstallSection() {
     <Row layout="21">
       <form className="ep-card" onSubmit={handleSubmit}>
         <FormSection
-          title="Remote install account"
+          title="Remote Install Account"
           description="The Windows administrator account Install agent uses to reach a device and install the agent, so nobody has to type it each time."
         >
           <div className="app-stack">
@@ -732,7 +732,7 @@ function RemoteInstallSection() {
         )}
       </form>
 
-      <Card title="Good to know">
+      <Card title="Good to Know">
         <p className="app-text">
           With an account saved, Install agent on Network discovery and on Endpoints asks for no login, only an optional group. Anyone can still
           type a different account for one device.
@@ -753,7 +753,7 @@ export default function AssetSettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("tamper");
   return (
     <>
-      <PageHeader title="Asset settings" description="Tamper protection, the remote install account, asset groups and custom fields for every managed endpoint." />
+      <PageHeader title="Asset Settings" description="Tamper protection, the remote install account, asset groups and custom fields for every managed endpoint." />
       <Tabs
         value={tab}
         onChange={(v) => setTab(v as SettingsTab)}
