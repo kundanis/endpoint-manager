@@ -7,12 +7,9 @@ import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlo
 import { COMMAND_BLOCK_KILLABLE_WINDOWS_TOOLS, COMMAND_BLOCK_MAX_KILLS_PER_SCAN, COMMAND_BLOCK_PROTECTED_PROCESS_NAMES, commandBlockRuleProblem } from "@em/shared";
 import { commandRulesFile } from "./appControlPaths";
 import { drainCommandWatcherEvents, ensureProcessWatcher, processWatcherProblem } from "./appControlEnforcer";
+import { AGENT_INSTALL_DIR, psEscape } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
-
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
-}
 
 interface RawMatch {
   RuleId: string;
@@ -61,6 +58,14 @@ $killableTools = @(${killableToolsLiteral}) # script hosts and attack tools may 
 $rules = @(
 ${rulesLiteral}
 )
+# The agent's own scripts: PowerShell running a script file from the locked install folder, with
+# no command of its own on the command line (anyone can type the folder's name into a command).
+$agentScript = '-file "${psEscape(AGENT_INSTALL_DIR.toLowerCase())}\\'
+function Test-AgentScript($p) {
+  if (-not $p.CommandLine -or $p.Name -ne 'powershell.exe') { return $false }
+  $lc = $p.CommandLine.ToLowerInvariant()
+  return $lc.Contains($agentScript) -and -not [regex]::IsMatch($lc, '\\s[-/](c\\w*|e|ec|en\\w*)(\\s|$)')
+}
 
 $matches = @()
 $all = @(Get-CimInstance Win32_Process)
@@ -73,7 +78,7 @@ do {
   foreach ($p in $all) { if (-not $agentTree.Contains([int]$p.ProcessId) -and $agentTree.Contains([int]$p.ParentProcessId)) { [void]$agentTree.Add([int]$p.ProcessId); $added++ } }
 } while ($added -gt 0)
 $processes = $all | Where-Object {
-  -not $agentTree.Contains([int]$_.ProcessId) -and ($protectedNames -notcontains $_.Name.ToLowerInvariant()) -and -not ($_.ExecutablePath -and $_.ExecutablePath.ToLowerInvariant().StartsWith($windowsDir) -and ($killableTools -notcontains $_.Name.ToLowerInvariant())) -and -not ($_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains('endpointpro'))
+  -not $agentTree.Contains([int]$_.ProcessId) -and ($protectedNames -notcontains $_.Name.ToLowerInvariant()) -and -not ($_.ExecutablePath -and $_.ExecutablePath.ToLowerInvariant().StartsWith($windowsDir) -and ($killableTools -notcontains $_.Name.ToLowerInvariant())) -and -not (Test-AgentScript $_)
 }
 
 foreach ($proc in $processes) {

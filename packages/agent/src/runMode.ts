@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { psEscape, writeWorkFile } from "./secureFs";
 import { registerOneTimeTask } from "./selfUpdater";
 
 const execFileAsync = promisify(execFile);
@@ -46,15 +47,17 @@ export async function checkRunMode(): Promise<boolean> {
   }
 
   try {
-    const helper = path.join(process.env.TEMP ?? installDir, `${MIGRATION_TASK_NAME}.ps1`);
-    fs.writeFileSync(
-      helper,
+    // Runs as SYSTEM: written to the locked work folder under a new random name, never %TEMP%
+    // (C:\Windows\Temp, where a user could put their own script in its place).
+    const helper = await writeWorkFile(
+      MIGRATION_TASK_NAME,
+      ".ps1",
       [
-        `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${registerScript}"`,
+        `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File '${psEscape(registerScript)}'`,
         `schtasks /delete /tn "${MIGRATION_TASK_NAME}" /f 2>$null | Out-Null`,
-        `Remove-Item -Path "$PSCommandPath" -Force -ErrorAction SilentlyContinue`,
+        `Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue`,
       ].join("\r\n"),
-      "ascii",
+      "utf8",
     );
     await registerOneTimeTask(MIGRATION_TASK_NAME, helper, 15_000);
     console.log("Moving the agent to the Endpoint IQ Agent service in about 15 seconds.");

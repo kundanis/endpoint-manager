@@ -66,6 +66,47 @@ async function consumeEnrollmentToken(plaintextToken: string) {
   return record;
 }
 
+// Placeholder serials that many boards and VMs report - useless as an identity.
+const PLACEHOLDER_SERIALS = new Set([
+  "",
+  "0",
+  "NONE",
+  "N/A",
+  "NA",
+  "DEFAULT STRING",
+  "TO BE FILLED BY O.E.M.",
+  "SYSTEM SERIAL NUMBER",
+  "NOT SPECIFIED",
+  "NOT APPLICABLE",
+  "CHASSIS SERIAL NUMBER",
+  "123456789",
+  "0123456789",
+]);
+
+function usableSerial(value: string | null | undefined): string | null {
+  const s = value?.trim().toUpperCase() ?? "";
+  return PLACEHOLDER_SERIALS.has(s) || /^0+$/.test(s) ? null : s;
+}
+
+function usableMac(value: string | null | undefined): string | null {
+  const m = value?.replace(/[^0-9a-f]/gi, "").toLowerCase() ?? "";
+  return m.length === 12 && !/^0+$/.test(m) ? m : null;
+}
+
+// The serial decides when both sides have one (a matching MAC can't override a different
+// serial); the MAC is the fallback for machines without a usable serial.
+export function isSameMachine(
+  known: { serialNumber: string | null; macAddress: string | null },
+  incoming: { serialNumber?: string | null; macAddress?: string | null },
+): boolean {
+  const knownSerial = usableSerial(known.serialNumber);
+  const incomingSerial = usableSerial(incoming.serialNumber);
+  if (knownSerial && incomingSerial) return knownSerial === incomingSerial;
+  const knownMac = usableMac(known.macAddress);
+  const incomingMac = usableMac(incoming.macAddress);
+  return !!knownMac && knownMac === incomingMac;
+}
+
 export async function enrollAgent(payload: EnrollRequest): Promise<EnrollResponse> {
   // Checked before consuming the enrollment token so a licensing denial doesn't burn a
   // token use for nothing.
@@ -85,7 +126,19 @@ export async function enrollAgent(payload: EnrollRequest): Promise<EnrollRespons
   // state, tags, lifecycle status, group memberships, notes, custom fields) instead of
   // silently resetting it on every reinstall. Only identity/version fields are refreshed;
   // deliberately not a full replace.
-  const existing = await prisma.agent.findFirst({ where: { hostname: payload.hostname } });
+  //
+  // A matching hostname alone is NOT proof of being that machine, though: enrollment tokens
+  // are multi-use and ship inside the setup file, so anyone holding one could otherwise
+  // enroll as "FINANCE-DC01", take over that endpoint's identity (its pending commands and
+  // policies) and knock the real agent off. The record is reused only when the hardware
+  // matches what that endpoint last reported (BIOS serial, else primary MAC); otherwise the
+  // newcomer gets a record of its own and the existing endpoint is left untouched.
+  const sameHostname = await prisma.agent.findMany({
+    where: { hostname: payload.hostname },
+    select: { id: true, serialNumber: true, macAddress: true },
+    orderBy: { lastCheckinAt: "desc" }, // SQL Server sorts NULLs last when descending
+  });
+  const existing = sameHostname.find((a) => isSameMachine(a, payload)) ?? null;
   const agent = existing
     ? await prisma.agent.update({
         where: { id: existing.id },
@@ -105,6 +158,10 @@ export async function enrollAgent(payload: EnrollRequest): Promise<EnrollRespons
           osArch: payload.osArch,
           agentVersion: payload.agentVersion,
           apiKeyHash,
+          // Recorded now (inventory fills them in later anyway) so a reinstall before the
+          // first inventory report is still recognised as the same machine.
+          serialNumber: payload.serialNumber?.trim() || null,
+          macAddress: payload.macAddress?.trim() || null,
         },
       });
 

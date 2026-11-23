@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { PatchInstallResultPayload, PatchTaskWire } from "@em/shared";
+import { psEscape } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +31,7 @@ function toArray<T>(value: T[] | T | null | undefined): T[] {
 // this code path never reboots the machine itself; that's a separate, explicit admin action.
 function buildInstallScript(updateIds: string[]): string {
   // Defensive escaping even though UpdateIDs are GUIDs and can't actually contain a quote.
-  const updateIdsJsonLiteral = JSON.stringify(updateIds).replace(/'/g, "''");
+  const updateIdsJsonLiteral = psEscape(JSON.stringify(updateIds));
 
   return `
 $ErrorActionPreference = 'Stop'

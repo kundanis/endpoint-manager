@@ -95,11 +95,20 @@ screenCaptureRouter.get("/endpoints/:agentId/report", async (req, res, next) => 
   }
 });
 
+// Query values are checked to be plain strings: qs parses ?agentId[not]=x into an object,
+// which would otherwise reach the Prisma where clause as a filter operator.
+const capturesQuerySchema = z.object({
+  agentId: z.string().min(1).max(100),
+  username: z.string().min(1).max(256),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 // The screenshots behind one row: ?username=&day=YYYY-MM-DD (logged as a sensitive view).
 screenCaptureRouter.get("/endpoints/:agentId/captures", async (req, res, next) => {
   try {
-    const { username, day } = req.query as Record<string, string | undefined>;
-    if (!username || !day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return res.status(400).json({ error: "username and day are required" });
+    const parsed = capturesQuerySchema.omit({ agentId: true }).safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: "username and day are required" });
+    const { username, day } = parsed.data;
     const captures = await getEndpointCaptures(req.params.agentId, username, day, req.adminRole === "SUPER_ADMIN");
     if (!captures) return res.status(404).json({ error: "Endpoint not found" });
     res.json(captures);
@@ -207,8 +216,9 @@ screenCaptureRouter.get("/:id/report", async (req, res, next) => {
 // The screenshots behind one report row: ?agentId=&username=&day=YYYY-MM-DD
 screenCaptureRouter.get("/:id/captures", async (req, res, next) => {
   try {
-    const { agentId, username, day } = req.query as Record<string, string | undefined>;
-    if (!agentId || !username || !day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return res.status(400).json({ error: "agentId, username and day are required" });
+    const parsed = capturesQuerySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: "agentId, username and day are required" });
+    const { agentId, username, day } = parsed.data;
     const captures = await getCaptures(req.params.id, agentId, username, day, req.adminRole === "SUPER_ADMIN");
     if (!captures) return res.status(404).json({ error: "Policy not found" });
     res.json(captures);

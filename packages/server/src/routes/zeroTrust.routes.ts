@@ -40,6 +40,7 @@ import { resolveTargetAgentIds } from "../services/agentTargeting.service";
 import { z } from "zod";
 import { prisma } from "../db";
 import { requestScan } from "../services/scanRequests";
+import { canAuthorEndpointScripts, SCRIPT_AUTHORING_DENIED, setsNewScript } from "../middleware/requireAdminRole";
 
 export const zeroTrustRouter = Router();
 
@@ -177,6 +178,8 @@ zeroTrustRouter.delete("/:id", async (req, res, next) => {
 zeroTrustRouter.post("/:id/conditions", async (req, res, next) => {
   try {
     const payload = createZeroTrustConditionRequestSchema.parse(req.body);
+    // A custom condition is always PowerShell run as SYSTEM - see canAuthorEndpointScripts.
+    if (!canAuthorEndpointScripts(req)) return res.status(403).json({ error: SCRIPT_AUTHORING_DENIED });
     res.status(201).json(await addCondition(req.params.id, payload));
   } catch (err) {
     next(err);
@@ -200,13 +203,19 @@ zeroTrustRouter.post("/:id/built-in-conditions", async (req, res, next) => {
 zeroTrustRouter.patch("/:id/conditions/:conditionId", async (req, res, next) => {
   try {
     const payload = updateZeroTrustConditionRequestSchema.parse(req.body);
+    const current = await prisma.zeroTrustCondition.findFirst({
+      where: { id: req.params.conditionId, policyId: req.params.id },
+      select: { conditionKey: true, checkPowerShell: true },
+    });
+    // updateCondition writes by id alone, so a condition of another policy must not slip past
+    // the checks below by being addressed through this one.
+    if (!current) return res.status(404).json({ error: "Condition not found" });
+    if (setsNewScript(payload.checkPowerShell, current.checkPowerShell) && !canAuthorEndpointScripts(req)) {
+      return res.status(403).json({ error: SCRIPT_AUTHORING_DENIED });
+    }
     // A built-in check keeps its key - renaming it would quietly turn it into a deletable custom one.
     if (payload.conditionKey !== undefined) {
-      const current = await prisma.zeroTrustCondition.findFirst({
-        where: { id: req.params.conditionId, policyId: req.params.id },
-        select: { conditionKey: true },
-      });
-      if (current && isProtectedConditionKey(current.conditionKey) && payload.conditionKey !== current.conditionKey) {
+      if (isProtectedConditionKey(current.conditionKey) && payload.conditionKey !== current.conditionKey) {
         return res.status(400).json({ error: "A built-in check's key can't be changed." });
       }
     }

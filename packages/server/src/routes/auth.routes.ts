@@ -1,11 +1,12 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { loginRequestSchema } from "@em/shared";
-import { InvalidCredentialsError, login, SeatTakenError } from "../services/auth.service";
+import { InvalidCredentialsError, login, LoginLockout, SeatTakenError } from "../services/auth.service";
 import { adminAuthMiddleware } from "../middleware/adminAuth";
 import { verifyAdminJwt } from "../utils/jwt";
 import { revokeSession } from "../services/adminSession.service";
 import { logger } from "../logger";
+import { config } from "../config";
 import { writeAudit } from "../services/adminAudit.service";
 
 export const authRouter = Router();
@@ -35,6 +36,10 @@ function auditSignIn(
 const COOKIE_NAME = "em_admin_jwt";
 const COOKIE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
+function cookieSecure(req: import("express").Request): boolean {
+  return req.secure || config.tlsEnabled;
+}
+
 // Brute-force protection — this one login can dispatch commands that run as SYSTEM on
 // every endpoint. Two layers: a per-address cap (stops one source spraying many accounts)
 // and a per-account lockout (stops a distributed guess against one account). The lockout
@@ -49,33 +54,14 @@ const loginRateLimiter = rateLimit({
   message: { error: "Too many login attempts from this address. Try again in 15 minutes." },
 });
 
-const MAX_CONSECUTIVE_FAILURES = 5;
-const LOCKOUT_MS = 15 * 60 * 1000;
-const failuresByEmail = new Map<string, { count: number; lockedUntil: number }>();
-
-function lockedUntil(email: string): number {
-  const entry = failuresByEmail.get(email);
-  return entry && entry.lockedUntil > Date.now() ? entry.lockedUntil : 0;
-}
-
-function recordFailure(email: string): void {
-  const entry = failuresByEmail.get(email) ?? { count: 0, lockedUntil: 0 };
-  entry.count += 1;
-  if (entry.count >= MAX_CONSECUTIVE_FAILURES) {
-    entry.lockedUntil = Date.now() + LOCKOUT_MS;
-    entry.count = 0;
-    logger.warn({ email }, "Admin login locked after repeated failed attempts");
-  }
-  failuresByEmail.set(email, entry);
-  if (failuresByEmail.size > 10_000) failuresByEmail.clear(); // bound memory under a spray
-}
+const lockout = new LoginLockout();
 
 authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   try {
     const { email, password } = loginRequestSchema.parse(req.body);
     const key = email.trim().toLowerCase();
 
-    const until = lockedUntil(key);
+    const until = lockout.lockedUntil(key);
     if (until) {
       const minutes = Math.ceil((until - Date.now()) / 60_000);
       auditSignIn(req, key, "LOGIN_BLOCKED", "Sign-in blocked: too many failed attempts");
@@ -87,31 +73,33 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
       result = await login(email, password, req.ip);
     } catch (err) {
       if (err instanceof InvalidCredentialsError) {
-        recordFailure(key);
+        if (lockout.recordFailure(key)) logger.warn({ email: key }, "Admin login locked after repeated failed attempts");
         auditSignIn(req, key, "LOGIN_FAILED", "Failed sign-in (wrong email or password)");
         return res.status(401).json({ error: "Invalid email or password" });
       }
       if (err instanceof SeatTakenError) {
         // The password was right, so this isn't counted as a failed attempt.
         const who = err.superAdmin ? "Another super admin" : "Another admin with the same access";
+        // The other admin's email goes to the audit log (super admins only), never into the
+        // response: this endpoint is unauthenticated until it succeeds.
         auditSignIn(req, key, "LOGIN_REFUSED", `Sign-in refused: ${err.holderEmail} (same rights) is signed in`);
         return res.status(409).json({
-          error: `${who} (${err.holderEmail}) is signed in. Only one person with the same rights can use the console at a time. Try again after they sign out, or 30 minutes after they stop using it.`,
+          error: `${who} is signed in. Only one person with the same rights can use the console at a time. Try again after they sign out, or 30 minutes after they stop using it.`,
         });
       }
       throw err;
     }
-    failuresByEmail.delete(key);
+    lockout.clear(key);
     auditSignIn(req, key, "LOGIN", "Signed in to the console");
 
     res.cookie(COOKIE_NAME, result.token, {
       httpOnly: true,
       sameSite: "lax",
-      // Marked Secure whenever the login itself came over HTTPS, so that session cookie is
-      // never sent back over the plain-HTTP port. Not unconditional: internal admins still
-      // reach the console over http://<server>:4000 until internal DNS for
-      // epp.systematixgroup.in exists, and a Secure cookie would silently fail to set there.
-      secure: req.secure,
+      // Always Secure once the server has HTTPS (the plain-HTTP port then only serves agents
+      // and redirects browsers - see plainHttpListener.ts), and whenever the login itself came
+      // over HTTPS. Without a certificate the console is HTTP-only and a Secure cookie would
+      // silently fail to set.
+      secure: cookieSecure(req),
       maxAge: COOKIE_MAX_AGE_MS,
     });
     res.json({ user: { email, role: result.role } });
@@ -132,7 +120,7 @@ authRouter.post("/logout", async (req, res, next) => {
         // an expired or invalid token has no live session to end
       }
     }
-    res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: "lax", secure: req.secure });
+    res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: "lax", secure: cookieSecure(req) });
     res.status(204).send();
   } catch (err) {
     next(err);

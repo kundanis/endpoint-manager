@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AgentUpdateStatusPayload, AgentUpdateTaskWire } from "@em/shared";
 import { agentConfig } from "./config";
+import { getInstallDir, hardenInstallDir } from "./installHardening";
 
 const execFileAsync = promisify(execFile);
 const SERVICE_NAME = "endpointpro-agent.service";
@@ -18,13 +19,6 @@ function sha256File(filePath: string): Promise<string> {
     stream.on("error", reject);
     stream.on("end", () => resolve(hash.digest("hex")));
   });
-}
-
-// __dirname/../.. from the compiled dist/ location (app/dist/../.. = the install root,
-// sibling of node/) — same derivation and layout convention as the Windows agent, so
-// config.ts's relative-path tricks work identically on both.
-function getInstallDir(): string {
-  return path.join(__dirname, "..", "..");
 }
 
 async function downloadUpdatePackage(client: AxiosInstance, task: AgentUpdateTaskWire): Promise<string> {
@@ -91,7 +85,10 @@ export async function processAgentUpdate(
     await reportStatus({ status: "APPLYING" });
 
     try {
-      await execFileAsync("tar", ["-xzf", tarballPath, "-C", installDir]);
+      // The tarball is built on Windows: never take its owners or modes as root. Ownership
+      // stays root (--no-same-owner), modes follow this process's umask, and the execute bits
+      // that matter are set explicitly below.
+      await execFileAsync("tar", ["--no-same-owner", "--no-same-permissions", "-xzf", tarballPath, "-C", installDir]);
     } catch (err) {
       // Extraction failing partway through leaves whatever files it got to already
       // overwritten — a real risk, but the currently-running process (this one) keeps
@@ -108,6 +105,8 @@ export async function processAgentUpdate(
       const bundledNode = path.join(installDir, "runtime", `node-linux-${arch}`, "bin", "node");
       if (fs.existsSync(bundledNode)) fs.chmodSync(bundledNode, 0o755);
     }
+    // Also repairs trees left non-root-owned by earlier self-updates.
+    await hardenInstallDir(true);
 
     // Report SUCCESS before triggering the restart — once systemctl asks systemd to stop
     // this unit, this process could be sent SIGTERM at any moment, so anything that still

@@ -30,13 +30,44 @@ export type CreateEnrollmentTokenRequest = z.infer<typeof createEnrollmentTokenR
 // and the service mints a short-lived, single-use one internally instead. tokenId, when
 // given, is purely for attributing the job back to a token for display - never required to
 // actually run the install.
+// Targets and the username end up in a PowerShell session on the server, so they're held to
+// strict shapes: an IPv4/IPv6 address or a plain hostname/FQDN (no leading '-', so it can't
+// be read as a parameter), and DOMAIN\user, .\user, user or user@domain.
+const REMOTE_INSTALL_HOSTNAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})$/;
+const REMOTE_INSTALL_IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+const REMOTE_INSTALL_IPV6_RE = /^(?=.*:)[0-9A-Fa-f:.]{2,45}$/;
+const REMOTE_INSTALL_USERNAME_RE = /^(?:(?:[A-Za-z0-9._-]{1,255}\\)?[A-Za-z0-9._ -]{1,104}|[A-Za-z0-9._-]{1,104}@[A-Za-z0-9.-]{1,253})$/;
+
+export function isValidRemoteInstallTarget(target: string): boolean {
+  return REMOTE_INSTALL_IPV4_RE.test(target) || REMOTE_INSTALL_IPV6_RE.test(target) || REMOTE_INSTALL_HOSTNAME_RE.test(target);
+}
+
+export function isValidRemoteInstallUsername(username: string): boolean {
+  return REMOTE_INSTALL_USERNAME_RE.test(username) && username.trim() === username;
+}
+
 export const startRemoteInstallRequestSchema = z.object({
   tokenId: z.string().min(1).optional(),
-  enrollmentToken: z.string().min(1).optional(),
-  serverUrl: z.string().min(1),
-  targets: z.array(z.string().min(1)).min(1).max(50),
+  enrollmentToken: z.string().min(1).max(500).optional(),
+  serverUrl: z.string().min(1).max(2000),
+  targets: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(253)
+        .refine(isValidRemoteInstallTarget, { message: "Each target must be an IP address or a host name (letters, digits, '.' and '-')" }),
+    )
+    .min(1)
+    .max(50),
   // Both, or neither: leave them out to use the remote install account saved in Asset settings.
-  username: z.string().min(1).optional(),
+  username: z
+    .string()
+    .min(1)
+    .max(400)
+    .refine(isValidRemoteInstallUsername, { message: "Username must look like DOMAIN\\user, .\\user, user or user@domain" })
+    .optional(),
   password: z.string().min(1).optional(),
 }).refine((d) => !!d.username === !!d.password, {
   message: "Give both the admin username and password, or neither to use the saved remote install account",

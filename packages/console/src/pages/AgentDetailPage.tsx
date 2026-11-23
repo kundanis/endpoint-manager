@@ -2260,8 +2260,11 @@ export default function AgentDetailPage() {
         title={<span className="ep-mono">{agent.hostname}</span>}
         description={
           <span className="app-badge-row">
-            <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
-            {agent.quarantined && <Badge tone="crit">Quarantined</Badge>}
+            {agent.quarantined ? (
+              <Badge tone="crit">Quarantined</Badge>
+            ) : (
+              <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
+            )}
             {agent.paused && <Badge tone="med">Paused</Badge>}
             <span>· {agent.osEditionLabel ?? agent.osPlatform}</span>
             {agent.ipAddress && (

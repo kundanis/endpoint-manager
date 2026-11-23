@@ -6,6 +6,26 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.31
+- Security: the agent only acts on replies signed by its server, and remembers the server's key
+  from the first signed reply, so another device on the network can't pose as the server and send
+  commands, scripts or updates.
+- Security: enrollment sends the PC's serial number and network card, so a reinstall on the same
+  PC keeps its endpoint record and nobody can take over another endpoint by its name.
+- Security: Application control no longer allows programs from other folders under
+  ProgramData\EndpointPro; blocked-launch reports go to the agent instead of a folder users could
+  write to; the agent's folders are locked to SYSTEM and administrators (and repaired at start).
+- Security: the desktop safety net only reacts when a user's desktop never started, not when a
+  user closes explorer.exe.
+- Security: update and helper scripts run as SYSTEM are written to the agent's locked folder, not
+  Windows\Temp; install and update never open the install folder to users.
+- Security: the tray talks to the agent with a per-user key, and the user name in usage,
+  screenshot and pause reports comes from that key.
+- Security: agent keys and enrollment tokens are no longer written to the log; setup passes the
+  enrollment token and uninstall password without putting them on a command line.
+- Security: installers run without cmd.exe (silent arguments with &, |, > or %VARIABLES% no longer
+  work; quoted arguments do); server values in PowerShell are quoted against Unicode quote marks.
+
 ## 0.2.30
 - Allowlist policies (Application control, only where the server has advanced application control):
   only Windows and what it needs (the Windows folder, Windows' own signed components such as

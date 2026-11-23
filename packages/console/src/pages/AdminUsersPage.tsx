@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { KeyRound, Pencil, Trash2, UserPlus, Users } from "lucide-react";
-import type { AdminGrantKey, AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
+import type { AdminActiveSession, AdminGrantKey, AdminRole, AdminUserListItem, LicenseModuleKey } from "../api/types";
 import { useAdminUsers, useCreateAdminUser, useDeleteAdminUser, useMe, useUpdateAdminUser } from "../api/hooks";
 import { LICENSE_MODULE_LABELS } from "../navConfig";
 import {
@@ -42,6 +42,39 @@ const MODULE_LABELS = LICENSE_MODULE_LABELS;
 const GRANT_LABELS: Record<AdminGrantKey, string> = { ...LICENSE_MODULE_LABELS, USER_RISK: "User risk access" } as Record<AdminGrantKey, string>;
 
 const ADMIN_FORM_ID = "admin-user-form";
+
+// Green "Signed in" with the address of every browser signed in to this account right now
+// (the same account can be signed in from two places at once), red "Not signed in" otherwise.
+// The colours were asked for explicitly; the words carry the meaning too (rule 4).
+// Sign-ins through a proxy on the server itself (a dev proxy, a tunnel) arrive from loopback.
+const LOOPBACK = /^(::1|127\.\d+\.\d+\.\d+)$/;
+
+function SignInStatus({ sessions }: { sessions: AdminActiveSession[] }) {
+  if (sessions.length === 0) {
+    return (
+      <span className="ep-pill" style={{ "--ep-c": "var(--ep-sev-critical)" } as CSSProperties}>
+        Not signed in
+      </span>
+    );
+  }
+  return (
+    <div>
+      <span className="ep-pill" style={{ "--ep-c": "var(--ep-ok)" } as CSSProperties}>
+        Signed in{sessions.length > 1 ? ` · ${sessions.length} places` : ""}
+      </span>
+      {sessions.map((s, i) => (
+        <span
+          key={`${s.signedInAt}-${i}`}
+          className="app-row-sub"
+          title={`Signed in ${formatDateTime(s.signedInAt)} · last active ${formatRelative(s.lastSeenAt)}`}
+        >
+          <span className="ep-mono">{s.ipAddress ?? "Unknown address"}</span>
+          {s.ipAddress && LOOPBACK.test(s.ipAddress) ? " (this server)" : ""} · since {formatRelative(s.signedInAt)}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function AdminUsersPage() {
   const { data: me } = useMe();
@@ -207,6 +240,7 @@ export default function AdminUsersPage() {
                 <thead>
                   <tr>
                     <th scope="col">Administrator</th>
+                    <th scope="col">Status</th>
                     <th scope="col">Role</th>
                     <th scope="col">Module access</th>
                     <th scope="col">Last login</th>
@@ -234,6 +268,9 @@ export default function AdminUsersPage() {
                             {isSelf && <span className="app-muted"> (you)</span>}
                           </b>
                           <span className="app-row-sub">{isSuper ? "Super admin" : "Admin"}</span>
+                        </td>
+                        <td>
+                          <SignInStatus sessions={admin.activeSessions ?? []} />
                         </td>
                         <td>{isSuper ? <Badge tone="low">Super admin</Badge> : <Badge tone="neu">Admin</Badge>}</td>
                         <td>

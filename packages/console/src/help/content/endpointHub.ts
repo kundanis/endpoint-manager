@@ -144,15 +144,19 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     title: "Endpoints",
     path: "/endpoints",
     summary: "Every device with the agent installed, with live status, inventory and security posture.",
-    keywords: ["devices", "inventory", "computers", "laptops", "quarantine", "export", "csv"],
+    keywords: ["devices", "inventory", "computers", "laptops", "quarantine", "quarantine all", "release all", "isolate", "export", "csv"],
     sections: [
       {
         title: "What You Can Do",
         items: [
           "Search by hostname, IP or user; filter by group, device type and online or offline.",
           "Choose which columns to show with Columns (processor, memory, storage, warranty, OS end of support and more).",
-          "Quarantine a device so it can reach only DNS and the Endpoint IQ server; release it again from the same menu.",
-          "Export the list to CSV.",
+          "Quarantine a Windows device so it can reach only DNS and the Endpoint IQ server; release it again with the same button. Linux and macOS devices can't be quarantined yet.",
+          "The device's status changes to Quarantined once it confirms the block is in force; until then its button shows Quarantining…. An offline device is quarantined as soon as it connects again - within 30 seconds, before any other command waiting for it. If the block can't be enforced (for example a domain Group Policy controls the firewall), the status stays Online and the reason is in its History tab.",
+          "Release puts the firewall back to Windows' defaults (incoming connections blocked, outgoing allowed) and its button shows Releasing… until the device confirms; then its status is Online again. Uninstalling the agent also removes the quarantine.",
+          "Each Windows device has a Quarantine button at the end of its row; once it's quarantined the button becomes Release, and its status shows Quarantined instead of Online.",
+          "Quarantine all and Release all, next to the filters, act on the devices the list currently shows - filter by group, type or search first to act on only some. The Quarantined tile and filter show how many devices are quarantined.",
+          "Export the list to CSV. Cells that start with = + - or @ get a leading apostrophe so spreadsheets don't run them as formulas.",
           "See devices found on scanned networks without the agent, and install it on them remotely.",
           "Open any endpoint for its full detail.",
         ],
@@ -180,8 +184,9 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Quarantine a Compromised Device",
         steps: [
           { route: "/endpoints", text: "Find the device in the list." },
-          { text: "Open its row menu (the three dots at the end of the row) and select Quarantine." },
-          { text: "The device can now reach only DNS and this server. Use Release from quarantine in the same menu to undo it." },
+          { text: "Select Quarantine at the end of its row, then confirm." },
+          { text: "Wait for its status to change to Quarantined: that happens once the device confirms. A device that's offline keeps Quarantining… on its button until it's back." },
+          { text: "The device can now reach only DNS and this server. Select Release in the same place to undo it." },
         ],
       },
     ],
@@ -267,6 +272,8 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
           "Push-install the agent to Windows machines over the network with admin credentials (never stored).",
           "Download the macOS or Linux agent and copy its install command.",
           "Set the server addresses agents use (LAN, HTTPS address, public IP); they fail over automatically.",
+          "Agents only act on replies signed by this server, so another device on the network can't pose as it. With a certificate installed, the plain-HTTP port serves agents only and sends browsers to the HTTPS address.",
+          "Reinstalling on the same machine (same serial number, or same network card) keeps its endpoint record. Enrolling under an existing name from different hardware creates a new endpoint instead of taking over the existing one.",
           "Revoke a token at any time; devices already enrolled are not affected.",
         ],
       },
@@ -298,7 +305,8 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         steps: [
           { route: "/enrollment-tokens", text: "Scroll to Install on Mac or Linux and choose macOS or Linux." },
           { text: "Pick the token to use and select Copy command." },
-          { text: "Run the copied command in a terminal on the machine, as root (sudo). The agent brings its own runtime." },
+          { text: "Run the copied command in a terminal on the machine (it uses sudo). It unpacks into a new folder only root can change and passes the token without showing it in the process list. The agent brings its own runtime." },
+          { text: "If you unpack the package yourself, do it as root into a root-owned folder: the installer refuses to run from a folder other users can change." },
         ],
       },
       {
@@ -384,7 +392,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Deploy Software to a Group",
         steps: [
           { route: "/packages", text: "Select Upload package and choose the installer.", target: { kind: "button", label: "Upload package" } },
-          { text: "Enter its name, version and silent-install arguments (for MSI, usually none are needed)." },
+          { text: "Enter its name, version and silent-install arguments (for MSI, usually none are needed). The arguments are passed straight to the installer, not through a command prompt, so &, |, > and %VARIABLES% don't work; put quotes around arguments that contain spaces." },
           { text: "In the packages list, select Deploy package on that row." },
           { text: "Pick the groups or endpoints and select Deploy. Progress shows under Deployment jobs." },
         ],
@@ -441,8 +449,8 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
       {
         title: "Tabs",
         items: [
-          "Tamper protection: an uninstall password, checked by the server, that stops users removing the agent.",
-          "Remote install: save the Windows admin account Install agent uses, so it isn't asked each time (super admins). The password is stored encrypted and never shown again.",
+          "Tamper protection: an uninstall password, checked by the server, that stops users removing the agent. After 10 wrong passwords in 15 minutes an endpoint must wait before trying again.",
+          "Remote install: save the Windows admin account Install agent uses, so it isn't asked each time. Only super admins can save it and install with it; other admins type an account for each install. The password is stored encrypted and never shown again.",
           "Asset groups: group endpoints by team, site or role to target policies, packages and updates.",
           "Custom fields: add your own text, number, date or list fields to every endpoint.",
         ],
@@ -472,7 +480,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         steps: [
           { route: "/asset-settings", text: "Open the Remote install tab.", target: { kind: "tab", label: "Remote install" } },
           { text: "As a super admin, enter a Windows account that is a local administrator on the workstations, and its password. Select Save account." },
-          { text: "Install agent on Network discovery and Endpoints no longer asks for a login: pick a group if you want one and select Install. Use another account still lets you type one for a single device." },
+          { text: "Install agent on Network discovery and Endpoints no longer asks for a login: pick a group if you want one and select Install. Use another account still lets you type one for a single device. Admins who aren't super admins always type an account." },
         ],
       },
       {

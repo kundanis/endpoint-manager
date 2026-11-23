@@ -9,7 +9,10 @@ const dateOrUndefined = (v: unknown) => (typeof v === "string" && v ? new Date(v
 
 adminAuditRouter.get("/", async (req, res, next) => {
   try {
-    const q = req.query as Record<string, string | undefined>;
+    // Only plain string values: qs would otherwise turn ?admin[not]=x into an object that
+    // reaches the Prisma filter as an operator.
+    const q: Record<string, string | undefined> = {};
+    for (const [key, value] of Object.entries(req.query)) if (typeof value === "string") q[key] = value;
     res.json(
       await listAudit({
         from: dateOrUndefined(q.from),

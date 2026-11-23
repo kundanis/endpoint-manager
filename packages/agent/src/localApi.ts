@@ -2,8 +2,10 @@ import { currentScreenshotBlockSettings, queueScreenshotBlockEvents } from "./sc
 import http from "node:http";
 import os from "node:os";
 import type { AxiosInstance } from "axios";
+import { queueBlockerEvent } from "./appControlEnforcer";
 import { agentConfig } from "./config";
 import { getServerUrl } from "./httpClient";
+import { LOCAL_API_PORT, startTrayAuth, TRAY_TOKEN_HEADER, userForToken } from "./trayAuth";
 
 // Local channel for the Endpoint IQ tray app (EndpointIQTray.exe), which runs in each signed-in
 // user's session and can't talk to the server itself (it has no agent credentials). Listens on
@@ -14,7 +16,11 @@ import { getServerUrl } from "./httpClient";
 // Guarded against web pages: the tray sends a custom header (which a browser can't add to a
 // cross-site request without a CORS preflight this server never answers), requests carrying an
 // Origin header are refused, and the Host header must be the loopback address (no DNS rebinding).
-export const LOCAL_API_PORT = 47613;
+//
+// Guarded against other users on the same PC: every request except the status ping carries the
+// calling user's own key (trayAuth.ts), and the user it was issued to is the one the request is
+// made as - any user name in the request body is replaced, never trusted.
+export { LOCAL_API_PORT };
 const TRAY_HEADER = "x-endpoint-iq-tray";
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -59,8 +65,13 @@ function serverError(err: unknown): { status: number; message: string } {
   return { status: 503, message: "Can't reach the Endpoint IQ server right now." };
 }
 
+function asObject(body: unknown): Record<string, unknown> {
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
 export function startLocalApi(client: AxiosInstance, source: AgentStatusSource): void {
   if (process.platform !== "win32") return;
+  startTrayAuth();
 
   const server = http.createServer(async (req, res) => {
     const host = (req.headers.host ?? "").toLowerCase();
@@ -73,6 +84,9 @@ export function startLocalApi(client: AxiosInstance, source: AgentStatusSource):
     }
 
     const route = `${req.method} ${(req.url ?? "").split("?")[0]}`;
+    // Only the status ping (version, connection state - nothing about any user) works without a key.
+    const user = userForToken(req.headers[TRAY_TOKEN_HEADER]);
+    if (!user && route !== "GET /status") return send(res, 401, { error: "The Endpoint IQ agent hasn't recognised this user yet. Try again in a minute." });
     try {
       switch (route) {
         case "GET /status": {
@@ -93,7 +107,7 @@ export function startLocalApi(client: AxiosInstance, source: AgentStatusSource):
         case "GET /pause-requests":
           return send(res, 200, (await client.get("/api/agent/pause-requests")).data);
         case "POST /pause-requests": {
-          const body = await readBody(req);
+          const body = { ...asObject(await readBody(req)), requestedBy: user!.account };
           const { data } = await client.post("/api/agent/pause-requests", body);
           return send(res, 201, data);
         }
@@ -101,13 +115,19 @@ export function startLocalApi(client: AxiosInstance, source: AgentStatusSource):
           // What the tray app blocks in this user's session (EPM screenshot blocking).
           return send(res, 200, currentScreenshotBlockSettings());
         case "POST /screenshot-block/events": {
-          const body = (await readBody(req)) as { events?: unknown } | undefined;
-          queueScreenshotBlockEvents(body?.events);
+          const events = asObject(await readBody(req)).events;
+          queueScreenshotBlockEvents(Array.isArray(events) ? events.map((e) => ({ ...asObject(e), username: user!.userName })) : undefined);
           return send(res, 204);
         }
         case "POST /usage": {
           // Time per application and website from the tray (user productivity).
-          await client.post("/api/agent/user-productivity/app-usage", await readBody(req));
+          await client.post("/api/agent/user-productivity/app-usage", { ...asObject(await readBody(req)), username: user!.userName });
+          return send(res, 204);
+        }
+        case "POST /app-control/blocked": {
+          // A launch the blocker (blocked.ps1, run as the user instead of a blocked program) stopped.
+          const body = asObject(await readBody(req));
+          if (typeof body.path === "string" && body.path) queueBlockerEvent(body.path, typeof body.at === "string" ? body.at : null);
           return send(res, 204);
         }
         default:

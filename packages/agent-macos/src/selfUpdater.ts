@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AgentUpdateStatusPayload, AgentUpdateTaskWire } from "@em/shared";
 import { agentConfig } from "./config";
+import { hardenInstall } from "./installHardening";
 
 const execFileAsync = promisify(execFile);
 export const LAUNCHD_LABEL = "com.endpointone.agent";
@@ -29,6 +30,7 @@ function getInstallDir(): string {
 // point the old process that was still using them has exited.
 export function cleanupPreviousVersion(): void {
   const installDir = getInstallDir();
+  if (fs.existsSync(path.join(installDir, "app", "dist", "index.js"))) hardenInstall(installDir);
   for (const leftover of ["app.prev", "node.prev"]) {
     try {
       fs.rmSync(path.join(installDir, leftover), { recursive: true, force: true });
@@ -95,13 +97,17 @@ export async function processAgentUpdate(
     fs.rmSync(staging, { recursive: true, force: true });
     fs.mkdirSync(staging, { recursive: true });
     try {
-      await execFileAsync("/usr/bin/tar", ["-xzf", tarballPath, "-C", staging]);
+      // Root extracting: never take owners/modes from the archive (it is built with uid 0 and
+      // fixed modes, but don't rely on that); the bits that matter are set explicitly.
+      await execFileAsync("/usr/bin/tar", ["--no-same-owner", "--no-same-permissions", "-xzf", tarballPath, "-C", staging]);
       const newApp = path.join(staging, "app");
       const newNode = path.join(staging, "runtime", `node-darwin-${arch}`);
       if (!fs.existsSync(path.join(newApp, "dist", "index.js")) || !fs.existsSync(path.join(newNode, "bin", "node"))) {
         throw new Error("update package is missing app/ or the node runtime for this Mac");
       }
       fs.chmodSync(path.join(newNode, "bin", "node"), 0o755);
+      // install.sh keeps app/ (config.json, .state/) private to root; keep it that way.
+      fs.chmodSync(newApp, 0o700);
 
       // Carry this install's identity (config.json, .state/) and any trusted server CA
       // (certs-trust/, from install.sh --ca-cert) into the new app/ - the package never

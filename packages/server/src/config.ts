@@ -23,6 +23,10 @@ const envSchema = z.object({
   // checking in) and HTTPS on TLS_PORT (Outlook add-in, console). Unset, HTTPS replaces
   // HTTP on PORT, as before.
   TLS_PORT: z.coerce.number().int().positive().optional(),
+  // The HTTPS port browsers reach from outside, when it differs from TLS_PORT (Docker
+  // publishes container port 4443 as host 443). Used to redirect browser requests that
+  // arrive on the plain-HTTP port; defaults to TLS_PORT.
+  HTTPS_PUBLIC_PORT: z.coerce.number().int().positive().optional(),
   // Optional PEM file of intermediate CA certificate(s) to send alongside the PFX's leaf
   // certificate — for a PFX exported without its chain. Node serves only what it's given,
   // and strict clients (Outlook/Microsoft 365, Node, curl) reject an incomplete chain.
@@ -82,11 +86,31 @@ const envSchema = z.object({
   TRUSTED_PROXY: z.enum(["", "cloudflare"]).default(""),
 });
 
+// Placeholder secrets shipped in the .env.example files. Anyone who has seen the repo or a
+// release bundle knows them, and a known JWT_SECRET lets them sign their own admin session.
+export const EXAMPLE_JWT_SECRETS = ["dev-only-change-me-to-a-long-random-string", "change-me-to-a-long-random-string"];
+export const MIN_PRODUCTION_JWT_SECRET_LENGTH = 32;
+
+// Why a production server must refuse this JWT_SECRET, or null if it's fine. Local dev
+// (NODE_ENV not "production") keeps accepting the example value.
+export function productionJwtSecretProblem(secret: string, nodeEnv: string | undefined): string | null {
+  if (nodeEnv !== "production") return null;
+  if (EXAMPLE_JWT_SECRETS.includes(secret.trim())) return "JWT_SECRET is still the example value from .env.example - generate a random one (e.g. openssl rand -base64 48)";
+  if (secret.length < MIN_PRODUCTION_JWT_SECRET_LENGTH) return `JWT_SECRET must be at least ${MIN_PRODUCTION_JWT_SECRET_LENGTH} characters in production`;
+  return null;
+}
+
 const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error("Invalid environment configuration:", parsed.error.flatten().fieldErrors);
   process.exit(1);
 }
+const jwtSecretProblem = productionJwtSecretProblem(parsed.data.JWT_SECRET, process.env.NODE_ENV);
+if (jwtSecretProblem) {
+  console.error(`Invalid environment configuration: ${jwtSecretProblem}`);
+  process.exit(1);
+}
+const tlsEnabled = Boolean(parsed.data.TLS_PFX_PATH && parsed.data.TLS_PFX_PASSPHRASE);
 
 export const config = {
   port: parsed.data.PORT,
@@ -117,6 +141,9 @@ export const config = {
   tlsPfxPath: parsed.data.TLS_PFX_PATH ? path.resolve(process.cwd(), parsed.data.TLS_PFX_PATH) : undefined,
   tlsPfxPassphrase: parsed.data.TLS_PFX_PASSPHRASE,
   tlsPort: parsed.data.TLS_PORT,
+  // HTTPS is served (index.ts) - session cookies are then always marked Secure.
+  tlsEnabled,
+  httpsPublicPort: parsed.data.HTTPS_PUBLIC_PORT ?? parsed.data.TLS_PORT,
   tlsCaChainPath: parsed.data.TLS_CA_CHAIN_PATH ? path.resolve(process.cwd(), parsed.data.TLS_CA_CHAIN_PATH) : undefined,
   fieldEncryptionKey: Buffer.from(parsed.data.FIELD_ENCRYPTION_KEY, "base64"),
   licenseServerUrlSeed: parsed.data.LICENSE_SERVER_URL?.replace(/\/$/, ""),

@@ -6,24 +6,33 @@
 // per-endpoint remediation status show that text, so an admin sees *why* something failed
 // (e.g. "Microsoft Edge can't be uninstalled - update it instead") instead of a bare exit code.
 
-function psQuote(s: string): string {
-  return `'${s.replace(/'/g, "''")}'`;
-}
+import { psQuote } from "../utils/psQuote";
 
-// Finds the program's live Uninstall entry - machine-wide (64- and 32-bit) and every signed-in
-// user's - by exact DisplayName. Each key is read on its own (GetValue), so one malformed
-// value elsewhere can't make the lookup fail.
-const FIND_ENTRY = `
-$roots = @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall', 'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall')
-Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue |
-  Where-Object { $_.PSChildName -match '^S-1-5-21-[0-9-]+$' } |
-  ForEach-Object { $roots += "Registry::HKEY_USERS\\$($_.PSChildName)\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" }
+// Uninstall entries are matched by exact DisplayName. Each key is read on its own (GetValue),
+// so one malformed value elsewhere can't make the lookup fail.
+//
+// Only the machine-wide (HKLM, 64- and 32-bit) keys are searched for anything that gets
+// executed: these scripts run as SYSTEM, and a standard user can write any Uninstall entry
+// under their own HKEY_USERS hive - e.g. one named like a vulnerable product whose
+// UninstallString is their own program - which would then run as SYSTEM.
+const FIND_MACHINE_ENTRY = `
 $entry = $null
-foreach ($root in $roots) {
+foreach ($root in @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall', 'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall')) {
   foreach ($key in @(Get-ChildItem -Path $root -ErrorAction SilentlyContinue)) {
     if ($key.GetValue('DisplayName') -eq $targetName) { $entry = $key; break }
   }
   if ($entry) { break }
+}`;
+
+// Per-user (HKEY_USERS\<SID>) entries: only ever read for information (is it a per-user
+// install? which version?), never executed.
+const FIND_USER_ENTRY = `
+$userEntry = $null
+foreach ($sid in @(Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^S-1-5-21-[0-9-]+$' })) {
+  foreach ($key in @(Get-ChildItem -Path "Registry::HKEY_USERS\\$($sid.PSChildName)\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" -ErrorAction SilentlyContinue)) {
+    if ($key.GetValue('DisplayName') -eq $targetName) { $userEntry = $key; break }
+  }
+  if ($userEntry) { break }
 }`;
 
 // Uninstaller exit codes worth explaining (MSI codes plus the ones vendors commonly use).
@@ -49,8 +58,14 @@ export function buildUninstallScript(softwareName: string): string {
   return `
 $ErrorActionPreference = 'Continue'
 $targetName = ${psQuote(softwareName)}
-${FIND_ENTRY}
+${FIND_MACHINE_ENTRY}
 if (-not $entry) {
+  ${FIND_USER_ENTRY}
+  if ($userEntry) {
+    # Not run: a per-user entry's uninstall command is writable by that user, and this runs as SYSTEM.
+    [Console]::Error.WriteLine("'$targetName' is installed per-user (only in a user's profile), so it can't be removed from here - the user who installed it must uninstall or update it.")
+    exit 1
+  }
   [Console]::Error.WriteLine("'$targetName' is not installed on this endpoint - it may already have been removed or updated.")
   exit 1605
 }
@@ -116,7 +131,13 @@ function buildUpdateScript(softwareName: string, spec: UpdaterSpec): string {
   return `
 $ErrorActionPreference = 'Continue'
 $targetName = ${psQuote(softwareName)}
-${FIND_ENTRY}
+${FIND_MACHINE_ENTRY}
+# The updater run below is a fixed vendor path, never something read from the entry, so a
+# per-user entry is fine here (it's only used to report the version).
+if (-not $entry) {
+  ${FIND_USER_ENTRY}
+  $entry = $userEntry
+}
 if (-not $entry) {
   [Console]::Error.WriteLine("'$targetName' is not installed on this endpoint - it may already have been removed.")
   exit 1605

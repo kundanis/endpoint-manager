@@ -41,7 +41,34 @@ const letters = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 // The organisation in a signer name: "O=GOOGLE LLC, L=..." -> "GOOGLE LLC".
 const orgOf = (dn: string) => (dn.match(/(?:^|,\s*)O=("(?:[^"]|"")*"|[^,]*)/i)?.[1] ?? dn).replace(/^"|"$/g, "").trim();
 
-const globToRegex = (glob: string) => new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`, "i");
+// Case-insensitive whole-string glob match (* = any run, ? = one character). Iterative with a
+// single backtrack point instead of a RegExp: a rule like "*a*a*a*a*b" compiled to a `.*`
+// chain backtracks exponentially against a long name, and this runs over every inventory
+// entry on the server's event loop. Worst case here is O(glob x text). Exported for tests.
+export function globMatch(glob: string, text: string): boolean {
+  const p = glob.toLowerCase();
+  const t = text.toLowerCase();
+  let pi = 0;
+  let ti = 0;
+  let starPi = -1;
+  let starTi = 0;
+  while (ti < t.length) {
+    if (pi < p.length && (p[pi] === "?" || (p[pi] !== "*" && p[pi] === t[ti]))) {
+      pi++;
+      ti++;
+    } else if (pi < p.length && p[pi] === "*") {
+      starPi = pi++;
+      starTi = ti;
+    } else if (starPi !== -1) {
+      pi = starPi + 1;
+      ti = ++starTi;
+    } else {
+      return false;
+    }
+  }
+  while (pi < p.length && p[pi] === "*") pi++;
+  return pi === p.length;
+}
 
 // Whether a rule names this installed software.
 export function ruleCovers(rule: Pick<AppControlRule, "ruleType" | "value" | "productName">, e: Pick<InstalledEntry, "name" | "publisher">): boolean {
@@ -58,7 +85,7 @@ export function ruleCovers(rule: Pick<AppControlRule, "ruleType" | "value" | "pr
     case "PUBLISHER":
       return !!e.publisher && letters(e.publisher).includes(letters(value.replace(/[*?]/g, "")));
     case "PRODUCT":
-      return /[*?]/.test(value) ? globToRegex(value).test(e.name) || globToRegex(value).test(base) : base === value.toLowerCase() || name.startsWith(value.toLowerCase());
+      return /[*?]/.test(value) ? globMatch(value, e.name) || globMatch(value, base) : base === value.toLowerCase() || name.startsWith(value.toLowerCase());
     case "EXECUTABLE": {
       const file = value.slice(value.lastIndexOf("\\") + 1).replace(/\.exe$/i, "").toLowerCase();
       return file.length >= 3 && !/[*?]/.test(file) && (base === file || letters(base) === letters(file));

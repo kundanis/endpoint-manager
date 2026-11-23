@@ -120,6 +120,9 @@ The container serves plain **HTTP on 4000**. For HTTPS, either:
 - mount a PFX and set `TLS_PFX_PATH`, `TLS_PFX_PASSPHRASE`, `TLS_PORT` (add them to the `server`
   service env and publish the port). See `packages/server/.env.example`.
 
+With `TLS_PORT` set, the HTTP port serves **agents only** (`/api/agent/*`, `/health`); browsers
+are redirected to HTTPS on `HTTPS_PUBLIC_PORT` (compose sets it to `HTTPS_PORT`, default 443).
+
 ## Agent installers
 Not baked into the image (they're platform binaries, gitignored). Build them and drop them in
 `docker/agent-installer/`:
@@ -132,6 +135,15 @@ Copy the resulting files into `docker/agent-installer/` (and `linux/` for the Li
 To use managed SQL (Azure SQL / RDS) instead of the bundled container: remove the `db` service,
 point `DATABASE_URL` at your server, pre-create the database and a least-privilege login, and
 leave `MASTER_DATABASE_URL` unset (the entrypoint then skips the CREATE DATABASE step).
+Set `MIGRATE_DATABASE_URL` to a db_owner connection if migrations should not run as the app's
+login.
+
+With the bundled `db` container the server runs as the restricted login `endpoint_app` (or `APP_DB_USER`)
+(`APP_DB_PASSWORD` in `.env`; db_datareader + db_datawriter + EXECUTE, no server roles). The
+entrypoint creates it on every start using `sa` (`MIGRATE_DATABASE_URL`/`MASTER_DATABASE_URL`),
+which is used only for that, CREATE DATABASE and migrations, then removed from the server's
+environment. The server process runs as the unprivileged `node` user; the entrypoint starts as
+root only to chown the `uploads` volume and stage the TLS certificate, then drops privileges.
 
 ## Commands
 - `docker compose up -d --build` — build + run

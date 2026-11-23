@@ -1,6 +1,7 @@
 import type { CommandTaskResultPayload, Shell } from "@em/shared";
 import { prisma } from "../db";
 import { requestScan } from "./scanRequests";
+import { QUARANTINE_SCRIPT_MARKER, RELEASE_SCRIPT_MARKER, recordQuarantineResult } from "./quarantine.service";
 import { decryptField, decryptFieldOrNull, encryptField, encryptFieldOrNull } from "../utils/fieldEncryption";
 
 export class CommandTaskNotOwnedError extends Error {}
@@ -114,8 +115,8 @@ function trimOutput(text: string | null | undefined): string | null {
 function securityActionLabel(script: string): string {
   // Markers from the scripts agent.service / quarantine.service / remoteAccess.service build.
   if (script.includes("EndpointProUninstallHelper")) return "Agent uninstall";
-  if (script.includes("Write-Output 'RELEASED'")) return "Quarantine release";
-  if (script.includes("pre-quarantine-")) return "Quarantine";
+  if (script.includes(RELEASE_SCRIPT_MARKER)) return "Quarantine release";
+  if (script.includes(QUARANTINE_SCRIPT_MARKER)) return "Quarantine";
   if (script.includes("REMOTE_ACCESS_DISABLED")) return "Remote access off";
   if (script.includes("fDenyTSConnections")) return "Remote access on";
   return "Security action";
@@ -187,6 +188,10 @@ export async function recordCommandResult(
       completedAt: new Date(payload.completedAt),
     },
   });
+
+  // Quarantine / release: the endpoint's quarantined mark follows what actually happened.
+  const job = await prisma.commandJob.findUnique({ where: { id: task.jobId }, select: { script: true, bypassesPause: true } });
+  if (job) await recordQuarantineResult(job, agentId, payload);
 
   // A successful benchmark fix: have the endpoint re-check its benchmarks right away (agent
   // 0.2.10+) instead of at the next scheduled scan, so the rule shows Pass promptly.

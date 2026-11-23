@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -44,6 +45,26 @@ static class AgentApi
     const string BaseUrl = "http://127.0.0.1:47613";
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
 
+    // The agent gives each signed-in user a key in a file only that user can read
+    // (app\.state\tray\<SID>.token, see trayAuth.ts) and treats every request carrying it as made
+    // by that user - so no other user on this PC can send requests in this user's name. Read on
+    // every call: the agent makes new keys when it restarts.
+    static readonly string TokenFile = Path.Combine(
+        Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\')), // tray\.. = the install folder
+        @"app\.state\tray\" + WindowsIdentity.GetCurrent().User.Value + ".token");
+
+    static string Token()
+    {
+        try
+        {
+            return File.ReadAllText(TokenFile).Trim();
+        }
+        catch
+        {
+            return null; // not issued yet: the agent answers "not recognised"
+        }
+    }
+
     public static object Call(string method, string path, object body)
     {
         HttpWebRequest req = (HttpWebRequest)WebRequest.Create(BaseUrl + path);
@@ -51,6 +72,8 @@ static class AgentApi
         req.Timeout = 20000;
         req.Proxy = null;
         req.Headers["X-Endpoint-IQ-Tray"] = "1";
+        string token = Token();
+        if (token != null) req.Headers["X-Endpoint-IQ-Token"] = token;
         if (body != null)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(Json.Serialize(body));
@@ -537,7 +560,7 @@ class PoliciesForm : Form
             { "items", items },
             { "durationMinutes", durations[duration.SelectedIndex] },
             { "reason", reason.Text.Trim() },
-            { "requestedBy", Environment.UserDomainName + "\\" + Environment.UserName },
+            // requestedBy is set by the agent, from the user its key belongs to.
         };
         submit.Enabled = false;
         Status("Sending…", false);

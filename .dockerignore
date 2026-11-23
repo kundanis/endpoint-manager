@@ -25,3 +25,22 @@ docs
 **/*.db
 **/*.db-shm
 **/*.db-wal
+# Never ship keys, certificates or release outputs into the build context (and so possibly an
+# image layer). docker/extra-ca/*.crt are public CA certificates the build deliberately trusts.
+*.key
+**/*.key
+*.pem
+**/*.pem
+*.pfx
+**/*.pfx
+*.p12
+**/*.p12
+*.crt
+**/*.crt
+!docker/extra-ca/*.crt
+garnet.*
+**/garnet.*
+certs
+**/certs
+release
+**/release

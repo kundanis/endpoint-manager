@@ -19,7 +19,9 @@ test("the baseline always allows Windows (minus user-writable folders) and the a
   const xml = joined({ ...base, allowProgramFiles: false, exemptAdministrators: false, microsoftSigned: "OFF" });
   assert.ok(xml.includes('Path="%WINDIR%\\*"'));
   assert.ok(xml.includes('<FilePathCondition Path="%WINDIR%\\Temp\\*" />'));
-  assert.ok(xml.includes('EndpointPro\\*"'));
+  // Only the locked install folder, not all of ProgramData\EndpointPro (users could make folders there).
+  assert.ok(xml.includes('EndpointPro\\Agent\\*"'));
+  assert.ok(!xml.includes('EndpointPro\\*"'));
   // Windows' own signed components anywhere, Edge, WebView2 and .NET.
   assert.ok(xml.includes('ProductName="MICROSOFT\u00ae WINDOWS\u00ae OPERATING SYSTEM"'));
   assert.ok(xml.includes('ProductName="MICROSOFT EDGE WEBVIEW2"'));

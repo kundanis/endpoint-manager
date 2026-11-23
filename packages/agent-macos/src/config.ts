@@ -14,6 +14,10 @@ interface InstallConfig {
   // whichever of these last worked, for uninstall.sh which reads a single URL.
   serverUrls?: string[] | string;
   enrollmentToken?: string;
+  // The server's response-signing public key (base64, raw Ed25519), remembered from the
+  // first signed reply - see httpClient.ts. Once set, unsigned or wrongly signed replies are
+  // refused. Deleting it from this file makes the agent learn the key again on next start.
+  serverPublicKey?: string;
 }
 
 const configPath = process.env.UEM_CONFIG_FILE ?? path.join(__dirname, "..", "config.json");
@@ -107,6 +111,7 @@ export const agentConfig = {
   serverUrls,
   initialServerUrl,
   serverCaPem: readServerCaPem(),
+  serverPublicKey: typeof installConfig.serverPublicKey === "string" ? installConfig.serverPublicKey : null,
   getEnrollmentToken: requireEnrollmentToken,
   stateDir: process.env.UEM_STATE_DIR ?? path.join(__dirname, "..", ".state"),
   agentVersion: readAgentVersion(),

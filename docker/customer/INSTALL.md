@@ -33,14 +33,31 @@ sudo bash deploy.sh
 ```
 
 The script:
-1. checks the bundle's checksums;
+1. on a new setup, asks whether you want to set your own credentials (see below), then checks
+   the bundle's checksums;
 2. installs Docker if it's missing;
 3. installs everything to `/opt/endpoint-one` and generates secrets in `/opt/endpoint-one/.env`;
 4. loads the image and starts the server and SQL Server;
 5. waits until the server is healthy (the first start creates the database, which takes 1–3 minutes);
 6. prints the console URL and the **first administrator login**.
 
-To choose the admin email: `sudo ADMIN_EMAIL=it@customer.com bash deploy.sh` (first install only).
+**Credentials on a new setup.** The first run asks *"Set your own credentials? (yes/no)"*:
+- **yes**: you type the SQL Server `sa` password, the application's SQL login name (default
+  `endpoint_app`) and its password, and the portal super admin email and password. Passwords
+  are hidden and asked twice. SQL passwords need 12+ characters (letters, digits and `! _ . -`
+  only), with at least three of capital letters, small letters, digits and symbols, and must
+  not contain the login name. The super admin password needs 12–72 characters, with no spaces
+  and no `'`.
+- **no**: the default names (`sa`, `endpoint_app`, `admin@endpointone.local`) are used, with
+  strong random passwords. The super admin password is printed when setup finishes.
+
+Either way, everything is saved in `/opt/endpoint-one/.env`, which only root can read.
+Upgrades never ask, and keep the existing credentials.
+
+For an unattended install, pass the values instead:
+`sudo CUSTOM_CREDENTIALS=yes SA_PASSWORD=... APP_DB_USER=... APP_DB_PASSWORD=... ADMIN_EMAIL=... ADMIN_PASSWORD=... bash deploy.sh`.
+They go through the same checks. Without a terminal and without `CUSTOM_CREDENTIALS=yes`, the
+defaults are used. To change only the admin email: `sudo ADMIN_EMAIL=it@customer.com bash deploy.sh`.
 
 **Right after installing:**
 - Save the printed admin password, sign in, and change it.
@@ -104,6 +121,19 @@ The script keeps `.env` and all data, **backs up the database first** (to
 `/opt/endpoint-one/backups/`), loads the new image and restarts. Database migrations run
 automatically. Agents update themselves from the new installer files (if the bundle includes
 a newer agent) via **Endpoint Hub → Agent updates**.
+
+**Database login.** The server signs in to SQL Server as a restricted login, `endpoint_app`
+or the name chosen at setup (`APP_DB_USER` in `.env`; read, write and execute on the Endpoint IQ database only; no server roles, not `db_owner`).
+`sa` is used only to create the database, apply migrations and create that login, and is
+removed from the server process's environment before it starts. The login's password is
+`APP_DB_PASSWORD` in `.env`; an upgrade from a release that used `sa` adds it automatically,
+and the login is created (or its password re-applied) every time the server starts. To change
+it, edit `APP_DB_PASSWORD` (letters, digits and `! _ . -`, 12+ characters) and run
+`sudo docker compose up -d`.
+
+**Non-root.** The server process runs as the unprivileged `node` user inside the container.
+On the first start after upgrading from an older release, the start-up hands the `uploads`
+volume to that user (this can take a moment on a large volume).
 
 On a large database or a slow disk the backup takes a while. Two options change it:
 
@@ -190,15 +220,20 @@ chain file if your provider gave you one.
 5. **Open** `https://endpoint.yourcompany.com` and sign in.
 6. **Agents:** in **Endpoint Hub → Enrollment tokens → Server connection details**, add
    `https://endpoint.yourcompany.com` as the Web URL. New installers will use it, and existing
-   agents pick up the list on their next check-in. Plain HTTP on port 4000 keeps working, so
-   endpoints already installed continue reporting with no change.
+   agents pick up the list on their next check-in. Plain HTTP on port 4000 keeps working for
+   agents, so endpoints already installed continue reporting with no change.
+
+Once a certificate is installed, port 4000 **serves agents only**: a browser opening
+`http://<server>:4000` is redirected to `https://<same name>` on `HTTPS_PORT`, and sign-in or
+other console requests sent over plain HTTP are refused. Open the console with a name the
+certificate covers to avoid a browser certificate warning.
 
 **Renewal:** run the same `--install-cert` command with the renewed files. The old certificate
 stays in place until the new one has been validated and converted.
 
 **Notes:**
 - HTTPS also applies `ADMIN_ALLOWED_NETWORKS`: the console still only answers allowed networks.
-- Login cookies are marked `Secure` automatically on HTTPS.
+- Login cookies are always marked `Secure` once a certificate is installed.
 - To use a port other than 443, set `HTTPS_PORT=8443` in `.env`, then run `sudo docker compose up -d`.
 - If the key has a passphrase, remove it first with `openssl pkey -in key.pem -out key-nopass.pem`.
 - If the certificate is DER/.cer, convert it first with
@@ -235,7 +270,8 @@ Agents can keep using `http://<server-ip>:4000`; they don't need to go through C
 | Symptom | Check |
 |---|---|
 | `deploy.sh` says unhealthy | `docker compose logs --tail 200 server`. The usual causes are too little RAM for SQL Server, or the disk is full. |
-| Console not reachable | Security group / firewall allows TCP 4000; `docker compose ps` shows `server` as healthy. |
+| Console not reachable | Security group / firewall allows TCP 4000 (and `HTTPS_PORT` once a certificate is installed - port 4000 then redirects browsers to HTTPS); `docker compose ps` shows `server` as healthy. |
+| Server log: `Login failed for user 'endpoint_app'` (or your login name) | `APP_DB_PASSWORD` must be in `.env` (deploy.sh adds it). Restart with `sudo docker compose up -d` so the start-up re-creates the login. After `--rollback`, deploy.sh creates it from the `db` container. |
 | Browser shows `{"error":"Not found"}` | Your public IP isn't in `ADMIN_ALLOWED_NETWORKS` (see section 3). The server log shows "Blocked request from a public address" with your IP. |
 | "Installer not available" in the console | The bundle had no agent installer: copy `EndpointProAgentSetup.exe`, `EndpointProAgentInstaller.zip` and `agent-manifest.json` into `/opt/endpoint-one/agent-installer/` (no restart needed). The macOS agent goes in `agent-installer/macos/` (`EndpointProAgentMac.tar.gz`, `agent-manifest.json`), the Linux one in `agent-installer/linux/`. |
 | Endpoint installed but not listed | On the endpoint: `Test-NetConnection <server-ip> -Port 4000`; check that Server connection details holds an address the endpoint can reach. |

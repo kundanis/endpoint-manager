@@ -7,6 +7,9 @@ export const logger = pino({
       "req.headers.authorization",
       "req.headers.cookie",
       "req.headers['x-agent-key']",
+      // pino-http logs response headers too - the login response's Set-Cookie carries the
+      // admin session token (em_admin_jwt).
+      "res.headers['set-cookie']",
       "*.password",
       "*.passwordHash",
       "*.apiKey",

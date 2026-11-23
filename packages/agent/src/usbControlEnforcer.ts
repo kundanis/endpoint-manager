@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AssignedUsbControlResponse, UsbControlEventPayload, UsbControlSyncResultPayload } from "@em/shared";
 import { agentConfig } from "./config";
+import { psEscape } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,10 +15,6 @@ const enforcedMarkerPath = () => path.join(agentConfig.stateDir, "usb-control-en
 const RE_ENABLE_PASS_INTERVAL_MS = 5 * 60 * 1000;
 let lastRunEnforced = false;
 let lastReEnablePassAt = 0;
-
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
-}
 
 interface RawEvent {
   SerialNumber: string;

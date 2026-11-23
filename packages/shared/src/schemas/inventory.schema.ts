@@ -32,7 +32,7 @@ export const inventoryReportSchema = z.object({
   cpuSpeedGhz: z.number().nullable(),
   totalMemBytes: z.string().nullable(), // stringified bigint over the wire
   memLayout: z.array(memModuleSchema),
-  osInfo: z.record(z.unknown()),
+  osInfo: z.record(z.string(), z.unknown()),
   osBuild: z.string().nullable(),
   osLicenseStatus: z.string().nullable(),
   osLicenseChannel: z.string().nullable(),
@@ -41,7 +41,7 @@ export const inventoryReportSchema = z.object({
   systemManufacturer: z.string().nullable(),
   systemSerialNumber: z.string().nullable(),
   pcSystemType: z.number().int().nullable(),
-  diskInfo: z.array(z.record(z.unknown())),
+  diskInfo: z.array(z.record(z.string(), z.unknown())),
   diskVolumes: z.array(diskVolumeSchema),
   installedSoftware: z.array(installedSoftwareEntrySchema),
   batteryPresent: z.boolean(),

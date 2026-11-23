@@ -37,37 +37,81 @@ async function downloadPackage(client: AxiosInstance, task: DeploymentTaskWire):
   return destPath;
 }
 
-function runShellCommand(command: string): Promise<{ exitCode: number | null }> {
+function runProcess(bin: string, args: string[]): Promise<{ exitCode: number | null; errorCode?: string }> {
   return new Promise((resolve) => {
-    const child = spawn("sh", ["-c", command]);
-    child.on("error", () => resolve({ exitCode: null }));
+    const child = spawn(bin, args);
+    child.on("error", (err: NodeJS.ErrnoException) => resolve({ exitCode: null, errorCode: err.code }));
     child.on("close", (code) => resolve({ exitCode: code }));
   });
 }
 
-// A single quoted shell command string, not spawn(bin, args) directly, because DEB installs
-// need a fallback step (`dpkg -i` alone leaves unmet dependencies unresolved — apt-get -f
-// repairs them) chained with the same shell exit-code semantics an admin typing this by
-// hand at a terminal would get.
-function buildInstallCommand(filePath: string, task: DeploymentTaskWire): string {
-  const quotedPath = `'${filePath.replace(/'/g, "'\\''")}'`;
-  const extraArgs = task.silentArgs.trim();
+// Splits the package's "silent args" the way a POSIX shell would split words - whitespace,
+// '...' literal, "..." with \" \ \$ \` escapes, \x outside quotes - but with no expansion,
+// substitution, redirection or chaining: each word becomes exactly one argv entry.
+export function splitArgs(input: string): string[] {
+  const args: string[] = [];
+  let cur = "";
+  let inWord = false;
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    if (c === "'") {
+      const end = input.indexOf("'", i + 1);
+      if (end === -1) throw new Error("Unterminated ' in installer arguments");
+      cur += input.slice(i + 1, end);
+      i = end;
+      inWord = true;
+    } else if (c === '"') {
+      let j = i + 1;
+      for (; j < input.length && input[j] !== '"'; j++) {
+        if (input[j] === "\\" && j + 1 < input.length && '"\$`'.includes(input[j + 1])) j++;
+        cur += input[j];
+      }
+      if (j >= input.length) throw new Error('Unterminated " in installer arguments');
+      i = j;
+      inWord = true;
+    } else if (c === "\\" && i + 1 < input.length) {
+      cur += input[++i];
+      inWord = true;
+    } else if (/\s/.test(c)) {
+      if (inWord) args.push(cur);
+      cur = "";
+      inWord = false;
+    } else {
+      cur += c;
+      inWord = true;
+    }
+  }
+  if (inWord) args.push(cur);
+  return args;
+}
 
+// Runs the installer as argv arrays (no shell), so nothing in the file name or the package's
+// silent args can be interpreted as shell syntax by root.
+async function runInstaller(filePath: string, task: DeploymentTaskWire): Promise<{ exitCode: number | null; message?: string }> {
   switch (task.installerType) {
-    case "DEB":
-      // apt-get -f install only runs (and only matters) if the first dpkg -i reported unmet
-      // dependencies — running it unconditionally on success too is a harmless no-op.
-      return `dpkg -i ${quotedPath}; apt-get -y -f install`;
+    case "DEB": {
+      // apt-get -f install only matters if dpkg -i reported unmet dependencies - running it
+      // unconditionally is a harmless no-op, and (as with the old `dpkg -i x; apt-get -y -f
+      // install`) its exit code is the result.
+      await runProcess("dpkg", ["-i", filePath]);
+      return runProcess("apt-get", ["-y", "-f", "install"]);
+    }
     case "RPM":
       // -U (upgrade-or-install) rather than -i so re-pushing the same or a newer version of
       // an already-installed package doesn't fail with "package already installed".
-      return `rpm -Uvh ${quotedPath}`;
-    case "SH":
-      return `chmod +x ${quotedPath} && ${quotedPath}${extraArgs ? ` ${extraArgs}` : ""}`;
+      return runProcess("rpm", ["-Uvh", filePath]);
+    case "SH": {
+      const extraArgs = splitArgs(task.silentArgs.trim());
+      fs.chmodSync(filePath, 0o755);
+      const result = await runProcess(filePath, extraArgs);
+      // No #! line: run it with sh, as the shell used to.
+      if (result.errorCode === "ENOEXEC") return runProcess("sh", [filePath, ...extraArgs]);
+      return result;
+    }
     default:
       // EXE/MSI dispatched to a Linux agent by mistake (e.g. a mixed-OS group) — fail
       // clearly rather than attempting something meaningless.
-      return `echo "Installer type ${task.installerType} is not supported on Linux" >&2; exit 1`;
+      return { exitCode: null, message: `Installer type ${task.installerType} is not supported on Linux` };
   }
 }
 
@@ -90,12 +134,12 @@ export async function processDeployment(
     }
 
     await reportStatus({ status: "INSTALLING" });
-    const { exitCode } = await runShellCommand(buildInstallCommand(filePath, task));
+    const { exitCode, message } = await runInstaller(filePath, task);
 
     if (exitCode === 0) {
       await reportStatus({ status: "SUCCESS", exitCode });
     } else {
-      await reportStatus({ status: "FAILED", exitCode, message: `Installer exited with code ${exitCode}` });
+      await reportStatus({ status: "FAILED", exitCode, message: message ?? `Installer exited with code ${exitCode}` });
     }
   } catch (err) {
     await reportStatus({ status: "FAILED", message: err instanceof Error ? err.message : String(err) });

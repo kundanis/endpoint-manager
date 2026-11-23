@@ -1,7 +1,7 @@
 # Endpoint IQ Agent - registers and starts the Windows service "EndpointIQAgent" (EndpointIQAgentService.exe),
 # which runs the agent and starts the tray app in each signed-in user's session. Safe to run any
 # number of times; called by:
-#   - install.ps1, after copying the files
+#   - install.ps1, after copying the files (and with -PrepareInstall before copying them)
 #   - the self-update helper (selfUpdater.ts), after extracting a new version
 #   - the agent itself, once, when it finds it is still running the pre-0.2.23 way (a scheduled
 #     task) - that is how existing endpoints move to the service on their first self-update
@@ -16,7 +16,10 @@
 # The watchdog then keeps the task running and tries the service again a day later; an install or
 # self-update tries it straight away. Exit codes: 0 service running, 3 running as the task.
 param(
-    [switch]$Watchdog
+    [switch]$Watchdog,
+    # install.ps1, before copying files: only lock the (possibly new) install folder, with
+    # administrators allowed to write, so no user can put anything in it while files go in.
+    [switch]$PrepareInstall
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -26,6 +29,49 @@ $installDir = Join-Path $env:ProgramData "EndpointPro\Agent"
 $serviceExe = Join-Path $installDir "EndpointIQAgentService.exe"
 $trayDir = Join-Path $installDir "tray"
 $blockedMarker = Join-Path $installDir "app\.state\service-blocked.txt"
+
+# Locks the install folder: owned by SYSTEM, SYSTEM has full control and administrators read
+# access, nothing is inherited from ProgramData (where users may create files), and everything
+# inside inherits only that - so no file or permission a user added survives, and no file is
+# ever left open to users (no "icacls /reset" back to ProgramData's permissions). A junction or
+# link put in place of the folder (or of ProgramData\EndpointPro) is removed, never followed.
+# The tray app's and the launch blocker's folders are also readable by users (both run as the
+# signed-in user). -AdminWrite: administrators keep full control, while install.ps1 copies files.
+# The same function is in selfUpdater.ts (LOCK_INSTALL_DIR_PS) - keep the two in step.
+function Set-FolderAcl($path, $sddl) {
+  $acl = New-Object System.Security.AccessControl.DirectorySecurity
+  $acl.SetSecurityDescriptorSddlForm($sddl, [System.Security.AccessControl.AccessControlSections]::Access)
+  [System.IO.Directory]::SetAccessControl($path, $acl)
+}
+function Lock-AgentFolder([switch]$AdminWrite) {
+  $root = Split-Path $installDir
+  foreach ($d in @($root, $installDir)) {
+    $item = Get-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+    if ($item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $item.PSIsContainer)) {
+      if ($item.PSIsContainer) { [IO.Directory]::Delete($d, $false) } else { [IO.File]::Delete($d) }
+    }
+    if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+  }
+  # Owned by Administrators first (only the owner, no permission changes), so the permissions
+  # below can be set whatever they were; SYSTEM becomes the owner at the end.
+  & takeown.exe /F $root /A 2>$null | Out-Null
+  & takeown.exe /F $installDir /R /A /D Y 2>$null | Out-Null
+  Set-FolderAcl $root 'D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)'
+  # Administrators: full control only while an administrator copies files in (install.ps1).
+  Set-FolderAcl $installDir $(if ($AdminWrite) { 'D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)' } else { 'D:PAI(A;OICI;FA;;;SY)(A;OICI;0x1200a9;;;BA)' })
+  if (@(Get-ChildItem -LiteralPath $installDir -Force).Count -gt 0) { & icacls.exe (Join-Path $installDir '*') /reset /T /C /Q 2>$null | Out-Null }
+  foreach ($sub in @('tray', 'app\blocker')) {
+    $p = Join-Path $installDir $sub
+    if (Test-Path -LiteralPath $p) { & icacls.exe $p /grant '*S-1-5-32-545:(OI)(CI)RX' /C /Q 2>$null | Out-Null }
+  }
+  & icacls.exe $root /setowner '*S-1-5-18' /C /Q 2>$null | Out-Null
+  & icacls.exe $installDir /setowner '*S-1-5-18' /T /C /Q 2>$null | Out-Null
+}
+
+if ($PrepareInstall) {
+    Lock-AgentFolder -AdminWrite
+    exit 0
+}
 
 if (-not (Test-Path $serviceExe)) { exit 1 }
 
@@ -39,6 +85,7 @@ function Start-LegacyTask {
     if (-not (Test-LegacyTask)) {
         $nodeExe = Join-Path $installDir "node\node.exe"
         $entryPoint = Join-Path $installDir "app\dist\index.js"
+        # A random name: %TEMP% is C:\Windows\Temp when SYSTEM runs this (watchdog).
         $taskXmlPath = Join-Path $env:TEMP ("EndpointProAgentTask_" + [Guid]::NewGuid().ToString("N") + ".xml")
         $taskXml = @"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -91,17 +138,12 @@ if ($Watchdog -and (Test-Path $blockedMarker) -and ((Get-Item $blockedMarker).La
     exit 3
 }
 
-# 1. Tamper resistance: the install folder belongs to SYSTEM; administrators can read it. A
-# self-update resets these permissions to extract its files, so they are put back here (and on
-# the first run after updating from a task-based version, even from the watchdog). The tray
-# app's folder is also readable by users, as the tray runs as the signed-in user.
+# 1. Tamper resistance: the install folder belongs to SYSTEM; administrators can read it
+# (Lock-AgentFolder above, applied to everything inside, so nothing added during an install or
+# update keeps other permissions). Also on the first run after updating from a task-based
+# version, even from the watchdog.
 if (-not $Watchdog -or $migrating) {
-    icacls $installDir /inheritance:r /Q 2>$null | Out-Null
-    icacls $installDir /grant:r "*S-1-5-18:(OI)(CI)F" /Q 2>$null | Out-Null
-    icacls $installDir /grant:r "*S-1-5-32-544:(OI)(CI)RX" /Q 2>$null | Out-Null
-    $installer = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
-    if ($installer -notmatch 'SYSTEM$') { icacls $installDir /remove:g $installer /Q 2>$null | Out-Null }
-    if (Test-Path $trayDir) { icacls $trayDir /grant "*S-1-5-32-545:(OI)(CI)RX" /Q 2>$null | Out-Null }
+    Lock-AgentFolder
 }
 
 # 2. The service: automatic start as LocalSystem; Windows restarts it a minute after a crash.

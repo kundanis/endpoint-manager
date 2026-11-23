@@ -31,6 +31,26 @@ export function requirePermission(permission: AdminPermissionKey) {
   };
 }
 
+// Security Configuration rules and Zero Trust conditions carry PowerShell that every assigned
+// agent runs as SYSTEM - the same power as Endpoint Manager's own Commands. So writing that
+// PowerShell needs the ENDPOINT_MANAGER grant too, not just SECURITY_MANAGER (which only
+// gates the router). Super admins always pass, like requireModuleAccess.
+export const SCRIPT_AUTHORING_DENIED =
+  "Adding or changing the PowerShell of a check runs it as SYSTEM on endpoints, so it also needs Endpoint Manager access. Ask a super admin, or an admin with Endpoint Manager access, to make this change.";
+
+export function canAuthorEndpointScripts(req: Request): boolean {
+  if (req.adminRole === "SUPER_ADMIN") return true;
+  return req.adminModuleGrantKeys?.includes("ENDPOINT_MANAGER") ?? false;
+}
+
+// True when a write would put new PowerShell on endpoints: the field is being set to a
+// non-empty value that differs from what's stored. Clearing a script (or re-saving the same
+// text, as the console's edit form does) doesn't need the extra grant.
+export function setsNewScript(next: string | null | undefined, current: string | null | undefined): boolean {
+  if (next === undefined || next === null || next.trim() === "") return false;
+  return next !== (current ?? "");
+}
+
 export function requireModuleVisible(moduleKey: AdminModuleKey) {
   return async (_req: Request, res: Response, next: NextFunction) => {
     try {

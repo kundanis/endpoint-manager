@@ -37,7 +37,14 @@ services:
     environment:
       PORT: "4000"
       DB_NAME: ${DB_NAME:-EndpointManagerDb}
-      DATABASE_URL: "sqlserver://db:1433;database=${DB_NAME:-EndpointManagerDb};user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
+      # The server runs as the restricted login APP_DB_USER (read/write/execute on this database
+      # only - created by the container's start-up). sa is used only to create the database,
+      # apply migrations and create that login, and is removed from the server's environment
+      # before it starts.
+      APP_DB_USER: ${APP_DB_USER:-endpoint_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      DATABASE_URL: "sqlserver://db:1433;database=${DB_NAME:-EndpointManagerDb};user=${APP_DB_USER:-endpoint_app};password=${APP_DB_PASSWORD};encrypt=true;trustServerCertificate=true"
+      MIGRATE_DATABASE_URL: "sqlserver://db:1433;database=${DB_NAME:-EndpointManagerDb};user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
       MASTER_DATABASE_URL: "sqlserver://db:1433;database=master;user=sa;password=${SA_PASSWORD};encrypt=true;trustServerCertificate=true"
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?set FIELD_ENCRYPTION_KEY in .env}
@@ -56,18 +63,23 @@ services:
       TRUSTED_PROXY: ${TRUSTED_PROXY:-}
       # HTTPS (set by `deploy.sh --install-cert`). With a certificate installed the server
       # serves HTTPS on 4443 (published as HTTPS_PORT, default 443) and keeps plain HTTP on
-      # 4000 so agents enrolled with an http:// address keep checking in. Without one, only
-      # HTTP on 4000 is served and these are ignored.
+      # 4000 for agents only, so agents enrolled with an http:// address keep checking in -
+      # browsers opening the HTTP address are redirected to HTTPS. Without one, only HTTP on
+      # 4000 is served (console included) and these are ignored.
       TLS_PFX_PATH: ${TLS_PFX_PATH:-}
       TLS_PFX_PASSPHRASE: ${TLS_PFX_PASSPHRASE:-}
       TLS_CA_CHAIN_PATH: ${TLS_CA_CHAIN_PATH:-}
       TLS_PORT: "4443"
+      # Where browsers that land on the plain-HTTP port are redirected (the published HTTPS
+      # port). With a certificate, the HTTP port serves agents only.
+      HTTPS_PUBLIC_PORT: ${HTTPS_PORT:-443}
     ports:
       - "${APP_PORT:-4000}:4000"
       - "${HTTPS_PORT:-443}:4443"
     volumes:
       - uploads:/app/uploads
-      - ./agent-installer:/app/agent-installer
+      # Read-only: the server only serves these files, it never writes them.
+      - ./agent-installer:/app/agent-installer:ro
       - ./certs:/app/certs:ro
     restart: unless-stopped
     healthcheck:

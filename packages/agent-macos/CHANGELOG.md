@@ -6,6 +6,19 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.3
+- Security: the agent only acts on replies signed by its server, and remembers the server's key
+  from the first signed reply, so another device on the network can't pose as the server.
+- Security: enrollment sends the Mac's serial number and network card, so a reinstall on the
+  same Mac keeps its endpoint record and nobody can take over another endpoint by its name.
+- Security: agent keys and enrollment tokens are no longer written to logs, and the log folder
+  and file are readable by root only (repaired at start on existing installs).
+- Security: Command blocking no longer skips commands just because they mention the agent's name.
+- Security: updates are unpacked without keeping the archive's owners.
+- Security: install.sh refuses to run from a folder other users can change, can read the
+  enrollment token from standard input (--enrollment-token-stdin) and writes config.json readable
+  by root only; uninstall.sh no longer shows the agent key in the process list.
+
 ## 0.1.2
 - New: Command blocking. Harmful commands chosen in the console (deleting Time Machine backups,
   turning off Gatekeeper or the firewall, erasing disks, creating admin accounts and more) are

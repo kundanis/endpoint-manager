@@ -18,14 +18,23 @@ function devServerAgent(): https.Agent | undefined {
   }
 }
 
+// Loopback only by default. The dev proxy below makes every request reach the server from
+// 127.0.0.1, which the server's IP allowlist and per-address rate limits trust - so exposing
+// this port on the LAN would let anyone there skip them. Opt in deliberately with
+// VITE_HOST=true (all interfaces) or VITE_HOST=<address>, e.g. for admins on the tailnet.
+// 127.0.0.1 rather than "localhost": Node resolves that to ::1 only, and a local reverse
+// proxy (Tailscale serve/funnel -> http://127.0.0.1:5173) then gets 502. Browsers on this
+// machine reach http://localhost:5173 over IPv4 just the same.
+const lanHost = process.env.VITE_HOST?.trim();
+const host: string | boolean = !lanHost || lanHost === "false" ? "127.0.0.1" : lanHost === "true" ? true : lanHost;
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    // Listen on all interfaces (not just localhost) so the dev console is reachable from
-    // other machines on the LAN at http://<this-machine-ip>:5173.
-    host: true,
+    host,
     port: 5173,
-    // Tailscale names (e.g. http://<machine>.<tailnet>.ts.net:5173), for admins on the tailnet.
+    // Tailscale names (e.g. http://<machine>.<tailnet>.ts.net:5173), for admins on the tailnet
+    // (only reachable when VITE_HOST opens the server beyond localhost).
     allowedHosts: [".ts.net"],
     proxy: {
       "/api": {

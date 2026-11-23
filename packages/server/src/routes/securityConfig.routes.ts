@@ -37,6 +37,7 @@ import { installBuiltInBenchmarks } from "../services/builtInBenchmarks";
 import { GpoImportError, previewGpoBackup } from "../services/gpoImport.service";
 import { prisma } from "../db";
 import { requestScan } from "../services/scanRequests";
+import { canAuthorEndpointScripts, SCRIPT_AUTHORING_DENIED, setsNewScript } from "../middleware/requireAdminRole";
 
 export const securityConfigRouter = Router();
 
@@ -130,6 +131,8 @@ securityConfigRouter.delete("/:id", async (req, res, next) => {
 securityConfigRouter.post("/:id/rules", async (req, res, next) => {
   try {
     const payload = createRuleRequestSchema.parse(req.body);
+    // Every rule has check PowerShell, so creating one always needs the extra grant.
+    if (!canAuthorEndpointScripts(req)) return res.status(403).json({ error: SCRIPT_AUTHORING_DENIED });
     res.status(201).json(await addRule(req.params.id, payload));
   } catch (err) {
     next(err);
@@ -139,6 +142,8 @@ securityConfigRouter.post("/:id/rules", async (req, res, next) => {
 securityConfigRouter.post("/:id/rules/import", async (req, res, next) => {
   try {
     const payload = importRulesRequestSchema.parse(req.body);
+    // Covers the Group Policy import too: gpo-preview only converts, the rules land here.
+    if (!canAuthorEndpointScripts(req)) return res.status(403).json({ error: SCRIPT_AUTHORING_DENIED });
     res.status(201).json(await importRules(req.params.id, payload.rules));
   } catch (err) {
     next(err);
@@ -163,6 +168,15 @@ securityConfigRouter.post("/:id/rules/gpo-preview", gpoUpload.single("file"), (r
 securityConfigRouter.patch("/:id/rules/:ruleId", async (req, res, next) => {
   try {
     const payload = updateRuleRequestSchema.parse(req.body);
+    const current = await prisma.securityBenchmarkRule.findFirst({
+      where: { id: req.params.ruleId, benchmarkId: req.params.id },
+      select: { checkPowerShell: true, remediationPowerShell: true },
+    });
+    if (!current) return res.status(404).json({ error: "Rule not found" });
+    const changesScript =
+      setsNewScript(payload.checkPowerShell, current.checkPowerShell) ||
+      setsNewScript(payload.remediationPowerShell, current.remediationPowerShell);
+    if (changesScript && !canAuthorEndpointScripts(req)) return res.status(403).json({ error: SCRIPT_AUTHORING_DENIED });
     res.json(await updateRule(req.params.id, req.params.ruleId, payload));
   } catch (err) {
     next(err);

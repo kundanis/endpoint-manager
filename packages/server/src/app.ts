@@ -5,6 +5,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import { logger } from "./logger";
+import { signAgentResponses } from "./utils/agentResponseSigning";
 import { authRouter } from "./routes/auth.routes";
 import { agentEnrollRouter } from "./routes/agentEnroll.routes";
 import { emailAddinRouter } from "./routes/emailAddin.routes";
@@ -84,6 +85,10 @@ export function createApp() {
   //    on the web shows them in a frame.
   app.disable("x-powered-by");
   app.set("etag", false);
+  // Agent replies are signed before anything else can answer (allowlist, rate limits, auth
+  // failures, error handler) - see utils/agentResponseSigning.ts. Only requests carrying the
+  // agent's nonce header are affected.
+  app.use(signAgentResponses);
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "same-origin");

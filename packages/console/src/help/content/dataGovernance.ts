@@ -282,7 +282,7 @@ export const DATA_TOPICS: HelpTopic[] = [
         title: "Built-In Safety",
         items: [
           "Rules that would stop Windows itself are refused: file types such as .exe, .com, .scr or .dll, anything in the Windows folder, and programs such as explorer.exe.",
-          "If a user's desktop doesn't start for 2 minutes while blocking rules are in force, the agent removes its rules, pauses the endpoint and records it in Admin logs.",
+          "If a user's desktop never starts within 2 minutes of signing in while blocking rules are in force, the agent removes its rules, pauses the endpoint and records it in Admin logs. Closing the desktop (explorer.exe) after it has started, or a user setting their own shell, doesn't trigger this.",
           "Assigning a blocking policy to 10 or more endpoints asks for confirmation; try a few test devices first.",
         ],
       },

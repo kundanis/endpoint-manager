@@ -37,7 +37,7 @@ export const NETWORK_APP_TOPICS: HelpTopic[] = [
         title: "Install the Agent on an Unmanaged Device",
         steps: [
           { route: "/network-scan", text: "Open the VLAN and find the device marked Unmanaged." },
-          { text: "Select Install agent on its row. With a remote install account saved in Asset settings, no login is asked; otherwise enter a Windows administrator account for that device." },
+          { text: "Select Install agent on its row. With a remote install account saved in Asset settings, super admins aren't asked for a login; other admins enter a Windows administrator account for that device." },
           { text: "Optionally pick a Group. Only groups with an active enrollment token are listed; the device joins that group and uses one of the token's uses. Then start the install." },
           { text: "Progress shows on the row. Once installed, the device appears in Endpoints and shows as Managed after the next scan." },
         ],
@@ -102,7 +102,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
           "Mark as… on each CVE in the findings list: False positive, Not applicable or Risk accepted, for every endpoint, a group, or the endpoint you filtered to, with a note saying why. It covers all the software matched to that CVE. Marked findings leave the counts, are never uninstalled by Remediate, and stay marked after every sync and rescan.",
           "Exceptions lists every mark with who set it, when and why. Remove puts the findings back to open. A Risk accepted mark can have a review date; after it the findings come back as open.",
           "Open a CVE to see the matched software per endpoint and how confident the match is.",
-          "Remediate by uninstalling the vulnerable software, for one CVE or whole severity levels. System software (drivers, runtimes, Windows components) is never uninstalled; those findings are skipped and need an update instead.",
+          "Remediate by uninstalling the vulnerable software, for one CVE or whole severity levels. System software (drivers, runtimes, Windows components) is never uninstalled; those findings are skipped and need an update instead. Programs installed for one user only (in their profile) are not uninstalled from here either; that user must remove or update them.",
           "Keep the CVE catalogue current with Sync now (from NVD and Microsoft's Security Update Guide) and rescan the fleet.",
           "Microsoft products (SQL Server, Edge, .NET, Visual Studio, VS Code, PowerShell) are checked against the build Microsoft says fixes each CVE. Fix those with the Microsoft update; they are never uninstalled.",
           "Findings marked Name only matched on the product name alone; the installed version couldn't be confirmed.",
@@ -204,7 +204,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       {
         title: "Benchmark Tabs",
         items: [
-          "Rules: every check with its severity and pass/fail counts; import a GPO backup or JSON, or add rules by hand.",
+          "Rules: every check with its severity and pass/fail counts; import a GPO backup or JSON, or add rules by hand. Adding or importing rules, or changing a rule's PowerShell, also needs the Endpoint Manager permission, because that script runs on endpoints.",
           "Assignment: apply the benchmark to groups or endpoints.",
           "Compliance by endpoint: pass and fail per device; fix selected rules or everything failing.",
         ],
@@ -237,7 +237,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
         title: "Import Your Own Group Policy Baseline",
         steps: [
           { route: "/security-config", text: "Select New benchmark and create it.", target: { kind: "button", label: "New benchmark" } },
-          { text: "On its Rules tab, select Upload GPO backup (.zip) and pick which GPOs to import." },
+          { text: "On its Rules tab, select Upload GPO backup (.zip) and pick which GPOs to import. Settings containing control characters are skipped and listed." },
         ],
       },
     ],
@@ -253,7 +253,7 @@ export const SECURITY_TOPICS: HelpTopic[] = [
       {
         title: "Policy Tabs",
         items: [
-          "Conditions: the checks that make up the policy; switch each on or off, tick built-in checks to add them, or add your own.",
+          "Conditions: the checks that make up the policy; switch each on or off, tick built-in checks to add them, or add your own. Adding your own condition or changing its PowerShell also needs the Endpoint Manager permission.",
           "Built-in checks can be switched off or edited, but not deleted. Changed means a built-in check differs from the current version; Reset puts it back.",
           "Required software: the antivirus and management agent every device must run.",
           "Assignment: apply the policy to groups or endpoints.",

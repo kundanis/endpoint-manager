@@ -70,6 +70,16 @@ export async function getNotificationSettings() {
 
 export class NotificationError extends Error {}
 
+// Whether the server the stored password would be sent to (host, port or account) differs.
+// Exported for tests.
+export function smtpTargetChanged(
+  stored: { host: string; port: number; username: string | null },
+  next: { host: string; port: number; username: string | null },
+): boolean {
+  const norm = (v: string | null) => (v ?? "").trim().toLowerCase();
+  return norm(stored.host) !== norm(next.host) || stored.port !== next.port || norm(stored.username) !== norm(next.username);
+}
+
 export async function saveNotificationSettings(input: unknown) {
   const body = notificationSettingsInputSchema.parse(input);
   if (body.enabled) {
@@ -77,6 +87,11 @@ export async function saveNotificationSettings(input: unknown) {
     if (body.recipients.length === 0) throw new NotificationError("Add at least one recipient.");
   }
   const { stored } = await readAll();
+  if (body.smtp.password === undefined && stored.smtp.passwordEncrypted && smtpTargetChanged(stored.smtp, body.smtp)) {
+    // Keeping the stored password while pointing it at a different server or account would let
+    // anyone who can edit these settings send it to a host of their choosing ("Send test email").
+    throw new NotificationError("The SMTP server, port or username changed - enter the SMTP password again to save.");
+  }
   const passwordEncrypted =
     body.smtp.password === undefined ? stored.smtp.passwordEncrypted : body.smtp.password === "" ? null : (encryptFieldOrNull(body.smtp.password) ?? null);
   const { password: _password, ...smtp } = body.smtp;

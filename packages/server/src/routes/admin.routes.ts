@@ -61,7 +61,7 @@ import { getLastPatchInstalledAtByAgent, getLatestMissingPatchByAgent } from "..
 import { excludeOverriddenFailures, getOverriddenKeysByAgent } from "../services/zeroTrustOverride.service";
 import { getAgentRollupsCached } from "../cache/fleetCache";
 import { effectiveLastCheckin } from "../presence/presence";
-import { quarantineAgents, releaseAgents } from "../services/quarantine.service";
+import { getQuarantineActivity, QuarantineNotSupportedError, quarantineAgents, releaseAgents } from "../services/quarantine.service";
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
 import { pauseAgent, pauseAllAgents, resumeAgent, resumeAllAgents, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
 import { requireSuperAdmin } from "../middleware/requireAdminRole";
@@ -127,6 +127,8 @@ adminRouter.get("/agents", async (_req, res, next) => {
       configFailCountByAgent,
       configAssessedAgents,
     } = await getAgentRollupsCached();
+    // Live, like the list itself: a quarantine/release still waiting to run, or one that failed.
+    const quarantineActivity = await getQuarantineActivity();
 
     res.json(
       agents.map((a) => ({
@@ -152,6 +154,7 @@ adminRouter.get("/agents", async (_req, res, next) => {
         deviceTypeOverride: a.deviceTypeOverride,
         deviceType: a.deviceTypeOverride ?? deriveDeviceType(a.inventory?.pcSystemType ?? null, extractOsEditionLabel(a.inventory?.osInfo)),
         quarantined: a.quarantined,
+        quarantineActivity: quarantineActivity.get(a.id) ?? null,
         paused: a.paused,
         pausedAt: a.pausedAt?.toISOString() ?? null,
         zeroTrustNonCompliantCount: ztCountByAgent.get(a.id) ?? 0,
@@ -240,6 +243,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       deviceTypeOverride: agent.deviceTypeOverride,
       deviceType: agent.deviceTypeOverride ?? deriveDeviceType(agent.inventory?.pcSystemType ?? null, extractOsEditionLabel(agent.inventory?.osInfo)),
       quarantined: agent.quarantined,
+      quarantineActivity: (await getQuarantineActivity([agent.id])).get(agent.id) ?? null,
       paused: agent.paused,
       pausedAt: agent.pausedAt?.toISOString() ?? null,
       remoteAccessEnabled: agent.remoteAccessEnabled,
@@ -309,6 +313,7 @@ adminRouter.post("/agents/:id/quarantine", async (req, res, next) => {
     if (!result) return res.status(404).json({ error: "Agent not found" });
     res.status(201).json(result);
   } catch (err) {
+    if (err instanceof QuarantineNotSupportedError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -319,6 +324,7 @@ adminRouter.post("/agents/:id/release", async (req, res, next) => {
     if (!result) return res.status(404).json({ error: "Agent not found" });
     res.status(201).json(result);
   } catch (err) {
+    if (err instanceof QuarantineNotSupportedError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -489,6 +495,7 @@ adminRouter.post("/agents/quarantine-bulk", async (req, res, next) => {
     if (!result) return res.status(404).json({ error: "No matching agents found" });
     res.status(201).json(result);
   } catch (err) {
+    if (err instanceof QuarantineNotSupportedError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -502,6 +509,7 @@ adminRouter.post("/agents/release-bulk", async (req, res, next) => {
     if (!result) return res.status(404).json({ error: "No matching agents found" });
     res.status(201).json(result);
   } catch (err) {
+    if (err instanceof QuarantineNotSupportedError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -754,6 +762,15 @@ adminRouter.delete("/enrollment-tokens/:id", async (req, res, next) => {
 adminRouter.post("/remote-install", async (req, res, next) => {
   try {
     const payload = startRemoteInstallRequestSchema.parse(req.body);
+    // The saved account is a domain credential only super admins can set. Letting any
+    // Endpoint Manager admin point it at a target of their choice would hand that credential
+    // (its NTLM authentication) to whatever machine they name - so other admins type the
+    // account in for each install.
+    if (!payload.username && req.adminRole !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "Only a super admin can install with the saved remote install account. Choose \"Use another account\" and enter a Windows administrator username and password for these endpoints.",
+      });
+    }
     const result = await startRemoteInstall(payload, req.adminId!);
     res.status(201).json(result);
   } catch (err) {

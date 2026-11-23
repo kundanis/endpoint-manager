@@ -6,6 +6,22 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.1.6
+- Security: the agent only acts on replies signed by its server, and remembers the server's key
+  from the first signed reply, so another device on the network can't pose as the server.
+- Security: enrollment sends the machine's serial number and network card, so a reinstall on the
+  same machine keeps its endpoint record and nobody can take over another endpoint by its name.
+- Security: agent keys and enrollment tokens are no longer written to logs.
+- Security: updates are unpacked as root-owned files, and the install folder's ownership and
+  permissions are repaired at start.
+- Security: Command blocking no longer skips commands just because they mention the agent's name.
+- Security: patch and package names are checked before they're passed to apt/dnf, and only
+  updates found by the last scan are installed; packages run without a shell.
+- Security: install.sh refuses to run from a folder other users can change, can read the
+  enrollment token from standard input (--enrollment-token-stdin), writes config.json readable by
+  root only and no longer falls back to installing Node.js from the internet; uninstall.sh no
+  longer shows the agent key in the process list.
+
 ## 0.1.5
 - New: Command blocking. Harmful commands chosen in the console (deleting logs, turning off the
   firewall, wiping disks, creating admin accounts and more) are stopped as soon as they start and

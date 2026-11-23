@@ -4,10 +4,11 @@ import { agentConfig } from "./config";
 
 // Shared by the Application control enforcer and the desktop safety net.
 
-// Folder that ordinary users can read (the launch blocker script) and write to (its events).
-export const APP_CONTROL_DIR = path.join(process.env.ProgramData ?? "C:\\ProgramData", "EndpointPro", "AppControl");
-export const BLOCKER_SCRIPT = path.join(APP_CONTROL_DIR, "blocked.ps1");
-export const BLOCKER_EVENTS_DIR = path.join(APP_CONTROL_DIR, "events");
+// The launch blocker script (run as the user who started a blocked program, so users can read
+// it): app\blocker in the locked install folder, which only SYSTEM and administrators can
+// change. It reports what it stopped to the agent's local API (localApi.ts), not to a folder.
+export const BLOCKER_DIR = path.join(__dirname, "..", "blocker");
+export const BLOCKER_SCRIPT = path.join(BLOCKER_DIR, "blocked.ps1");
 
 // The rules the process watcher enforces; "[]" stops it closing anything.
 export const watcherRulesFile = () => path.join(agentConfig.stateDir, "app-control-rules.json");

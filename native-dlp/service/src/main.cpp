@@ -15,6 +15,8 @@
 // batched for a network POST).
 
 #include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 #include <iostream>
 #include <string>
 #include <atomic>
@@ -22,8 +24,11 @@
 #include <mutex>
 #include <chrono>
 #include <fstream>
+#include <sstream>
 #include <cstdlib>
 #include <algorithm>
+
+#pragma comment(lib, "advapi32.lib")
 
 #include "../include/FilterComm.h"
 #include "../include/ContentScanner.h"
@@ -31,7 +36,14 @@
 #include "../include/AgentBridge.h"
 
 // ---- Simple file logger ----------------------------------------------------
+// Only ever into the verified state folder (see IsTrustedStateDir): a log file in a folder users
+// can create files in (C:\ProgramData\EndpointPro itself, C:\Windows\Temp) could be a link a
+// user put there, making this SYSTEM service append to a file of their choosing. Until the
+// state folder is verified, lines go to the debugger output only.
 static std::mutex g_logMutex;
+static std::wstring g_logPath;
+static const ULONGLONG kMaxLogBytes = 5ull * 1024 * 1024;
+
 static void Log(const std::string& msg)
 {
     std::lock_guard<std::mutex> lk(g_logMutex);
@@ -39,9 +51,120 @@ static void Log(const std::string& msg)
     char ts[32];
     snprintf(ts, sizeof(ts), "%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
     std::string line = std::string("[") + ts + "] " + msg + "\n";
-    for (const char* path : {"C:\\ProgramData\\EndpointPro\\dlp-service.log", "C:\\Windows\\Temp\\DLPService.log"}) {
-        std::ofstream f(path, std::ios::app);
-        if (f.is_open()) { f << line; f.flush(); }
+    if (g_logPath.empty()) {
+        OutputDebugStringA(("[DLPService] " + line).c_str());
+        return;
+    }
+    WIN32_FILE_ATTRIBUTE_DATA info = {};
+    bool tooBig = GetFileAttributesExW(g_logPath.c_str(), GetFileExInfoStandard, &info) &&
+        ((static_cast<ULONGLONG>(info.nFileSizeHigh) << 32) | info.nFileSizeLow) > kMaxLogBytes;
+    std::ofstream f(g_logPath, tooBig ? std::ios::trunc : std::ios::app);
+    if (f.is_open()) { f << line; f.flush(); }
+}
+
+// ---- Trusted folders and files ----------------------------------------------
+// Everything this SYSTEM service reads policy from or writes to must be a real folder or file
+// (no junction or symbolic link) owned by SYSTEM, Administrators or TrustedInstaller, which no
+// one else can change. Otherwise a user could plant an empty policy (switching DLP off) or a
+// link that makes SYSTEM write event and log lines to a file of their choosing.
+static bool IsTrustedInstallerSid(PSID sid)
+{
+    static PSID trustedInstaller = []() -> PSID {
+        PSID s = nullptr;
+        ConvertStringSidToSidW(L"S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464", &s);
+        return s; // kept for the life of the process
+    }();
+    return trustedInstaller && EqualSid(sid, trustedInstaller);
+}
+
+static bool IsPrivilegedSid(PSID sid)
+{
+    return IsWellKnownSid(sid, WinLocalSystemSid) || IsWellKnownSid(sid, WinBuiltinAdministratorsSid) || IsTrustedInstallerSid(sid);
+}
+
+// Any right that lets someone change, replace or delete the object (or add to a folder).
+static const DWORD kChangeRights = FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES |
+    FILE_DELETE_CHILD | DELETE | WRITE_DAC | WRITE_OWNER | GENERIC_WRITE | GENERIC_ALL;
+
+static bool IsTrustedPath(const std::wstring& path, bool directory)
+{
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) return false;
+    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) return false; // junction or symbolic link
+    if (directory != ((attrs & FILE_ATTRIBUTE_DIRECTORY) != 0)) return false;
+
+    PSID owner = nullptr;
+    PACL dacl = nullptr;
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    if (GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                              &owner, nullptr, &dacl, nullptr, &sd) != ERROR_SUCCESS)
+        return false;
+
+    // No DACL at all means everyone has full access.
+    bool trusted = owner != nullptr && IsPrivilegedSid(owner) && dacl != nullptr;
+    for (DWORD i = 0; trusted && i < dacl->AceCount; i++) {
+        ACE_HEADER* ace = nullptr;
+        if (!GetAce(dacl, i, reinterpret_cast<LPVOID*>(&ace))) { trusted = false; break; }
+        if (ace->AceType == ACCESS_DENIED_ACE_TYPE) continue; // only ever takes rights away
+        if (ace->AceType != ACCESS_ALLOWED_ACE_TYPE) { trusted = false; break; } // unusual on files: not trusted
+        if (ace->AceFlags & INHERIT_ONLY_ACE) continue; // applies only to what is created inside, checked on its own
+        ACCESS_ALLOWED_ACE* allowed = reinterpret_cast<ACCESS_ALLOWED_ACE*>(ace);
+        if ((allowed->Mask & kChangeRights) && !IsPrivilegedSid(reinterpret_cast<PSID>(&allowed->SidStart))) trusted = false;
+    }
+    LocalFree(sd);
+    return trusted;
+}
+
+static std::wstring ParentDir(const std::wstring& path)
+{
+    size_t sep = path.find_last_of(L"\\/");
+    return sep == std::wstring::npos ? std::wstring() : path.substr(0, sep);
+}
+
+// The folder and its parent (whoever can write to the parent could rename the folder away and
+// put a link in its place). A missing folder is created with SYSTEM and Administrators only,
+// when its parent is trusted.
+static bool IsTrustedStateDir(const std::wstring& dir)
+{
+    std::wstring parent = ParentDir(dir);
+    if (parent.empty() || !IsTrustedPath(parent, true)) return false;
+    if (GetFileAttributesW(dir.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        PSECURITY_DESCRIPTOR sd = nullptr;
+        if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+                                                                 SDDL_REVISION_1, &sd, nullptr)) {
+            SECURITY_ATTRIBUTES sa = { sizeof(sa), sd, FALSE };
+            CreateDirectoryW(dir.c_str(), &sa);
+            LocalFree(sd);
+        }
+    }
+    return IsTrustedPath(dir, true);
+}
+
+static std::string Narrow(const std::wstring& w) { return std::string(w.begin(), w.end()); }
+
+// The policy file counts only when it is trusted itself (written by the agent, not planted or
+// changed by a user) and holds a JSON array. Missing, empty, unreadable or untrusted: false, and
+// the caller keeps the policy already in force - never "no policy", which would switch DLP off.
+// An empty array written by the agent (every policy removed) is valid.
+static bool ReadTrustedPolicy(const std::wstring& stateDir, nlohmann::json& out)
+{
+    std::wstring file = stateDir + L"\\dlp-policy.json";
+    if (!IsTrustedPath(file, false)) return false;
+    try {
+        std::ifstream f(file, std::ios::binary);
+        if (!f.is_open()) return false;
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        std::string raw = ss.str();
+        if (raw.size() >= 3 && (unsigned char)raw[0] == 0xEF && (unsigned char)raw[1] == 0xBB && (unsigned char)raw[2] == 0xBF)
+            raw = raw.substr(3);
+        if (raw.find_first_not_of(" \t\r\n") == std::string::npos) return false;
+        nlohmann::json parsed = nlohmann::json::parse(raw);
+        if (!parsed.is_array()) return false;
+        out = std::move(parsed);
+        return true;
+    } catch (...) {
+        return false;
     }
 }
 
@@ -55,17 +178,26 @@ static const int POLICY_SYNC_INTERVAL_SEC = 60; // matches DEFAULT_DLP_POLICY_SY
 
 // ---- Config: where dlp-policy.json / dlp-events.ndjson live -----------------
 // MUST match the Node.js agent's own agentConfig.stateDir for this handoff to work.
-// Resolution order: --state-dir arg > UEM_STATE_DIR env var > a fixed default that
-// the install script is responsible for aligning with the Node agent's install.
+// Resolution order: --state-dir arg > UEM_STATE_DIR env var (both set only by
+// administrators: the service's command line and environment) > the packaged agent's own
+// state folder, <ProgramData>\EndpointPro\Agent\app\.state, which the agent keeps locked to
+// SYSTEM and Administrators. (Not a folder of its own directly under ProgramData\EndpointPro,
+// where users could create it first.) Whatever it resolves to is verified before use.
 static std::wstring ResolveStateDir()
 {
-    if (!g_stateDirOverride.empty()) return g_stateDirOverride;
-
+    std::wstring dir;
     wchar_t envVal[MAX_PATH] = {};
-    if (GetEnvironmentVariableW(L"UEM_STATE_DIR", envVal, MAX_PATH) > 0)
-        return envVal;
-
-    return L"C:\\ProgramData\\EndpointPro\\state";
+    if (!g_stateDirOverride.empty()) {
+        dir = g_stateDirOverride;
+    } else if (GetEnvironmentVariableW(L"UEM_STATE_DIR", envVal, MAX_PATH) > 0) {
+        dir = envVal;
+    } else {
+        wchar_t programData[MAX_PATH] = {};
+        DWORD n = GetEnvironmentVariableW(L"ProgramData", programData, MAX_PATH);
+        dir = std::wstring(n > 0 && n < MAX_PATH ? programData : L"C:\\ProgramData") + L"\\EndpointPro\\Agent\\app\\.state";
+    }
+    while (dir.size() > 3 && (dir.back() == L'\\' || dir.back() == L'/')) dir.pop_back();
+    return dir;
 }
 
 // Resolves an NT-namespace path (e.g. "\Device\HarddiskVolume3\Users\...") to a
@@ -119,7 +251,24 @@ static void RunAgent()
     Log("RunAgent started");
 
     std::wstring stateDir = ResolveStateDir();
-    Log("State dir: " + std::string(stateDir.begin(), stateDir.end()));
+    Log("State dir: " + Narrow(stateDir));
+
+    ReportSvcStatus(SERVICE_RUNNING);
+    Log("SERVICE_RUNNING reported");
+
+    // Nothing is read from or written to the state folder until it is verified (retried every
+    // 30 seconds: the agent may not have created and locked it yet).
+    bool warned = false;
+    while (g_running && !IsTrustedStateDir(stateDir)) {
+        if (!warned) Log("State dir is missing or can be changed by non-administrators - waiting for the agent to secure it");
+        warned = true;
+        for (int i = 0; i < 60 && g_running; i++) std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    if (!g_running) return;
+    {
+        std::lock_guard<std::mutex> lk(g_logMutex);
+        g_logPath = stateDir + L"\\dlp-service.log";
+    }
 
     ContentScanner scanner;
     PolicyCache    policy;
@@ -128,13 +277,13 @@ static void RunAgent()
 
     // Load whatever policy is already on disk immediately — enforced from the
     // moment the driver connection is established, no need to wait on anything.
-    if (policy.LoadFromDisk(std::string(stateDir.begin(), stateDir.end()) + "\\dlp-policy.json"))
+    nlohmann::json initial;
+    if (ReadTrustedPolicy(stateDir, initial)) {
+        policy.Load(initial);
         Log("Policy loaded from disk: " + std::to_string(policy.Count()) + " polic(y/ies)");
-    else
-        Log("No policy file on disk yet — enforcing nothing until the agent writes one");
-
-    ReportSvcStatus(SERVICE_RUNNING);
-    Log("SERVICE_RUNNING reported");
+    } else {
+        Log("No valid policy file yet — enforcing nothing until the agent writes one");
+    }
 
     // Event callback — only IRP_MJ_WRITE carries content and needs a verdict;
     // every other message type (create/read/rename/delete/process) is ignored
@@ -235,13 +384,18 @@ static void RunAgent()
 
     // Periodic policy re-sync — the Node.js agent refreshes dlp-policy.json on its
     // own interval (DEFAULT_DLP_POLICY_SYNC_INTERVAL_MS); this just re-reads
-    // whatever is currently on disk, no network involved.
+    // whatever is currently on disk, no network involved. A file that isn't valid
+    // (ReadTrustedPolicy) leaves the policy in force as it is.
     std::thread policySyncThread([&]() {
+        bool lastValid = true;
         while (g_running) {
             std::this_thread::sleep_for(std::chrono::seconds(POLICY_SYNC_INTERVAL_SEC));
             if (!g_running) break;
-            auto policies = bridge.FetchPolicy();
-            policy.Load(policies);
+            nlohmann::json policies;
+            bool valid = ReadTrustedPolicy(stateDir, policies);
+            if (valid) policy.Load(policies);
+            else if (lastValid) Log("Policy file missing, empty or not written by the agent - keeping the policy in force");
+            lastValid = valid;
         }
     });
 

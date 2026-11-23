@@ -95,10 +95,12 @@ when the user's organization has a policy against it.
   can be checked on the device.
 - **Host permission, mail.google.com:** Checks attachments and message text in Gmail before
   they're sent.
-- **Host permission, all http and https addresses:** Connects to the organization's own
-  Endpoint IQ server to read its policy and report blocks. Every organization runs its own server
-  at its own address (often a private network address), which isn't known when the extension is
-  published. No other site is contacted.
+- **Optional host permission, http and https addresses:** Not granted at install. The extension
+  reads its policy from and reports blocks to the organization's own Endpoint IQ server, through
+  ordinary cross-origin requests the server allows. Every organization runs its own server at its
+  own address (often a private network address), which isn't known when the extension is
+  published; if a browser needs it, the options page asks for access to that one address only.
+  No other site is contacted.
 
 ## Privacy policy text
 

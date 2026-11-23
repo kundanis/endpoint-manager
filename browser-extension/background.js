@@ -7,6 +7,11 @@
 //                                              never the file or the matched text
 // The server URL comes only from browser policy, which the Endpoint IQ agent writes (HKLM, so the
 // endpoint user can't change it). With no address set the extension does nothing.
+//
+// The extension has no standing access to other sites: the two calls are ordinary cross-origin
+// requests, which the server allows for /api/email-addin/* (as for the Outlook add-in). Access to
+// the server's own address only (optional_host_permissions) can be given from the options page,
+// for a browser that won't let the extension reach a private network address without it.
 
 async function serverUrl() {
   try {
@@ -73,8 +78,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     serverUrl()
       .then(async (base) => {
         if (!base) return sendResponse({ ok: false, message: "Not connected: the Endpoint IQ agent hasn't set a server address on this computer." });
-        const res = await fetch(`${base}/health`, { cache: "no-store" });
-        sendResponse({ ok: res.ok, server: base, message: res.ok ? `Connected to ${base}` : `Server answered ${res.status}` });
+        const origin = `${new URL(base).origin}/*`;
+        const granted = await chrome.permissions.contains({ origins: [origin] }).catch(() => false);
+        // /health isn't open to other origins: without access to the server's address, an opaque
+        // (no-cors) answer still shows the server can be reached.
+        const res = await fetch(`${base}/health`, { cache: "no-store", mode: granted ? "cors" : "no-cors" });
+        const ok = res.ok || res.type === "opaque";
+        sendResponse({ ok, server: base, origin, granted, message: ok ? `Connected to ${base}` : `Server answered ${res.status}` });
       })
       .catch((e) => sendResponse({ ok: false, message: `Can't reach the server: ${e}` }));
     return true;

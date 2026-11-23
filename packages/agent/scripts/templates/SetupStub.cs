@@ -53,9 +53,11 @@ internal static class SetupStub
                 "If this deployment has uninstall protection enabled, enter the password. " +
                 "Leave blank if none is set.", "Endpoint IQ Agent Setup", "");
 
-            string uninstallArgs = " -UninstallPassword \"" + uninstallPassword.Replace("\"", "`\"") + "\"";
-            return RunBundledScript("uninstall.ps1", uninstallArgs, "Uninstall Complete",
-                "The Endpoint IQ agent was removed.", "Uninstall Failed", "Uninstall failed:");
+            // In an environment variable of uninstall.ps1's own process, not on its command line,
+            // which any program on the PC can read.
+            return RunBundledScript("uninstall.ps1", "", "Uninstall Complete",
+                "The Endpoint IQ agent was removed.", "Uninstall Failed", "Uninstall failed:",
+                "EIQ_UNINSTALL_PASSWORD", uninstallPassword);
         }
 
         string serverUrl;
@@ -113,9 +115,13 @@ internal static class SetupStub
         return RunFromPayload(extractDir => NativeInstaller.Install(extractDir, installServerUrl, installToken), "Setup Complete",
             "The Endpoint IQ agent was installed successfully and is now running.", "Setup Failed", "Installation failed:", false);
 #else
-        string installArgs = " -ServerUrl \"" + serverUrl + "\" -EnrollmentToken \"" + token + "\"";
+        // The token goes in an environment variable of install.ps1's own process, not on its
+        // command line: any program on the PC (any user's) can read another program's command
+        // line, but not the environment of an elevated one.
+        string installArgs = " -ServerUrl \"" + serverUrl.Replace("\"", "") + "\"";
         return RunBundledScript("install.ps1", installArgs, "Setup Complete",
-            "The Endpoint IQ agent was installed successfully and is now running.", "Setup Failed", "Installation failed:");
+            "The Endpoint IQ agent was installed successfully and is now running.", "Setup Failed", "Installation failed:",
+            "EIQ_ENROLLMENT_TOKEN", token);
 #endif
     }
 
@@ -166,14 +172,15 @@ internal static class SetupStub
     }
 
     private static int RunBundledScript(string scriptName, string scriptArgs, string successTitle,
-        string successMessage, string failureTitle, string failureLabel)
+        string successMessage, string failureTitle, string failureLabel, string secretName, string secretValue)
     {
-        return RunFromPayload(extractDir => RunScript(Path.Combine(extractDir, scriptName), scriptArgs),
+        return RunFromPayload(extractDir => RunScript(Path.Combine(extractDir, scriptName), scriptArgs, secretName, secretValue),
             successTitle, successMessage, failureTitle, failureLabel, scriptName == "uninstall.ps1");
     }
 
-    // Runs a bundled .ps1; null when it succeeded, otherwise its output.
-    private static string RunScript(string script, string scriptArgs)
+    // Runs a bundled .ps1; null when it succeeded, otherwise its output. A secret (enrollment
+    // token, uninstall password) is handed over in an environment variable of that process only.
+    private static string RunScript(string script, string scriptArgs, string secretName, string secretValue)
     {
         ProcessStartInfo psi = new ProcessStartInfo("powershell.exe",
             "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"" + scriptArgs)
@@ -183,6 +190,7 @@ internal static class SetupStub
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
+        if (secretName != null) psi.EnvironmentVariables[secretName] = secretValue ?? "";
 
         using (Process proc = Process.Start(psi))
         {

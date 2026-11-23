@@ -19,6 +19,12 @@
 #   --skip-backup      no pre-upgrade backup at all; asks you to type SKIP to confirm
 #                      (non-interactive: CONFIRM_SKIP_BACKUP=yes)
 #
+# First install asks whether to set your own credentials (yes: you choose the SQL Server sa
+# password, the application's SQL login and password, and the super admin email and password;
+# no: default login names with strong random passwords, printed at the end). Upgrades never ask.
+# Unattended: CUSTOM_CREDENTIALS=yes with SA_PASSWORD, APP_DB_USER, APP_DB_PASSWORD, ADMIN_EMAIL
+# and ADMIN_PASSWORD in the environment (CUSTOM_CREDENTIALS=no, or no terminal = defaults).
+#
 # Env overrides: INSTALL_DIR (default /opt/endpoint-one), ADMIN_EMAIL (first install only),
 #                APP_PORT (default 4000), ADVANCED_APP_CONTROL, THREAT_PROTECTION (true/false),
 #                PRODUCT_EDITION (full / threat-protection; a first install takes the bundle's
@@ -48,6 +54,34 @@ env_set() {
 }
 compose() { (cd "$INSTALL_DIR" && docker compose "$@"); }
 
+# Restricted SQL login the server runs as (see docker-entrypoint.sh ensure_app_login, which
+# creates it on every start). Installs from before it existed only have SA_PASSWORD: generate
+# its password once, keeping .env private (umask 077 for anything this script creates).
+# Its name is APP_DB_USER in .env (chosen at a first install), endpoint_app when not set.
+app_db_user() { local u; u="$(env_get APP_DB_USER)"; echo "${u:-endpoint_app}"; }
+ensure_app_db_password() {
+  if [ -z "$(env_get APP_DB_PASSWORD)" ]; then
+    echo "# Password of the restricted SQL login ($(app_db_user)) the server uses; sa is only used for migrations." >> "$INSTALL_DIR/.env"
+    env_set APP_DB_PASSWORD "App1!$(openssl rand -hex 16)"
+  fi
+}
+
+# Same login, created from the database container with sqlcmd - for --rollback, where the
+# previous image's start-up doesn't know how to create it. No-op if the db isn't running.
+ensure_app_login_in_db() {
+  local db_name pw sql APP_DB_USER
+  APP_DB_USER="$(app_db_user)"
+  db_name="$(env_get DB_NAME)"; db_name="${db_name:-EndpointManagerDb}"
+  pw="$(env_get APP_DB_PASSWORD)"
+  [ -n "$pw" ] && [ -n "$(compose ps -q db 2>/dev/null)" ] || return 0
+  sql="IF SUSER_ID(N'$APP_DB_USER') IS NULL CREATE LOGIN [$APP_DB_USER] WITH PASSWORD = N'$pw', DEFAULT_DATABASE = [$db_name], CHECK_POLICY = ON, CHECK_EXPIRATION = OFF ELSE ALTER LOGIN [$APP_DB_USER] WITH PASSWORD = N'$pw'; USE [$db_name]; IF USER_ID(N'$APP_DB_USER') IS NULL CREATE USER [$APP_DB_USER] FOR LOGIN [$APP_DB_USER] ELSE ALTER USER [$APP_DB_USER] WITH LOGIN = [$APP_DB_USER]; ALTER ROLE db_datareader ADD MEMBER [$APP_DB_USER]; ALTER ROLE db_datawriter ADD MEMBER [$APP_DB_USER]; GRANT EXECUTE TO [$APP_DB_USER];"
+  compose exec -T db sh -c "if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -No -b -Q \"$sql\"; else /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"\$MSSQL_SA_PASSWORD\" -b -Q \"$sql\"; fi" >/dev/null \
+    || warn "Could not create the SQL login $APP_DB_USER - if the server fails to sign in to the database, see INSTALL.md 'Database login'."
+}
+
+# With a certificate installed the HTTP port serves agents only (browsers are redirected).
+tls_enabled() { [ -n "$(env_get TLS_PFX_PATH)" ]; }
+
 # Public IP of the admin's SSH session (empty when local, private or unknown). Used to let the
 # installing admin reach the console, which otherwise only answers private networks.
 detect_ssh_public_ip() {
@@ -75,13 +109,17 @@ print_access() {
 # Requests the console page from this host (always allowed - private source address) to prove
 # the server actually serves the web UI, not just /health.
 check_console() {
-  local port body
-  port="$(env_get APP_PORT)"; port="${port:-4000}"
-  body="$(curl -fsS -m 10 "http://127.0.0.1:${port}/" 2>/dev/null || true)"
+  local url body
+  if tls_enabled; then
+    url="https://127.0.0.1:$(env_get HTTPS_PORT | grep . || echo 443)/"
+  else
+    url="http://127.0.0.1:$(env_get APP_PORT | grep . || echo 4000)/"
+  fi
+  body="$(curl -fsSk -m 10 "$url" 2>/dev/null || true)"
   if printf '%s' "$body" | grep -qi '<!doctype html'; then
     echo "  Console page check: OK"
   else
-    warn "The server is healthy but did not return the console page on http://127.0.0.1:${port}/ - check: docker compose logs --tail 100 server"
+    warn "The server is healthy but did not return the console page on $url - check: docker compose logs --tail 100 server"
   fi
 }
 
@@ -107,13 +145,151 @@ print_url() {
   # Best effort only - never fail the install over a cosmetic lookup (minimal images lack hostname).
   [ -n "$ip" ] || ip="$( (hostname -I 2>/dev/null || true) | awk '{print $1}')"
   [ -n "$ip" ] || ip="<server-ip>"
-  echo "  Console:  http://${ip}:${port}"
-  if [ -n "$(env_get TLS_PFX_PATH)" ]; then
+  if tls_enabled; then
     local hp; hp="$(env_get HTTPS_PORT)"; hp="${hp:-443}"
-    echo "  HTTPS:    https://<certificate name>$( [ "$hp" = "443" ] || echo ":$hp" )/  (HTTP on ${port} stays for agents)"
+    echo "  Console:  https://<certificate name>$( [ "$hp" = "443" ] || echo ":$hp" )/"
+    echo "  Agents:   http://${ip}:${port}  (agents only - browsers opening it are sent to HTTPS)"
+  else
+    echo "  Console:  http://${ip}:${port}"
   fi
   echo "  Version:  $(env_get APP_VERSION)"
   echo "  Manage:   cd $INSTALL_DIR && docker compose ps | logs -f server | restart"
+}
+
+# --- First-install credentials ----------------------------------------------------------------
+# Each check prints why a value can't be used (nothing = fine). The SQL rules are what both SQL
+# Server's password policy and the container start-up accept (the values go into connection
+# strings and T-SQL unquoted, hence the short symbol list).
+sql_password_problem() { # <password> <login name>
+  local p="$1" login="$2" kinds=0
+  printf '%s' "$p" | LC_ALL=C grep -Eq '^[A-Za-z0-9!_.-]{12,128}$' \
+    || { echo "use 12-128 characters: letters, digits and ! _ . - only"; return 0; }
+  printf '%s' "$p" | LC_ALL=C grep -q '[A-Z]' && kinds=$((kinds + 1))
+  printf '%s' "$p" | LC_ALL=C grep -q '[a-z]' && kinds=$((kinds + 1))
+  printf '%s' "$p" | LC_ALL=C grep -q '[0-9]' && kinds=$((kinds + 1))
+  printf '%s' "$p" | LC_ALL=C grep -q '[!_.-]' && kinds=$((kinds + 1))
+  [ "$kinds" -ge 3 ] || { echo "use at least three of: capital letters, small letters, digits, symbols (! _ . -)"; return 0; }
+  if [ "${#login}" -ge 3 ] && printf '%s' "$p" | grep -qiF -- "$login"; then
+    echo "the password must not contain the login name ($login)"
+  fi
+  return 0
+}
+app_login_problem() {
+  printf '%s' "$1" | LC_ALL=C grep -Eq '^[A-Za-z_][A-Za-z0-9_]{2,63}$' \
+    || { echo "use 3-64 characters: letters, digits and _, starting with a letter or _"; return 0; }
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    sa|dbo|guest|public|sys|sysadmin|information_schema) echo "'$1' is reserved by SQL Server - choose another name" ;;
+  esac
+  return 0
+}
+admin_email_problem() {
+  printf '%s' "$1" | LC_ALL=C grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$' \
+    || echo "enter a valid email address, e.g. it.admin@company.com"
+  return 0
+}
+admin_password_problem() {
+  local p="$1"
+  { [ "${#p}" -ge 12 ] && [ "${#p}" -le 72 ]; } || { echo "use 12-72 characters"; return 0; }
+  case "$p" in *"'"*) echo "the ' character can't be used"; return 0 ;; esac
+  case "$p" in *[[:space:]]*) echo "spaces can't be used"; return 0 ;; esac
+  case "$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')" in
+    changeme|ch4ngeme_admin!) echo "this is a known example password - choose your own" ;;
+  esac
+  return 0
+}
+
+tty_ask() { # <prompt> -> the reply on stdout
+  local reply=""
+  printf '%s' "$1" > /dev/tty
+  IFS= read -r reply < /dev/tty || reply=""
+  printf '%s' "$reply"
+}
+# Asks until the value passes <check> (extra args go to the check); secrets are hidden and asked twice.
+tty_value() { # <label> <secret 0|1> <default or ""> <check> [check args...]
+  local label="$1" secret="$2" def="$3" check="$4" v v2 problem
+  shift 4
+  while :; do
+    if [ "$secret" = "1" ]; then
+      printf '  %s: ' "$label" > /dev/tty; IFS= read -rs v < /dev/tty || v=""; printf '\n' > /dev/tty
+    else
+      v="$(tty_ask "  $label${def:+ [$def]}: ")"; [ -n "$v" ] || v="$def"
+    fi
+    problem="$("$check" "$v" "$@")"
+    if [ -n "$problem" ]; then printf '    Not accepted: %s\n' "$problem" > /dev/tty; continue; fi
+    if [ "$secret" = "1" ]; then
+      printf '  %s (again): ' "$label" > /dev/tty; IFS= read -rs v2 < /dev/tty || v2=""; printf '\n' > /dev/tty
+      [ "$v" = "$v2" ] || { printf '    The two entries differ - try again.\n' > /dev/tty; continue; }
+    fi
+    printf '%s' "$v"
+    return 0
+  done
+}
+
+# Sets CUSTOM_CREDENTIALS (1/0) and, when 1, CRED_SA_PASSWORD, CRED_APP_DB_USER,
+# CRED_APP_DB_PASSWORD, CRED_ADMIN_EMAIL and CRED_ADMIN_PASSWORD.
+choose_first_install_credentials() {
+  local answer problem from_env=0
+  answer="$(printf '%s' "${CUSTOM_CREDENTIALS:-}" | tr '[:upper:]' '[:lower:]')"
+  CUSTOM_CREDENTIALS=0
+  if [ -n "$answer" ]; then
+    from_env=1
+  elif (: < /dev/tty) 2>/dev/null; then
+    {
+      echo
+      echo "This is a new setup. Do you want to set your own credentials?"
+      echo "  yes - you choose the SQL Server (sa) password, the application's SQL login and its"
+      echo "        password, and the portal super admin email and password"
+      echo "  no  - default names (sa, endpoint_app, ${ADMIN_EMAIL:-admin@endpointone.local}) with strong"
+      echo "        random passwords, saved in $INSTALL_DIR/.env and shown when setup finishes"
+    } > /dev/tty
+    while :; do
+      answer="$(tty_ask "Set your own credentials? (yes/no): " | tr '[:upper:]' '[:lower:]')"
+      case "$answer" in yes|y|no|n) break ;; *) echo "  Please answer yes or no." > /dev/tty ;; esac
+    done
+  else
+    answer="no" # unattended run without CUSTOM_CREDENTIALS: defaults
+  fi
+  case "$answer" in
+    yes|y) ;;
+    no|n) return 0 ;;
+    *) die "CUSTOM_CREDENTIALS must be yes or no, got '$answer'." ;;
+  esac
+  CUSTOM_CREDENTIALS=1
+
+  if [ "$from_env" -eq 1 ]; then
+    # Unattended: every value comes from the environment and must pass the same checks.
+    CRED_SA_PASSWORD="${SA_PASSWORD:-}"; CRED_APP_DB_USER="${APP_DB_USER:-endpoint_app}"
+    CRED_APP_DB_PASSWORD="${APP_DB_PASSWORD:-}"; CRED_ADMIN_EMAIL="${ADMIN_EMAIL:-}"; CRED_ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+    problem="$(sql_password_problem "$CRED_SA_PASSWORD" sa)"; [ -z "$problem" ] || die "SA_PASSWORD: $problem"
+    problem="$(app_login_problem "$CRED_APP_DB_USER")"; [ -z "$problem" ] || die "APP_DB_USER: $problem"
+    problem="$(sql_password_problem "$CRED_APP_DB_PASSWORD" "$CRED_APP_DB_USER")"; [ -z "$problem" ] || die "APP_DB_PASSWORD: $problem"
+    [ "$CRED_APP_DB_PASSWORD" != "$CRED_SA_PASSWORD" ] || die "APP_DB_PASSWORD must differ from SA_PASSWORD."
+    problem="$(admin_email_problem "$CRED_ADMIN_EMAIL")"; [ -z "$problem" ] || die "ADMIN_EMAIL: $problem"
+    problem="$(admin_password_problem "$CRED_ADMIN_PASSWORD")"; [ -z "$problem" ] || die "ADMIN_PASSWORD: $problem"
+    return 0
+  fi
+
+  {
+    echo
+    echo "SQL Server (runs inside Docker; never exposed outside this server)"
+    echo "  SQL passwords: 12+ characters - letters, digits and ! _ . - only - with at least three of"
+    echo "  capital letters / small letters / digits / symbols."
+  } > /dev/tty
+  CRED_SA_PASSWORD="$(tty_value "sa (SQL administrator) password" 1 "" sql_password_problem sa)"
+  CRED_APP_DB_USER="$(tty_value "Application SQL login name" 0 "endpoint_app" app_login_problem)"
+  while :; do
+    CRED_APP_DB_PASSWORD="$(tty_value "Password for $CRED_APP_DB_USER" 1 "" sql_password_problem "$CRED_APP_DB_USER")"
+    [ "$CRED_APP_DB_PASSWORD" != "$CRED_SA_PASSWORD" ] && break
+    echo "    Not accepted: use a different password from the sa password." > /dev/tty
+  done
+  {
+    echo
+    echo "Portal super admin (the first console account; it creates the other admins)"
+    echo "  Password: 12-72 characters, no spaces and no ' character."
+  } > /dev/tty
+  CRED_ADMIN_EMAIL="$(tty_value "Super admin email" 0 "${ADMIN_EMAIL:-}" admin_email_problem)"
+  CRED_ADMIN_PASSWORD="$(tty_value "Super admin password" 1 "" admin_password_problem)"
+  echo > /dev/tty
 }
 
 # --- Rollback ---------------------------------------------------------------------------------
@@ -129,6 +305,10 @@ if [ "$MODE" = "rollback" ]; then
   echo "      deploy.sh (in $INSTALL_DIR/backups) - see INSTALL.md 'Rollback'."
   env_set APP_VERSION "$prev"
   env_set PREVIOUS_APP_VERSION "$cur"
+  # The compose file now points the server at the restricted SQL login; an older image can't
+  # create it itself, so make sure it exists before starting it.
+  ensure_app_db_password
+  ensure_app_login_in_db
   compose up -d
   wait_healthy
   log "Rolled back to $prev"
@@ -198,6 +378,7 @@ if [ "${1:-}" = "--install-cert" ]; then
   echo "  Next:     point that DNS name at this server, allow TCP ${https_port} in the firewall/security group,"
   echo "            and add https://<name>$( [ "$https_port" = "443" ] || echo ":$https_port" ) under Enrollment tokens -> Server connection details."
   echo "  Agents already installed keep using http://<server>:4000 - nothing to change on endpoints."
+  echo "  Browsers opening http://<server>:4000 are now redirected to HTTPS; that port serves agents only."
   exit 0
 fi
 
@@ -228,6 +409,13 @@ mem_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
 if command -v sha256sum >/dev/null 2>&1 && [ -f "$BUNDLE_DIR/SHA256SUMS" ]; then
   log "Verifying bundle checksums"
   (cd "$BUNDLE_DIR" && sha256sum -c --quiet SHA256SUMS) || die "Checksum mismatch - the bundle is corrupt or was modified."
+fi
+
+# --- First-install credentials: asked up front, before the long steps ------------------------
+CUSTOM_CREDENTIALS_CHOSEN=0
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+  choose_first_install_credentials
+  CUSTOM_CREDENTIALS_CHOSEN="$CUSTOM_CREDENTIALS"
 fi
 
 # --- Docker -----------------------------------------------------------------------------------
@@ -330,9 +518,20 @@ fi
 if [ "$FIRST_INSTALL" -eq 1 ]; then
   log "Generating secrets in $INSTALL_DIR/.env"
   rand() { openssl rand -base64 "$1" | tr -d '\n'; }
-  sa_password="Sa1!$(openssl rand -hex 12)"
-  admin_password="Adm1!$(openssl rand -hex 8)"
-  admin_email="${ADMIN_EMAIL:-admin@endpointone.local}"
+  if [ "$CUSTOM_CREDENTIALS_CHOSEN" -eq 1 ]; then
+    sa_password="$CRED_SA_PASSWORD"
+    app_db_user="$CRED_APP_DB_USER"
+    app_db_password="$CRED_APP_DB_PASSWORD"
+    admin_email="$CRED_ADMIN_EMAIL"
+    # Single quotes: docker compose then reads the value literally (no $ expansion or # comments).
+    admin_password_line="ADMIN_PASSWORD='$CRED_ADMIN_PASSWORD'"
+  else
+    sa_password="Sa1!$(openssl rand -hex 12)"
+    app_db_user="endpoint_app"
+    app_db_password="App1!$(openssl rand -hex 16)"
+    admin_email="${ADMIN_EMAIL:-admin@endpointone.local}"
+    admin_password_line="ADMIN_PASSWORD=Adm1!$(openssl rand -hex 8)"
+  fi
   # The admin console only answers private networks plus ADMIN_ALLOWED_NETWORKS. Default to
   # the public IP this SSH session comes from, so the installing admin can open it right away.
   allowed="${ADMIN_ALLOWED_NETWORKS:-$(detect_ssh_public_ip)}"
@@ -341,11 +540,14 @@ if [ "$FIRST_INSTALL" -eq 1 ]; then
     cat > "$INSTALL_DIR/.env" <<EOF
 # Endpoint IQ - generated by deploy.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ). Keep private and BACKED UP.
 SA_PASSWORD=${sa_password}
+# Restricted SQL login the server uses (read/write/execute on its database only); sa is only used for migrations.
+APP_DB_USER=${app_db_user}
+APP_DB_PASSWORD=${app_db_password}
 JWT_SECRET=$(rand 48)
 # Losing FIELD_ENCRYPTION_KEY makes encrypted fields in the database permanently unreadable.
 FIELD_ENCRYPTION_KEY=$(rand 32)
 ADMIN_EMAIL=${admin_email}
-ADMIN_PASSWORD=${admin_password}
+${admin_password_line}
 DB_NAME=EndpointManagerDb
 APP_PORT=${APP_PORT:-4000}
 LICENSE_ENFORCEMENT_ENABLED=false
@@ -362,6 +564,7 @@ EOF
   )
 fi
 chmod 600 "$INSTALL_DIR/.env"
+ensure_app_db_password
 if [ "$FIRST_INSTALL" -eq 0 ] && [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$RELEASE_VERSION" ]; then
   env_set PREVIOUS_APP_VERSION "$PREVIOUS"
 fi
@@ -419,9 +622,15 @@ print_url
 check_console
 if [ "$FIRST_INSTALL" -eq 1 ]; then
   echo
-  echo "  First administrator (also in $INSTALL_DIR/.env - change the password after signing in):"
-  echo "    email:    $(env_get ADMIN_EMAIL)"
-  echo "    password: $(env_get ADMIN_PASSWORD)"
+  if [ "$CUSTOM_CREDENTIALS_CHOSEN" -eq 1 ]; then
+    echo "  Super admin:  $(env_get ADMIN_EMAIL)  (the password you entered)"
+    echo "  SQL logins:   sa and $(app_db_user)  (the passwords you entered)"
+  else
+    echo "  First administrator (also in $INSTALL_DIR/.env - change the password after signing in):"
+    echo "    email:    $(env_get ADMIN_EMAIL)"
+    echo "    password: $(env_get ADMIN_PASSWORD)"
+  fi
+  echo "  All credentials are kept in $INSTALL_DIR/.env (readable by root only)."
   echo
   echo "  BACK UP $INSTALL_DIR/.env now (FIELD_ENCRYPTION_KEY cannot be recovered)."
 fi

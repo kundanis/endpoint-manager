@@ -1,6 +1,6 @@
 {
   "name": "@em/agent",
-  "version": "0.2.30",
+  "version": "0.2.31",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
@@ -18,7 +18,7 @@
   "devDependencies": {
     "@types/adm-zip": "^0.5.6",
     "@types/node": "^22.10.1",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

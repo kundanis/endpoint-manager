@@ -1,5 +1,6 @@
+import crypto from "node:crypto";
 import https from "node:https";
-import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
+import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 import { agentConfig, parseServerUrls, updateInstallConfig } from "./config";
 
 // Only set when a dev/test self-signed cert is configured (see config.ts's
@@ -20,6 +21,107 @@ const httpsAgent = agentConfig.serverCaPem ? new https.Agent({ ca: agentConfig.s
 const PROBE_TIMEOUT_MS = 5_000;
 const PREFERRED_RECHECK_MS = 5 * 60 * 1000;
 
+// --- Signed server replies ----------------------------------------------------------------
+// The server signs every reply to an agent with its own Ed25519 key (server
+// utils/agentResponseSigning.ts). This is what stops someone on the same network - the
+// preferred server address is often plain-HTTP on the LAN - from answering in the server's
+// place and handing out commands, scripts or updates that this agent would run as
+// SYSTEM/root. The key is remembered from the first signed reply (enrollment, or the first
+// check-in after upgrading to a version that checks); after that any reply that isn't
+// signed by it is treated like an unreachable server: it is never acted on, and the failover
+// below moves on to the next address. Each request carries a fresh nonce that the signature
+// covers, so an old reply can't be replayed. Streamed downloads aren't signed - those are
+// checked against the SHA-256 given in the (signed) task.
+
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function publicKeyFromRaw(base64: string): crypto.KeyObject | null {
+  try {
+    const raw = Buffer.from(base64, "base64");
+    if (raw.length !== 32) return null;
+    return crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, raw]), format: "der", type: "spki" });
+  } catch {
+    return null;
+  }
+}
+
+let pinnedKey: crypto.KeyObject | null = agentConfig.serverPublicKey ? publicKeyFromRaw(agentConfig.serverPublicKey) : null;
+if (agentConfig.serverPublicKey && !pinnedKey) console.error("config.json has an unreadable serverPublicKey - it will be learned again");
+
+type SignedConfig = InternalAxiosRequestConfig & { emNonce?: string; emRawBody?: unknown };
+
+function headerValue(headers: unknown, name: string): string | undefined {
+  const h = headers as { get?: (n: string) => unknown } & Record<string, unknown>;
+  const value = typeof h?.get === "function" ? h.get(name) : h?.[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+// True when the reply may be used. Learns the server's key from the first validly signed
+// reply; until one has been seen (an older server), unsigned replies are still accepted.
+function replyIsAuthentic(config: SignedConfig | undefined, status: number, headers: unknown): boolean {
+  if (!config || config.responseType === "stream") return true;
+  const signature = headerValue(headers, "x-em-signature");
+  const offeredKey = headerValue(headers, "x-em-server-key");
+  if (!signature || !config.emNonce) return pinnedKey === null;
+  const key = pinnedKey ?? (offeredKey ? publicKeyFromRaw(offeredKey) : null);
+  if (!key) return false;
+  const raw = config.emRawBody;
+  const body = typeof raw === "string" ? Buffer.from(raw, "utf8") : Buffer.isBuffer(raw) ? raw : Buffer.alloc(0);
+  const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
+  const message = Buffer.from(`EMSIG1\n${config.emNonce}\n${status}\n${bodyHash}`, "utf8");
+  let valid = false;
+  try {
+    valid = crypto.verify(null, message, key, Buffer.from(signature, "base64"));
+  } catch {
+    valid = false;
+  }
+  if (valid && !pinnedKey) {
+    pinnedKey = key;
+    updateInstallConfig({ serverPublicKey: offeredKey });
+    console.log("Learned the server's signing key - replies from now on must be signed by it");
+  }
+  return valid;
+}
+
+function rejectedReply(config: SignedConfig | undefined): AxiosError {
+  // No `response` on purpose: callers and the failover below treat it like an unreachable
+  // server, so nothing in it is acted on.
+  return new AxiosError("Reply not signed by this agent's server - ignored", "ERR_BAD_SIGNATURE", config);
+}
+
+// Must be applied straight after axios.create, before any other response interceptor, so
+// nothing else ever sees an unverified reply.
+function withSignedReplies(client: AxiosInstance): AxiosInstance {
+  client.defaults.transformResponse = [
+    function keepRawBody(this: SignedConfig, data: unknown) {
+      this.emRawBody = data;
+      return data;
+    },
+    ...(Array.isArray(axios.defaults.transformResponse) ? axios.defaults.transformResponse : []),
+  ];
+  client.interceptors.request.use((config) => {
+    const signed = config as SignedConfig;
+    signed.emNonce = crypto.randomBytes(16).toString("hex");
+    signed.emRawBody = undefined;
+    config.headers["X-EM-Nonce"] = signed.emNonce;
+    return config;
+  });
+  client.interceptors.response.use(
+    (response) => {
+      if (!replyIsAuthentic(response.config as SignedConfig, response.status, response.headers)) throw rejectedReply(response.config as SignedConfig);
+      return response;
+    },
+    (error) => {
+      const response = error?.response;
+      if (response && !replyIsAuthentic(error.config as SignedConfig, response.status, response.headers)) throw rejectedReply(error.config);
+      throw error;
+    },
+  );
+  return client;
+}
+
+const probeClient = withSignedReplies(axios.create({ timeout: PROBE_TIMEOUT_MS, httpsAgent }));
+
 let serverUrls = agentConfig.serverUrls;
 let currentUrl = agentConfig.initialServerUrl;
 const clients: AxiosInstance[] = [];
@@ -31,7 +133,7 @@ export function getServerUrl(): string {
 
 async function isReachable(url: string): Promise<boolean> {
   try {
-    await axios.get(`${url}/health`, { timeout: PROBE_TIMEOUT_MS, httpsAgent });
+    await probeClient.get(`${url}/health`);
     return true;
   } catch {
     return false;
@@ -105,11 +207,13 @@ setInterval(() => {
 // ------------------------------------------------------------------------------------------
 
 export const publicClient = withFailover(
-  axios.create({
-    baseURL: currentUrl,
-    timeout: 15_000,
-    httpsAgent,
-  }),
+  withSignedReplies(
+    axios.create({
+      baseURL: currentUrl,
+      timeout: 15_000,
+      httpsAgent,
+    }),
+  ),
 );
 
 type ReenrollConfig = InternalAxiosRequestConfig & { reenrollRetried?: boolean };
@@ -128,11 +232,13 @@ export function agentClient(
   apiKey: string,
   reenroll?: () => Promise<{ agentId: string; apiKey: string }>,
 ) {
-  const client = axios.create({
-    baseURL: currentUrl,
-    timeout: 15_000,
-    httpsAgent,
-  });
+  const client = withSignedReplies(
+    axios.create({
+      baseURL: currentUrl,
+      timeout: 15_000,
+      httpsAgent,
+    }),
+  );
 
   // Stamped onto every request rather than set as instance headers, so a re-enrollment
   // takes effect for all later requests (instance headers given to axios.create would

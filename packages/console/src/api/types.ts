@@ -76,6 +76,15 @@ export interface AdminUserListItem {
   moduleGrants: AdminGrantKey[];
   lastLoginAt: string | null;
   createdAt: string;
+  // Console sessions signed in right now (used in the last 30 minutes, not signed out) - one
+  // per browser, so the same account signed in twice has two, each with its own address.
+  activeSessions?: AdminActiveSession[];
+}
+
+export interface AdminActiveSession {
+  ipAddress: string | null;
+  signedInAt: string;
+  lastSeenAt: string;
 }
 
 export interface LicenseServerConfigView {
@@ -190,6 +199,8 @@ export interface AgentListItem {
   deviceType: DeviceType;
   deviceTypeOverride: DeviceType | null;
   quarantined: boolean;
+  // Latest quarantine/release job when it's still waiting to run or failed (null once it succeeded).
+  quarantineActivity?: QuarantineActivity | null;
   paused: boolean;
   pausedAt: string | null;
   zeroTrustNonCompliantCount: number;
@@ -1707,6 +1718,8 @@ export interface EdrAgentSummaryView {
   hostname: string;
   edrEnabled: boolean;
   quarantined: boolean;
+  // Latest quarantine/release job when it's still waiting to run or failed (null once it succeeded).
+  quarantineActivity?: QuarantineActivity | null;
   eventCount: number;
   lastDetectedAt: string | null;
 }
@@ -2198,4 +2211,9 @@ export interface ThreatPolicySyncAgent {
   lastSyncedAt: string | null;
   lastSyncStatus: string | null;
   lastSyncError: string | null;
+}
+
+export interface QuarantineActivity {
+  action: "QUARANTINE" | "RELEASE";
+  state: "PENDING" | "FAILED";
 }

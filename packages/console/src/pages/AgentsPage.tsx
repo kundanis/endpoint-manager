@@ -1,10 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Download, Eye, KeyRound, Lock, LockOpen, Monitor, Network, Radar, SearchX, Wifi, WifiOff } from "lucide-react";
+import { Download, KeyRound, Lock, LockOpen, Monitor, Network, Radar, SearchX, Wifi, WifiOff } from "lucide-react";
 import {
   useAgents,
   useAssetGroups,
   useIsItemHidden,
+  useBulkQuarantine,
+  useBulkRelease,
   useNetworkDeviceSummary,
   useQuarantineAgent,
   useReleaseAgent,
@@ -27,42 +29,28 @@ import {
   PageHeader,
   Pagination,
   Pill,
-  RowMenu,
   SearchInput,
   Segmented,
   Skeleton,
   Tag,
   Toolbar,
   useConfirm,
+  useToast,
   usePagedList,
 } from "../components/ui";
 import { formatBytes, formatDate, formatDateTime, formatRelative } from "../format";
+import { downloadCsv } from "../csv";
 
 // Pattern B — list page (design-system/docs/PAGE_PATTERNS.md, reference/endpoints-list.html).
 
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Quote every cell and double up any internal quotes - the only escaping CSV actually
-// needs, and safe even for fields without commas/quotes (Excel doesn't care either way).
-function csvCell(value: string | number | null | undefined): string {
-  const s = value === null || value === undefined ? "" : String(value);
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
 // Columns belonging to a hidden nav item (Module Visibility) are dropped from the export too,
-// not just from the on-screen table.
+// not just from the on-screen table. Written with the shared downloadCsv (../csv), which also
+// neutralises cells that start like a spreadsheet formula - hostnames, user names and the
+// like come from endpoints, so they aren't trusted.
 function buildAgentsCsv(
   agents: AgentListItem[],
   hidden: { vulnerabilitiesHidden: boolean; zeroTrustHidden: boolean; patchesHidden: boolean },
-): string {
+): { headers: string[]; rows: (string | number)[][] } {
   const { vulnerabilitiesHidden: hideVulnerabilities, zeroTrustHidden: hideZeroTrust, patchesHidden: hidePatches } =
     hidden;
   const headers = [
@@ -119,7 +107,7 @@ function buildAgentsCsv(
     ];
   });
 
-  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return { headers, rows };
 }
 
 const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
@@ -128,7 +116,7 @@ const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
   SERVER: "Server",
 };
 
-type StatusFilter = "all" | "ONLINE" | "OFFLINE";
+type StatusFilter = "all" | "ONLINE" | "OFFLINE" | "QUARANTINED";
 
 // Same heuristic as NetworkScanPage's DiscoveredHostsTable: the scanner has no real
 // OS/device fingerprinting, but phones and tablets never expose Windows management ports
@@ -224,10 +212,15 @@ function cellFor(key: ColumnKey, agent: AgentListItem, hidden: { vulnerabilities
     case "user":
       return inv?.lastLoggedOnUser ?? <span className="app-muted">—</span>;
     case "status":
+      // Quarantined replaces Online/Offline; once released the endpoint shows Online/Offline
+      // again. A quarantine or release still waiting shows on the row's button, not here.
       return (
         <div className="app-badge-row">
-          <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
-          {agent.quarantined && <Badge tone="crit">Quarantined</Badge>}
+          {agent.quarantined ? (
+            <Badge tone="crit">Quarantined</Badge>
+          ) : (
+            <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
+          )}
           {agent.paused && <Badge tone="med">Paused</Badge>}
         </div>
       );
@@ -475,7 +468,7 @@ export default function AgentsPage() {
   const [groupFilter, setGroupFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const s = searchParams.get("status");
-    return s === "ONLINE" || s === "OFFLINE" ? s : "all";
+    return s === "ONLINE" || s === "OFFLINE" || s === "QUARANTINED" ? s : "all";
   });
   const [deviceTypeFilter, setDeviceTypeFilter] = useState<DeviceType | "">(() => {
     const t = searchParams.get("deviceType");
@@ -502,18 +495,22 @@ export default function AgentsPage() {
   const [columns, setColumns] = useState<ColumnKey[]>(loadColumns);
   const quarantine = useQuarantineAgent();
   const release = useReleaseAgent();
+  const bulkQuarantine = useBulkQuarantine();
+  const bulkRelease = useBulkRelease();
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const confirm = useConfirm();
+  const toast = useToast();
 
   const totalCount = agents?.length ?? 0;
   const onlineCount = agents?.filter((a) => a.status === "ONLINE").length ?? 0;
   const offlineCount = agents?.filter((a) => a.status === "OFFLINE").length ?? 0;
+  const quarantinedCount = agents?.filter((a) => a.quarantined).length ?? 0;
   const unmanagedCount = networkDeviceSummary?.unmanagedHosts.length ?? 0;
 
   const term = search.trim().toLowerCase();
   const filteredAgents = (agents ?? [])
     .filter((agent) => !groupFilter || agent.groups.some((g) => g.id === groupFilter))
-    .filter((agent) => statusFilter === "all" || agent.status === statusFilter)
+    .filter((agent) => (statusFilter === "QUARANTINED" ? agent.quarantined : statusFilter === "all" || agent.status === statusFilter))
     .filter((agent) => !deviceTypeFilter || agent.deviceType === deviceTypeFilter)
     // Same "Unknown" fallback the Dashboard's OS chart uses (dashboard.service.ts).
     .filter((agent) => !osFilter || (agent.osEditionLabel || "Unknown") === osFilter)
@@ -574,20 +571,80 @@ export default function AgentsPage() {
       });
       if (!confirmed) return;
       setPendingAgentId(agent.id);
-      release.mutate(agent.id, { onSettled: () => setPendingAgentId(null) });
+      release.mutate(agent.id, {
+        onError: (err) => toast(`Couldn't release ${agent.hostname}: ${(err as Error).message}`),
+        onSettled: () => setPendingAgentId(null),
+      });
     } else {
       const confirmed = await confirm({
         title: `Quarantine ${agent.hostname}?`,
         body:
           "This locks the endpoint's firewall down to DNS and this server only — all other network access is blocked " +
-          "until you release it. The endpoint must be online to pick up the command.",
+          "until you release it. " +
+          (agent.status === "ONLINE"
+            ? "It shows Quarantined once the endpoint confirms the block is in force."
+            : "It's offline now: it's quarantined as soon as it connects again (within 30 seconds), before anything else it has waiting."),
         confirmLabel: "Quarantine endpoint",
         tone: "danger",
       });
       if (!confirmed) return;
       setPendingAgentId(agent.id);
-      quarantine.mutate(agent.id, { onSettled: () => setPendingAgentId(null) });
+      quarantine.mutate(agent.id, {
+        onError: (err) => toast(`Couldn't quarantine ${agent.hostname}: ${(err as Error).message}`),
+        onSettled: () => setPendingAgentId(null),
+      });
     }
+  }
+
+  // Quarantine all / Release all act on the endpoints the list shows right now (search and
+  // filters applied), never on endpoints hidden by a filter. Quarantine is Windows only, and
+  // skips endpoints already quarantined or with a quarantine/release still waiting.
+  const idle = (a: AgentListItem) => a.quarantineActivity?.state !== "PENDING";
+  const toQuarantine = filteredAgents.filter((a) => a.osPlatform === "win32" && !a.quarantined && idle(a));
+  const toRelease = filteredAgents.filter((a) => a.quarantined && idle(a));
+  const filtersApplied = filteredAgents.length !== totalCount;
+
+  function namesPreview(list: AgentListItem[]): string {
+    const names = list.slice(0, 10).map((a) => a.hostname).join(", ");
+    return list.length > 10 ? `${names} and ${list.length - 10} more` : names;
+  }
+
+  async function handleQuarantineAll() {
+    if (toQuarantine.length === 0) return;
+    const confirmed = await confirm({
+      title: `Quarantine ${toQuarantine.length} Endpoint${toQuarantine.length === 1 ? "" : "s"}?`,
+      body:
+        `${filtersApplied ? "Every Windows endpoint in the filtered list" : "Every Windows endpoint"} that isn't quarantined yet ` +
+        `loses all network access except DNS and this server until released: ${namesPreview(toQuarantine)}. ` +
+        "Each one shows Quarantined once it confirms the block is in force; offline ones are quarantined as soon as they connect again.",
+      confirmLabel: `Quarantine ${toQuarantine.length}`,
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    bulkQuarantine.mutate(
+      { agentIds: toQuarantine.map((a) => a.id), groupIds: [] },
+      {
+        onSuccess: () => toast(`Quarantine sent to ${toQuarantine.length} endpoint(s).`),
+        onError: (err) => toast(`Couldn't quarantine: ${(err as Error).message}`),
+      },
+    );
+  }
+
+  async function handleReleaseAll() {
+    if (toRelease.length === 0) return;
+    const confirmed = await confirm({
+      title: `Release ${toRelease.length} Endpoint${toRelease.length === 1 ? "" : "s"} From Quarantine?`,
+      body: `Normal network access comes back on: ${namesPreview(toRelease)}.`,
+      confirmLabel: `Release ${toRelease.length}`,
+    });
+    if (!confirmed) return;
+    bulkRelease.mutate(
+      { agentIds: toRelease.map((a) => a.id), groupIds: [] },
+      {
+        onSuccess: () => toast(`Release sent to ${toRelease.length} endpoint(s).`),
+        onError: (err) => toast(`Couldn't release: ${(err as Error).message}`),
+      },
+    );
   }
 
   function clearUrlFilter(key: "os" | "vuln" | "patch" | "config") {
@@ -642,8 +699,10 @@ export default function AgentsPage() {
   ];
 
   const hidden = { vulnerabilitiesHidden, zeroTrustHidden };
-  const exportCsv = () =>
-    downloadTextFile("endpoints.csv", buildAgentsCsv(filteredAgents, { vulnerabilitiesHidden, zeroTrustHidden, patchesHidden }));
+  const exportCsv = () => {
+    const csv = buildAgentsCsv(filteredAgents, { vulnerabilitiesHidden, zeroTrustHidden, patchesHidden });
+    downloadCsv("endpoints.csv", csv.headers, csv.rows);
+  };
 
   return (
     <>
@@ -681,6 +740,15 @@ export default function AgentsPage() {
         />
         <Kpi icon={WifiOff} label="Offline" value={offlineCount} suffix="no recent check-in" active={statusFilter === "OFFLINE"} onClick={() => setStatusFilter("OFFLINE")} />
         <Kpi
+          icon={Lock}
+          label="Quarantined"
+          value={quarantinedCount}
+          valueTone={quarantinedCount > 0 ? "critical" : undefined}
+          suffix="isolated from the network"
+          active={statusFilter === "QUARANTINED"}
+          onClick={() => setStatusFilter("QUARANTINED")}
+        />
+        <Kpi
           icon={Network}
           label="Unmanaged"
           value={unmanagedCount}
@@ -703,6 +771,7 @@ export default function AgentsPage() {
                   { value: "all", label: `All ${totalCount}` },
                   { value: "ONLINE", label: `Online ${onlineCount}` },
                   { value: "OFFLINE", label: `Offline ${offlineCount}` },
+                  { value: "QUARANTINED", label: `Quarantined ${quarantinedCount}` },
                 ]}
               />
               <ColumnPicker
@@ -738,6 +807,27 @@ export default function AgentsPage() {
             <option value="DESKTOP">Desktop</option>
             <option value="SERVER">Server</option>
           </select>
+          <Button
+            variant="danger"
+            icon={Lock}
+            onClick={handleQuarantineAll}
+            disabled={toQuarantine.length === 0 || bulkQuarantine.isPending}
+            title={
+              filtersApplied
+                ? "Quarantine the Windows endpoints in the filtered list"
+                : "Quarantine every Windows endpoint (filter the list first to quarantine only some)"
+            }
+          >
+            {bulkQuarantine.isPending ? "Sending…" : `Quarantine all (${toQuarantine.length})`}
+          </Button>
+          <Button
+            icon={LockOpen}
+            onClick={handleReleaseAll}
+            disabled={toRelease.length === 0 || bulkRelease.isPending}
+            title={filtersApplied ? "Release the quarantined endpoints in the filtered list" : "Release every quarantined endpoint"}
+          >
+            {bulkRelease.isPending ? "Sending…" : `Release all (${toRelease.length})`}
+          </Button>
         </Toolbar>
         <FilterChips chips={chips} />
 
@@ -799,21 +889,26 @@ export default function AgentsPage() {
                         <td key={c.key}>{cellFor(c.key, agent, hidden)}</td>
                       ))}
                       <td>
-                        <div className="app-cell-actions">
-                          <RowMenu
-                            label={`Actions for ${agent.hostname}`}
-                            items={[
-                              { label: "View details", icon: Eye, onSelect: () => navigate(`/endpoints/${agent.id}`) },
-                              {
-                                label: pendingAgentId === agent.id ? "Working…" : agent.quarantined ? "Release from quarantine" : "Quarantine",
-                                icon: agent.quarantined ? LockOpen : Lock,
-                                danger: !agent.quarantined,
-                                dividerBefore: true,
-                                disabled: pendingAgentId === agent.id,
-                                onSelect: () => handleQuarantineToggle(agent),
-                              },
-                            ]}
-                          />
+                        <div className="app-cell-actions" onClick={(e) => e.stopPropagation()}>
+                          {(agent.osPlatform === "win32" || agent.quarantined) && (
+                            <Button
+                              size="sm"
+                              variant={agent.quarantined ? "secondary" : "danger"}
+                              icon={agent.quarantined ? LockOpen : Lock}
+                              disabled={pendingAgentId === agent.id || agent.quarantineActivity?.state === "PENDING"}
+                              onClick={() => handleQuarantineToggle(agent)}
+                            >
+                              {pendingAgentId === agent.id
+                                ? "Sending…"
+                                : agent.quarantineActivity?.state === "PENDING"
+                                  ? agent.quarantineActivity.action === "RELEASE"
+                                    ? "Releasing…"
+                                    : "Quarantining…"
+                                  : agent.quarantined
+                                    ? "Release"
+                                    : "Quarantine"}
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import path from "node:path";
 import type { AxiosInstance } from "axios";
 import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlockSyncResultPayload } from "@em/shared";
 
@@ -9,7 +10,9 @@ import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlo
 // A command that finishes in less time than that can slip through.
 //
 // Never touched: PID 1, the agent itself and everything it started (deployments, scripts), and
-// anything run from the agent's own install folder. At most 30 kills a minute, as a backstop.
+// the agent's own daemon process (its bundled node running app/dist/index.js - identified by
+// the executable path, never by command-line text, which any user can make say anything).
+// At most 30 kills a minute, as a backstop.
 
 const SCAN_MS = 500;
 const execFileAsync = promisify(execFile);
@@ -37,6 +40,28 @@ const seen = new Set<string>();
 const events: CommandBlockEventPayload[] = [];
 let kills: number[] = [];
 let lastError: string | null = null;
+
+// app/dist/../.. = the install root (/Library/EndpointProAgent).
+const INSTALL_DIR = path.resolve(__dirname, "..", "..");
+const AGENT_NODE = path.join(INSTALL_DIR, "node", "bin", "node");
+const AGENT_ENTRY = path.join(INSTALL_DIR, "app", "dist", "index.js");
+
+// The agent's own daemon (e.g. a second instance during a restart): its executable, as the
+// kernel reports it (ps comm=), is the bundled node AND it runs nothing but the agent entry
+// point. The bundled node is a general interpreter, so the executable alone is not enough -
+// `node -e ...` or `node evil.js` must still be blockable. Only checked for processes that
+// matched a rule, so the extra ps call is rare.
+async function isAgentServiceProcess(p: Proc): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("/bin/ps", ["-ww", "-o", "comm=", "-p", String(p.pid)]);
+    const exe = stdout.trim();
+    if (!path.isAbsolute(exe) || path.resolve(exe) !== AGENT_NODE) return false;
+    const args = p.commandLine.split(/\s+/).slice(1).filter((a) => a !== "--use-system-ca");
+    return args.length === 1 && args[0] === AGENT_ENTRY;
+  } catch {
+    return false;
+  }
+}
 
 async function readProcesses(): Promise<Proc[]> {
   const { stdout } = await execFileAsync("/bin/ps", ["-axww", "-o", "pid=,ppid=,command="], { maxBuffer: 16 * 1024 * 1024 });
@@ -90,9 +115,9 @@ async function scan(): Promise<void> {
     alive.add(p.key);
     if (seen.has(p.key) && !recheckAll) continue;
     seen.add(p.key);
-    if (p.pid <= 1 || ownTree(p.pid) || /endpointpro/i.test(p.commandLine)) continue;
+    if (p.pid <= 1 || ownTree(p.pid)) continue;
     const rule = matchRule(p);
-    if (!rule) continue;
+    if (!rule || (await isAgentServiceProcess(p))) continue;
     let closed = false;
     if (kills.length < MAX_KILLS_PER_MINUTE) {
       try {

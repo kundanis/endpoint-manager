@@ -3,6 +3,11 @@ param(
     [string]$UninstallPassword = ""
 )
 
+# Setup (SetupStub.cs) passes the password in this environment variable instead of on the
+# command line, which any program on the PC can read.
+if (-not $UninstallPassword -and $env:EIQ_UNINSTALL_PASSWORD) { $UninstallPassword = $env:EIQ_UNINSTALL_PASSWORD }
+Remove-Item Env:EIQ_UNINSTALL_PASSWORD -ErrorAction SilentlyContinue
+
 $TaskName = "EndpointProAgent" # agents before 0.2.23 ran as this scheduled task
 $ServiceName = "EndpointIQAgent"
 $WatchdogTaskName = "EndpointProWatchdog"

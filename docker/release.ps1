@@ -139,6 +139,9 @@ setTimeout(() => {
       try {
         const h = await fetch('http://127.0.0.1:4000/health');
         if (!h.ok) { ok = false; console.log('SMOKE FAIL http alongside https ' + h.status); }
+        // With HTTPS on, plain HTTP serves agents only: the console page must redirect.
+        const c = await fetch('http://127.0.0.1:4000/', { redirect: 'manual' });
+        if (c.status !== 301 || !/^https:/.test(c.headers.get('location') || '')) { ok = false; console.log('SMOKE FAIL http console not redirected ' + c.status); }
       } catch (e) { ok = false; console.log('SMOKE FAIL http alongside https ' + e.message); }
       console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
       process.exit(ok ? 0 : 1);

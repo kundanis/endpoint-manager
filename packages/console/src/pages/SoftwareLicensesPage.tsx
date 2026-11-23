@@ -23,6 +23,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { CHART_SEMANTIC } from "../chartTheme";
+import { downloadCsv } from "../csv";
 import type {
   LicenseType,
   SoftwareLicenseAccessType,
@@ -39,25 +40,6 @@ import {
   type SoftwareLicenseInput,
 } from "../api/hooks";
 
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Quote every cell and double up any internal quotes - the only escaping CSV actually
-// needs, and safe even for fields without commas/quotes (Excel doesn't care either way).
-// Same helper as AgentsPage.tsx's export - duplicated locally per this codebase's existing
-// convention of not sharing per-page CSV helpers.
-function csvCell(value: string | number | null | undefined): string {
-  const s = value === null || value === undefined ? "" : String(value);
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
 // Column order matches createSoftwareLicenseRequestSchema exactly, so an unedited export
 // re-imports cleanly. The last four columns are read-only/computed and ignored on import.
 const CSV_HEADERS = [
@@ -66,7 +48,10 @@ const CSV_HEADERS = [
   "User Department", "Notes", "Seats In Use", "Over Compliance", "Yearly Cost", "Created At",
 ];
 
-function buildLicensesCsv(licenses: SoftwareLicenseView[]): string {
+// Exported with the shared downloadCsv (../csv), which puts an apostrophe before any cell
+// that starts like a spreadsheet formula (= + - @ tab CR) so Excel shows it as text;
+// csvRowsToLicenseInputs strips that apostrophe again, so an export still re-imports as-is.
+function buildLicensesCsv(licenses: SoftwareLicenseView[]): (string | number)[][] {
   const rows = licenses.map((l) => [
     l.softwareName,
     l.version ?? "",
@@ -87,17 +72,17 @@ function buildLicensesCsv(licenses: SoftwareLicenseView[]): string {
     l.annualCost ?? "",
     l.createdAt.slice(0, 10),
   ]);
-  return [CSV_HEADERS, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return rows;
 }
 
 // A single blank example row so a first-time importer sees the exact expected column
 // names and valid enum values without needing an existing license to export first.
-function buildLicensesCsvTemplate(): string {
+function buildLicensesCsvTemplate(): string[][] {
   const example = [
     "Microsoft 365 Apps for business", "", "Microsoft", "", "SUBSCRIPTION", "25",
     "", "2027-03-31", "1499", "MONTHLY", "VENDOR_CLOUD", "INTERNAL", "IT", "",
   ];
-  return [CSV_HEADERS.slice(0, 14), example].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return [example];
 }
 
 // Minimal RFC4180-ish parser: handles quoted fields (including embedded commas, quotes
@@ -176,6 +161,11 @@ function normalizeEnumValue(v: string | undefined): string {
   return v ? v.trim().toUpperCase().replace(/[\s-]+/g, "_") : "";
 }
 
+// Undoes the export's formula neutralisation ('=x -> =x). Only ever stored as text here.
+function unneutralizeCsvCell(value: string): string {
+  return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
+}
+
 function csvRowsToLicenseInputs(rows: string[][]): SoftwareLicenseInput[] {
   if (rows.length < 2) {
     throw new Error("The file needs a header row plus at least one data row.");
@@ -191,7 +181,7 @@ function csvRowsToLicenseInputs(rows: string[][]): SoftwareLicenseInput[] {
   return dataRows.map((cells, index) => {
     const raw: Partial<Record<string, string>> = {};
     columnFields.forEach((field, i) => {
-      if (field) raw[field] = (cells[i] ?? "").trim();
+      if (field) raw[field] = unneutralizeCsvCell((cells[i] ?? "").trim());
     });
 
     if (!raw.softwareName) {
@@ -421,7 +411,7 @@ export default function SoftwareLicensesPage() {
         description="Purchased licenses, seats in use across the fleet, renewal dates and cost."
         actions={
           <>
-            <Button icon={FileDown} onClick={() => downloadTextFile("software-licenses-template.csv", buildLicensesCsvTemplate())}>
+            <Button icon={FileDown} onClick={() => downloadCsv("software-licenses-template.csv", CSV_HEADERS.slice(0, 14), buildLicensesCsvTemplate())}>
               Download template
             </Button>
             <Button icon={Upload} onClick={() => fileInputRef.current?.click()} disabled={importLicenses.isPending}>
@@ -429,7 +419,7 @@ export default function SoftwareLicensesPage() {
             </Button>
             <Button
               icon={Download}
-              onClick={() => downloadTextFile("software-licenses.csv", buildLicensesCsv(licenses ?? []))}
+              onClick={() => downloadCsv("software-licenses.csv", CSV_HEADERS, buildLicensesCsv(licenses ?? []))}
               disabled={!licenses || licenses.length === 0}
             >
               Export to CSV

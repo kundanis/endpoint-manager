@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Endpoint IQ Mail Guard",
   "short_name": "Mail Guard",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Stops emails from Gmail that contain protected personal data, as set by your organization’s Endpoint IQ policy.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuPyuFoWXJBgA4WwmHsV81anf2/xsnGPEACuodox+OIaS/jfRO6k3xdYAe5YchKv2Wh9f57CCb0w/V7sOGi74lyP+te6iSwFPzCEj6LgNV4pRK36ROgh6+SOrI27O2c5K4fc5avkHBxxRwl3iCwHnp0Ax7wnsNGojZ1v+xhYkP84UfK7Pl/XwQa1bPxxYVpK/fc511FytHB0O1qBN4FVOlr683Bhh4T1MDP6Yc9+BJIwwhFQA3qGSJ5pKy2t/Bt1jQvb1PwHy7vMBNGe97ThKRjzibjpDUg820reV9lR01Xhsx+sHgqwloqioAiAEqrTMRRu+um2E/fGX6VkIFmMQcwIDAQAB",
   "icons": {
@@ -16,7 +16,9 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://mail.google.com/*",
+    "https://mail.google.com/*"
+  ],
+  "optional_host_permissions": [
     "http://*/*",
     "https://*/*"
   ],

@@ -17,6 +17,10 @@ export async function sendMail(smtp: SmtpSettings, message: { to: string[]; subj
     host: smtp.host,
     port: smtp.port,
     secure: smtp.secure,
+    // Without TLS from the start (587/25), insist on STARTTLS whenever we're going to log in, so
+    // the username and password are never sent in cleartext (a server that doesn't offer
+    // STARTTLS fails the send instead). An anonymous relay without TLS still works.
+    requireTLS: !smtp.secure && !!smtp.username,
     auth: smtp.username ? { user: smtp.username, pass: smtp.password ?? "" } : undefined,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,

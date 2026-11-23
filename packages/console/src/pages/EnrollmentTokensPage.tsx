@@ -15,6 +15,7 @@ import {
   useEnrollmentTokens,
   useIsItemHidden,
   useNetworkDeviceSummary,
+  useMe,
   useRemoteInstallJob,
   useRevokeEnrollmentToken,
   useSaveAgentConnectionSettings,
@@ -261,7 +262,10 @@ function RemoteInstallPanel({ tokenId, token, serverUrl }: { tokenId: string; to
   const startInstall = useStartRemoteInstall();
   // With a remote install account saved (Asset settings -> Remote install) the account is optional.
   const { data: security } = useAgentSecurityStatus();
-  const savedAccount = security?.remoteInstallUsername ?? null;
+  // Only super admins may install with the saved account (the server refuses it for anyone
+  // else), so everyone else always types one.
+  const { data: me } = useMe();
+  const savedAccount = me?.role === "SUPER_ADMIN" ? (security?.remoteInstallUsername ?? null) : null;
   const [targetsText, setTargetsText] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -400,7 +404,7 @@ const UNIX_INSTALLERS: Record<UnixPlatform, { label: string; file: string; folde
     label: "Linux",
     file: "EndpointProAgentLinux.tar.gz",
     folder: "EndpointProAgentLinux",
-    requirement: "systemd-based distributions. Installs Node.js 18+ from the system package manager if it's missing.",
+    requirement: "systemd-based distributions. Uses the Node.js bundled in the package (or the distribution's own Node.js 18+ if the bundled one can't run).",
   },
 };
 
@@ -456,9 +460,14 @@ function UnixInstallCard({
     (u): u is string => Boolean(u),
   );
   const serverUrl = serverUrls.length > 0 ? serverUrls.join(",") : window.location.origin;
+  // Extracted by root into a fresh root-only mktemp folder: a fixed /tmp path could be
+  // pre-created by another local user, who could then swap install.sh or the bundled node
+  // before root runs them (install.sh refuses a package folder non-root users can modify).
+  // The token goes in on stdin via the printf builtin, so it never shows in the process list;
+  // the leading space keeps the line out of history where the shell ignores space-prefixed lines.
   const command =
-    `mkdir -p /tmp/${info.folder} && tar -xzf ${info.file} -C /tmp/${info.folder} && ` +
-    `sudo bash /tmp/${info.folder}/install.sh --server-url "${serverUrl}" --enrollment-token "${token ?? "<enrollment-token>"}"`;
+    ` d=$(sudo mktemp -d /tmp/${info.folder}.XXXXXX) && sudo tar --no-same-owner -xzf ${info.file} -C "$d" && ` +
+    `printf '%s' '${token ?? "<enrollment-token>"}' | sudo bash "$d/install.sh" --server-url "${serverUrl}" --enrollment-token-stdin`;
 
   function choose(next: UnixPlatform) {
     setPlatform(next);

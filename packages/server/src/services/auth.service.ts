@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import type { AdminRole } from "@em/shared";
 import { prisma } from "../db";
@@ -41,9 +42,22 @@ async function sameRightsHolder(admin: { id: string; role: string }): Promise<st
   return other ? other.admin.email : null;
 }
 
+// Hash of a random value nobody knows, same cost as real admin hashes (bcrypt.hash(..., 10)
+// in seed/admin-users). Comparing against it when the email doesn't exist makes a wrong
+// email take as long as a wrong password, so response time doesn't reveal which emails are
+// admin accounts. Made on first use so importing this module stays cheap.
+let dummyHash: string | undefined;
+function dummyPasswordHash(): string {
+  dummyHash ??= bcrypt.hashSync(randomBytes(16).toString("hex"), 10);
+  return dummyHash;
+}
+
 export async function login(email: string, password: string, ipAddress?: string): Promise<{ token: string; role: AdminRole }> {
   const admin = await prisma.adminUser.findUnique({ where: { email } });
-  if (!admin) throw new InvalidCredentialsError();
+  if (!admin) {
+    await bcrypt.compare(password, dummyPasswordHash());
+    throw new InvalidCredentialsError();
+  }
 
   const valid = await bcrypt.compare(password, admin.passwordHash);
   if (!valid) throw new InvalidCredentialsError();
@@ -59,4 +73,65 @@ export async function login(email: string, password: string, ipAddress?: string)
   const sid = await createSession(admin.id, ipAddress);
   const token = signAdminJwt({ sub: admin.id, email: admin.email, sid });
   return { token, role: admin.role as AdminRole };
+}
+
+// Per-account lockout after repeated failed sign-ins (used by auth.routes.ts). In memory,
+// bounded: when it grows past maxEntries it drops entries that no longer matter (lock over
+// and no failure for a lockout period) first, then the oldest unlocked ones, and only as a
+// last resort the oldest locked ones - never the whole table, which would let a spray of
+// made-up emails unlock a real account that is being guessed.
+export class LoginLockout {
+  private readonly entries = new Map<string, { count: number; lockedUntil: number; lastFailureAt: number }>();
+
+  constructor(
+    private readonly maxFailures = 5,
+    private readonly lockoutMs = 15 * 60 * 1000,
+    private readonly maxEntries = 10_000,
+  ) {}
+
+  get size(): number {
+    return this.entries.size;
+  }
+
+  lockedUntil(key: string, now = Date.now()): number {
+    const entry = this.entries.get(key);
+    return entry && entry.lockedUntil > now ? entry.lockedUntil : 0;
+  }
+
+  // Returns true when this failure locked the account.
+  recordFailure(key: string, now = Date.now()): boolean {
+    const entry = this.entries.get(key) ?? { count: 0, lockedUntil: 0, lastFailureAt: 0 };
+    entry.count += 1;
+    entry.lastFailureAt = now;
+    let locked = false;
+    if (entry.count >= this.maxFailures) {
+      entry.lockedUntil = now + this.lockoutMs;
+      entry.count = 0;
+      locked = true;
+    }
+    // Re-insert so Map order is least-recently-failed first (eviction order below).
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    this.prune(now);
+    return locked;
+  }
+
+  clear(key: string): void {
+    this.entries.delete(key);
+  }
+
+  private prune(now: number): void {
+    if (this.entries.size <= this.maxEntries) return;
+    for (const [key, e] of this.entries) {
+      if (e.lockedUntil <= now && now - e.lastFailureAt > this.lockoutMs) this.entries.delete(key);
+    }
+    for (const [key, e] of this.entries) {
+      if (this.entries.size <= this.maxEntries) return;
+      if (e.lockedUntil <= now) this.entries.delete(key);
+    }
+    for (const key of this.entries.keys()) {
+      if (this.entries.size <= this.maxEntries) return;
+      this.entries.delete(key);
+    }
+  }
 }

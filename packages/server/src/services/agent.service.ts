@@ -150,6 +150,9 @@ function buildUninstallAgentScript(): string {
     // touched. USB Control has no scriptable undo (see usbControlEnforcer.ts) and is
     // deliberately not included here.
     `netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound 2>$null | Out-Null`,
+    // Every rule quarantine.service creates (EM-Quarantine-Block-*, -Allow-*), plus the two
+    // names an older release used.
+    `Get-NetFirewallRule -DisplayName 'EM-Quarantine-*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
     `netsh advfirewall firewall delete rule name="EM-Quarantine-DNS" 2>$null | Out-Null`,
     `netsh advfirewall firewall delete rule name="EM-Quarantine-Server" 2>$null | Out-Null`,
     `netsh advfirewall firewall delete rule name="EM-RemoteAccess-RDP" 2>$null | Out-Null`,

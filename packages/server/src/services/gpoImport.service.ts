@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import AdmZip from "adm-zip";
 import type { CreateRuleRequest, GpoImportPreview, GpoImportPreviewGpo } from "@em/shared";
+import { psQuote } from "../utils/psQuote";
 
 // Turns a Group Policy backup (.zip) into security benchmark rules. Works with Microsoft's
 // Security Compliance Toolkit baselines and CIS "Build Kit" GPOs alike - both are standard
@@ -28,9 +30,17 @@ type Rule = CreateRuleRequest;
 
 const NOT_CONFIGURED = "Not configured";
 
-function psQuote(s: string): string {
-  return `'${s.replace(/'/g, "''")}'`;
+// Every name and value from an imported GPO ends up in PowerShell that runs on endpoints as
+// SYSTEM. Values are always single-quoted with psQuote; on top of that, anything with control
+// or other non-printable characters (which no real policy setting has) is skipped outright.
+const NON_PRINTABLE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
+function printable(...values: string[]): boolean {
+  return values.every((v) => !NON_PRINTABLE.test(v));
 }
+
+// Security policy / user right names (MinimumPasswordAge, SeDebugPrivilege): plain identifiers.
+const POLICY_NAME = /^[A-Za-z][A-Za-z0-9_]{0,127}$/;
 
 function ruleKey(kind: string, identity: string): string {
   return `gpo-${kind}-${crypto.createHash("sha1").update(identity.toLowerCase()).digest("hex").slice(0, 16)}`;
@@ -66,6 +76,7 @@ function registryCheck(key: string, valueName: string): string {
 
 function registryRule(s: RegSetting, gpoName: string): Rule | null {
   if (!s.valueName || s.display.length > MAX_EXPECTED_LENGTH) return null;
+  if (!printable(s.key, s.valueName, s.display, s.psValue)) return null;
   const path = `Registry::HKEY_LOCAL_MACHINE\\${s.key}`;
   const shortKey = s.key.split("\\").slice(-2).join("\\");
   return {
@@ -84,7 +95,8 @@ function registryRule(s: RegSetting, gpoName: string): Rule | null {
   };
 }
 
-function registryDeleteRule(key: string, valueName: string, gpoName: string): Rule {
+function registryDeleteRule(key: string, valueName: string, gpoName: string): Rule | null {
+  if (!valueName || !printable(key, valueName)) return null;
   const path = `Registry::HKEY_LOCAL_MACHINE\\${key}`;
   return {
     ruleKey: ruleKey("reg", `${key}\\${valueName}`),
@@ -185,7 +197,9 @@ function rulesFromRegistryPol(buf: Buffer, gpoName: string, skipped: string[]): 
   for (const e of parseRegistryPol(buf)) {
     const lower = e.valueName.toLowerCase();
     if (lower.startsWith("**del.")) {
-      rules.push(registryDeleteRule(e.key, e.valueName.slice(6), gpoName));
+      const rule = registryDeleteRule(e.key, e.valueName.slice(6), gpoName);
+      if (rule) rules.push(rule);
+      else skipped.push(`${e.key}\\${e.valueName}`);
       continue;
     }
     if (lower.startsWith("**")) {
@@ -262,6 +276,7 @@ function seceditConfigure(section: string, line: string, area: string): string {
 
 function systemAccessRule(name: string, value: string, gpoName: string): Rule | null {
   if (!/^-?\d+$/.test(value)) return null; // renames (NewAdministratorName = "...") are site-specific
+  if (!POLICY_NAME.test(name)) return null;
   const lower = name.toLowerCase();
   const label = SYSTEM_ACCESS_TITLES[lower] ?? name;
   const atLeast = AT_LEAST.has(lower);
@@ -295,6 +310,7 @@ function normalizeAccounts(value: string): string {
 function privilegeRule(name: string, value: string, gpoName: string): Rule | null {
   const expected = normalizeAccounts(value);
   if (expected.length > MAX_EXPECTED_LENGTH) return null;
+  if (!POLICY_NAME.test(name) || !printable(value)) return null;
   return {
     ruleKey: ruleKey("priv", name),
     title: truncate(`User right ${name}: ${expected === "None" ? "no one" : expected}`, MAX_TITLE_LENGTH),
@@ -441,6 +457,30 @@ function gpoDisplayName(xml: string): string | null {
 
 export class GpoImportError extends Error {}
 
+// Reads one zip entry, refusing more than MAX_FILE_BYTES of *decompressed* output. The size in
+// the entry's header is whatever the archive claims, so a zip bomb can understate it; the
+// deflate stream is inflated here with a hard output cap instead of trusting it (and without
+// relying on adm-zip's own inflate, whose behaviour differs between versions). Exported for tests.
+export function readZipEntryCapped(entry: AdmZip.IZipEntry, maxBytes = MAX_FILE_BYTES): Buffer {
+  const { method, encrypted } = entry.header as { method: number; encrypted?: boolean };
+  if (encrypted) throw new GpoImportError(`${entry.entryName} is password-protected.`);
+  const compressed = entry.getCompressedData();
+  if (method === 0) {
+    if (compressed.length > maxBytes) throw new GpoImportError(`${entry.entryName} is unexpectedly large.`);
+    return compressed;
+  }
+  if (method !== 8) throw new GpoImportError(`${entry.entryName} uses an unsupported compression method.`);
+  try {
+    return zlib.inflateRawSync(compressed, { maxOutputLength: maxBytes });
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (err instanceof RangeError || code === "ERR_BUFFER_TOO_LARGE") {
+      throw new GpoImportError(`${entry.entryName} is unexpectedly large.`);
+    }
+    throw new GpoImportError(`${entry.entryName} could not be decompressed.`);
+  }
+}
+
 export function previewGpoBackup(zipBuffer: Buffer): GpoImportPreview {
   let zip: AdmZip;
   try {
@@ -471,7 +511,7 @@ export function previewGpoBackup(zipBuffer: Buffer): GpoImportPreview {
 
     const gpo = gpos.get(guid) ?? { name: null, userSettings: false };
     gpos.set(guid, gpo);
-    const data = entry.getData();
+    const data = readZipEntryCapped(entry);
     if (lower.endsWith("/bkupinfo.xml") || (lower.endsWith("/backup.xml") && !gpo.name)) {
       gpo.name = gpoDisplayName(decodeText(data)) ?? gpo.name;
     } else if (lower.endsWith("/machine/registry.pol")) gpo.pol = data;

@@ -11,10 +11,12 @@ import {
   COMMAND_BLOCK_PROTECTED_PROCESS_NAMES,
   CRITICAL_WINDOWS_PROCESSES,
 } from "@em/shared";
-import { APP_CONTROL_DIR, BLOCKER_EVENTS_DIR, BLOCKER_SCRIPT, commandRulesFile, IFEO_MARKER, IFEO_ROOTS, watcherRulesFile } from "./appControlPaths";
+import { BLOCKER_DIR, BLOCKER_SCRIPT, commandRulesFile, IFEO_MARKER, IFEO_ROOTS, watcherRulesFile } from "./appControlPaths";
 import { allowPattern, syncAppLocker } from "./appLockerEnforcer";
 import { agentConfig } from "./config";
+import { AGENT_INSTALL_DIR, ensureSecureDir, psEscape } from "./secureFs";
 import { isEnforcementSuspended } from "./shellHealthGuard";
+import { LOCAL_API_PORT, trayTokenDir } from "./trayAuth";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,9 +39,6 @@ const SCRIPT_HOSTS = ["wscript.exe", "cscript.exe", "mshta.exe", "msiexec.exe", 
 const MAX_CLOSES_PER_MINUTE = 30;
 const REPORT_EVERY_MS = 60_000; // one event per program path per minute (a restarting service would flood)
 
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
-}
 const psList = (items: readonly string[]) => items.map((i) => `'${psEscape(i)}'`).join(", ");
 
 // A plain program name ("AnyDesk.exe") can be blocked at launch; paths and wildcards can't.
@@ -59,9 +58,12 @@ $target = if ($args.Count -gt 0) { [string]$args[0] } else { '' }
 for ($i = 1; $i -lt $args.Count -and -not $target.ToLowerInvariant().EndsWith('.exe'); $i++) { $target += ' ' + $args[$i] }
 $name = [IO.Path]::GetFileName($target)
 $sessionId = (Get-Process -Id $PID).SessionId
+# Reported to the agent on this PC with this user's own key (trayAuth.ts), which only they can read.
 try {
+  $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $token = [IO.File]::ReadAllText((Join-Path '${psEscape(trayTokenDir())}' ($sid + '.token'))).Trim()
   $evt = [pscustomobject]@{ path = $target; at = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress
-  [IO.File]::WriteAllText((Join-Path '${psEscape(BLOCKER_EVENTS_DIR)}' ([guid]::NewGuid().ToString('N') + '.json')), $evt)
+  Invoke-RestMethod -Uri 'http://127.0.0.1:${LOCAL_API_PORT}/app-control/blocked' -Method Post -Body $evt -ContentType 'application/json' -UseBasicParsing -TimeoutSec 5 -Headers @{ 'X-Endpoint-IQ-Tray' = '1'; 'X-Endpoint-IQ-Token' = $token } | Out-Null
 } catch {}
 if ($sessionId -ne 0) {
   Add-Type -AssemblyName PresentationFramework
@@ -71,15 +73,12 @@ if ($sessionId -ne 0) {
 
 const BLOCKER_COMMAND = `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${BLOCKER_SCRIPT}"`;
 
-// Users must be able to write events (the blocker runs as whoever launched the program), but not
-// change the blocker itself, which keeps the inherited read-only access.
+// Users can read and run the blocker (it runs as whoever launched the program) but nobody except
+// SYSTEM and administrators can change it or anything else in its folder.
 async function ensureBlockerFiles(): Promise<void> {
-  await fsp.mkdir(BLOCKER_EVENTS_DIR, { recursive: true });
+  await ensureSecureDir(BLOCKER_DIR, { usersRead: true, resetChildren: true });
   const current = await fsp.readFile(BLOCKER_SCRIPT, "utf8").catch(() => "");
-  if (current !== BLOCKER_PS) {
-    await fsp.writeFile(BLOCKER_SCRIPT, BLOCKER_PS, "utf8");
-    await execFileAsync("icacls", [BLOCKER_EVENTS_DIR, "/grant", "*S-1-5-32-545:(OI)(CI)(W)"]).catch(() => undefined);
-  }
+  if (current !== BLOCKER_PS) await fsp.writeFile(BLOCKER_SCRIPT, BLOCKER_PS, "utf8");
 }
 
 export function buildLaunchBlockScript(names: Map<string, string>): string {
@@ -117,25 +116,23 @@ Write-Output 'APPLIED'
 `;
 }
 
-// Events the blocker left behind since the last sync, matched to rules by file name.
-async function collectBlockerEvents(names: Map<string, string>): Promise<RawEvent[]> {
-  const files = (await fsp.readdir(BLOCKER_EVENTS_DIR).catch(() => [] as string[])).filter((f) => f.endsWith(".json")).slice(0, 500);
-  const out: RawEvent[] = [];
-  for (const f of files) {
-    const full = path.join(BLOCKER_EVENTS_DIR, f);
-    try {
-      const raw = (await fsp.readFile(full, "utf8")).replace(/^﻿/, "");
-      const e = JSON.parse(raw) as { path?: string; at?: string };
-      if (e.path) {
-        const name = path.win32.basename(e.path).toLowerCase();
-        out.push({ ruleId: names.get(name) ?? null, path: e.path, at: e.at ?? new Date().toISOString(), closed: false, sessionId: 0 });
-      }
-    } catch {
-      // half-written or not ours: dropped
-    }
-    await fsp.rm(full, { force: true });
-  }
-  return out;
+// Launches the blocker reported (through the local API) since the last sync.
+const blockerEvents: { path: string; at: string }[] = [];
+
+export function queueBlockerEvent(target: string, at: string | null): void {
+  if (blockerEvents.length >= 500) return;
+  blockerEvents.push({ path: target.slice(0, 1000), at: at && !Number.isNaN(Date.parse(at)) ? at : new Date().toISOString() });
+}
+
+// Matched to rules by file name.
+function collectBlockerEvents(names: Map<string, string>): RawEvent[] {
+  return blockerEvents.splice(0).map((e) => ({
+    ruleId: names.get(path.win32.basename(e.path).toLowerCase()) ?? null,
+    path: e.path,
+    at: e.at,
+    closed: false,
+    sessionId: 0,
+  }));
 }
 
 /* ------------------------------------------------------------------------------------------
@@ -193,6 +190,7 @@ while ($true) {
 $ErrorActionPreference = 'SilentlyContinue'
 $rulesFile = '${psEscape(rulesFile)}'
 $commandRulesFile = '${psEscape(commandRulesFile)}'
+$agentDir = '${psEscape(AGENT_INSTALL_DIR.toLowerCase())}\\'
 $agentPid = ${agentPid}
 $agentTree = New-Object 'System.Collections.Generic.HashSet[int]'
 [void]$agentTree.Add($agentPid)
@@ -238,6 +236,16 @@ function Load-Rules {
   return $changed
 }
 
+# The agent's own scripts (the launch blocker, the watchdog, update helpers): PowerShell running a
+# script file from the locked install folder, with no command of its own on the command line.
+# Anyone can type the folder's name into a command, so that alone exempts nothing.
+function Test-AgentScript($cmd, $name) {
+  if ($name -ne 'powershell.exe') { return $false }
+  $lc = $cmd.ToLowerInvariant()
+  if (-not $lc.Contains('-file "' + $agentDir)) { return $false }
+  return -not [regex]::IsMatch($lc, '\\s[-/](c\\w*|e|ec|en\\w*)(\\s|$)')
+}
+
 # Command blocking: the same exclusions as the 20-second scan (commandBlockEnforcer.ts) - browsers
 # and core Windows processes, anything in the Windows folder except script hosts and attack tools,
 # and the agent's own scripts.
@@ -248,7 +256,7 @@ function Find-CommandRule($procId, $path, $cmd) {
   if ($cmdProtected -contains $name) { return $null }
   if ($lower.StartsWith($windowsDir) -and ($killableTools -notcontains $name)) { return $null }
   if (-not $cmd) { $cmd = [string](Get-CimInstance Win32_Process -Filter "ProcessId=$procId").CommandLine }
-  if (-not $cmd -or $cmd.ToLowerInvariant().Contains('endpointpro')) { return $null }
+  if (-not $cmd -or (Test-AgentScript $cmd $name)) { return $null }
   foreach ($r in $script:cmdRules) {
     $hit = $false
     try {
@@ -282,7 +290,9 @@ function Get-Details($path) {
 function Find-Rule($procId, $path, $sessionId) {
   $lower = $path.ToLowerInvariant()
   $name = [IO.Path]::GetFileName($lower)
-  if ($lower.Contains('\\endpointpro\\')) { return $null }
+  # Only the agent's own locked install folder; a folder elsewhere that is merely named
+  # EndpointPro (which any user can make) gets no exemption.
+  if ($lower.StartsWith($agentDir)) { return $null }
   if ($protected -contains $name) { return $null }
   foreach ($a in $script:allows) { if ($lower -like $a) { return $null } }
   $inWindows = $lower.StartsWith($windowsDir)
@@ -547,7 +557,6 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
       if (name && !CRITICAL_WINDOWS_PROCESSES.includes(name) && !launchBlocks.has(name)) launchBlocks.set(name, r.ruleId);
     }
 
-    await fsp.mkdir(APP_CONTROL_DIR, { recursive: true });
     await ensureBlockerFiles();
     await writeWatcherRules(rules.length > 0 ? [...rules, ...allows.map((a) => ({ ...a, value: allowPattern(a.value) }))] : []);
     if (rules.length > 0 || watcher) ensureWatcher();
@@ -570,7 +579,7 @@ export async function runAppControlScan(client: AxiosInstance): Promise<void> {
     }
 
     const appLocker = await syncAppLocker(advanced, rules, suspended ? undefined : data.advanced?.allowlist);
-    const raw = [...watcherEvents.splice(0), ...fallback, ...(await collectBlockerEvents(launchBlocks)), ...appLocker.events];
+    const raw = [...watcherEvents.splice(0), ...fallback, ...collectBlockerEvents(launchBlocks), ...appLocker.events];
     void notifyClosed(raw);
     const now = Date.now();
     const events: AppControlEventPayload[] = [];

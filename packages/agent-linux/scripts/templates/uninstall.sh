@@ -28,8 +28,12 @@ if [[ -f "$CONFIG_PATH" && -f "$STATE_PATH" ]] && command -v curl >/dev/null; th
   AGENT_ID="$(grep -o '"agentId"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_PATH" | sed -E 's/.*"([^"]+)"$/\1/')"
   API_KEY="$(grep -o '"apiKey"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_PATH" | sed -E 's/.*"([^"]+)"$/\1/')"
   if [[ -n "$SERVER_URL" && -n "$AGENT_ID" && -n "$API_KEY" ]]; then
-    curl -s -m 10 -X POST "$SERVER_URL/api/agent/uninstalled" \
-      -H "X-Agent-Id: $AGENT_ID" -H "X-Agent-Key: $API_KEY" >/dev/null 2>&1 || true
+    # Headers go through a root-only file (curl -H @file, 7.55+), not the command line, where
+    # any local user could read the agent key from the process list.
+    HEADER_FILE="$(umask 077 && mktemp)"
+    printf 'X-Agent-Id: %s\nX-Agent-Key: %s\n' "$AGENT_ID" "$API_KEY" > "$HEADER_FILE"
+    curl -s -m 10 -X POST "$SERVER_URL/api/agent/uninstalled" -H "@$HEADER_FILE" >/dev/null 2>&1 || true
+    rm -f "$HEADER_FILE"
   fi
 fi
 

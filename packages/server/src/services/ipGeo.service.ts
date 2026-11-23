@@ -1,3 +1,4 @@
+import net from "node:net";
 import { prisma } from "../db";
 import { logger } from "../logger";
 
@@ -33,16 +34,28 @@ interface IpApiCoResponse {
   longitude?: number;
 }
 
+// The address comes from the agent's connection, but it goes into a URL path below, so only a
+// literal IPv4/IPv6 address is ever looked up (never something like "../" or "x?key=").
+function isLookupableIp(ip: string): boolean {
+  return net.isIP(ip) !== 0;
+}
+
+// Provider responses are shown in the console - keep only short strings.
+function geoText(value: unknown): string | null {
+  return typeof value === "string" && value ? value.slice(0, 100) : null;
+}
+
 async function lookupViaIpApiCo(ip: string): Promise<IpGeoResult | null> {
-  const res = await fetch(`https://ipapi.co/${ip}/json/`, { signal: AbortSignal.timeout(5000) });
+  if (!isLookupableIp(ip)) return null;
+  const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) return null; // includes 429 — this provider's free tier rate-limits fast
   const data = (await res.json()) as IpApiCoResponse;
   if (data.error) return null;
 
   return {
-    city: data.city ?? null,
-    region: data.region ?? null,
-    country: data.country_name ?? null,
+    city: geoText(data.city),
+    region: geoText(data.region),
+    country: geoText(data.country_name),
     lat: typeof data.latitude === "number" ? data.latitude : null,
     lon: typeof data.longitude === "number" ? data.longitude : null,
   };
@@ -61,15 +74,16 @@ interface IpApiComResponse {
 // the HTTPS-capable provider above is unavailable, not the default path. The request/
 // response here is just a public IP and a city/region/country guess, not sensitive data.
 async function lookupViaIpApiCom(ip: string): Promise<IpGeoResult | null> {
-  const res = await fetch(`http://ip-api.com/json/${ip}`, { signal: AbortSignal.timeout(5000) });
+  if (!isLookupableIp(ip)) return null;
+  const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}`, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) return null;
   const data = (await res.json()) as IpApiComResponse;
   if (data.status !== "success") return null;
 
   return {
-    city: data.city ?? null,
-    region: data.regionName ?? null,
-    country: data.country ?? null,
+    city: geoText(data.city),
+    region: geoText(data.regionName),
+    country: geoText(data.country),
     lat: typeof data.lat === "number" ? data.lat : null,
     lon: typeof data.lon === "number" ? data.lon : null,
   };
@@ -100,7 +114,7 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 // hint: the admin-entered `Agent.location` field is the authoritative source and is never
 // overwritten by this.
 export async function refreshIpGeoIfStale(agentId: string, ipAddress: string | null): Promise<void> {
-  if (!ipAddress || isPrivateOrLoopbackIp(ipAddress)) return;
+  if (!ipAddress || !isLookupableIp(ipAddress) || isPrivateOrLoopbackIp(ipAddress)) return;
 
   const agent = await prisma.agent.findUnique({
     where: { id: agentId },

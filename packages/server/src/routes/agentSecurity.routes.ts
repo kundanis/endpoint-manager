@@ -30,7 +30,8 @@ agentSecurityRouter.put("/uninstall-password", async (req, res, next) => {
 });
 
 // Remote install account: a Windows admin credential, so saving or removing it is for super
-// admins only. Any admin who can install agents uses it.
+// admins only, and only super admins can install with it (POST /api/admin/remote-install);
+// other admins type an account for each install.
 agentSecurityRouter.put("/remote-install-account", requireSuperAdmin, async (req, res, next) => {
   try {
     const payload = setRemoteInstallAccountRequestSchema.parse(req.body);

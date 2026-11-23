@@ -5,6 +5,8 @@ param(
     # explicitly, per deployment. May be a comma-separated list (LAN, web URL, public IP -
     # in the order the agent should try them); the agent fails over between them.
     [string]$ServerUrl,
+    # Better left out: setup passes it in the EIQ_ENROLLMENT_TOKEN environment variable instead,
+    # because any program on the PC can read another program's command line.
     [string]$EnrollmentToken
 )
 
@@ -15,6 +17,10 @@ $WatchdogTaskName = "EndpointProWatchdog"
 
 Write-Host "Endpoint IQ Agent Installer"
 Write-Host "============================"
+
+if (-not $EnrollmentToken -and $env:EIQ_ENROLLMENT_TOKEN) { $EnrollmentToken = $env:EIQ_ENROLLMENT_TOKEN }
+# Not passed on to the programs started below.
+Remove-Item Env:EIQ_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
 
 if (-not $ServerUrl) {
     $ServerUrl = Read-Host "Server URL (e.g. http://10.10.6.217:4000)"
@@ -55,23 +61,17 @@ if ($taskExists -or $serviceExists) {
     taskkill /IM EndpointIQTray.exe /F 2>$null | Out-Null
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevEap
-
-    # The install folder may already be locked down (tamper protection) from a prior
-    # install - reset its permissions first so this update can actually write to it, then
-    # re-apply the lockdown once the new files are in place (below). icacls /reset alone
-    # is not enough here and fails with "Access is denied" - same lesson uninstall.ps1
-    # already learned: the lockdown leaves the Administrators group with only read+execute
-    # and strips the installing admin's own per-user grant, so even an elevated admin
-    # lacks WRITE_DAC on this folder unless they take ownership of it first (which their
-    # own SeTakeOwnershipPrivilege allows regardless of the current ACL).
-    if (Test-Path $installDir) {
-        takeown /F $installDir /R /D Y 2>$null | Out-Null
-        icacls $installDir /reset /T /Q 2>$null | Out-Null
-    }
 }
 
+# The install folder (new, or locked down by a prior install) is locked BEFORE any file goes in:
+# SYSTEM and administrators only, administrators allowed to write while this copies. It is never
+# reset to the permissions ProgramData would give it, which let users create files there - a
+# user could otherwise put a file or link in it during the install that SYSTEM later runs.
+# register-service.ps1 -PrepareInstall takes ownership first (an elevated admin lacks WRITE_DAC
+# on a locked folder) and removes a junction or link put in place of the folder.
 Write-Host "Installing to $installDir ..."
-New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot "register-service.ps1") -PrepareInstall
+if (-not (Test-Path -LiteralPath $installDir -PathType Container)) { throw "Couldn't prepare the install folder $installDir." }
 Copy-Item -Path (Join-Path $scriptRoot "node") -Destination $installDir -Recurse -Force
 Copy-Item -Path (Join-Path $scriptRoot "app") -Destination $installDir -Recurse -Force
 Copy-Item -Path (Join-Path $scriptRoot "tray") -Destination $installDir -Recurse -Force
@@ -100,7 +100,7 @@ Set-Content -Path (Join-Path $installDir "app\config.json") -Value $config -Enco
 # within one check cycle.
 Write-Host "Registering the watchdog task..."
 $watchdogScript = Join-Path $installDir "watchdog.ps1"
-$watchdogTaskXmlPath = Join-Path $env:TEMP "EndpointProWatchdogTask.xml"
+$watchdogTaskXmlPath = Join-Path $env:TEMP ("EndpointProWatchdogTask_" + [Guid]::NewGuid().ToString("N") + ".xml")
 $watchdogTaskXml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { writeWorkFile } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,14 +33,15 @@ export async function ensureWatchdogTaskRegistered(): Promise<void> {
     }
 
     if (!taskExists) {
-      const taskXmlPath = path.join(process.env.TEMP ?? installDir, `EndpointProWatchdogTask_restore_${Date.now()}.xml`);
       const taskXml = buildWatchdogTaskXml(watchdogScript, installDir);
       // schtasks requires a BOM to correctly detect this as UTF-16LE (matching the XML's own
       // <?xml encoding="UTF-16"?> declaration) - Node's "utf16le" encoding writes raw
       // UTF-16LE bytes with no BOM, unlike PowerShell's "Unicode" encoding (which install.ps1
       // and watchdog.ps1 rely on for their own task XML writes). Without it, schtasks
       // misparses the file entirely ("ERROR: The task XML is malformed... one root element").
-      fs.writeFileSync(taskXmlPath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(taskXml, "utf16le")]));
+      // Written to the locked work folder under a random name, never %TEMP% (C:\Windows\Temp,
+      // where a user could change the definition of a task that runs as SYSTEM).
+      const taskXmlPath = await writeWorkFile("EndpointProWatchdogTask_restore", ".xml", Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(taskXml, "utf16le")]));
       try {
         await execFileAsync("schtasks", ["/create", "/tn", WATCHDOG_TASK_NAME, "/xml", taskXmlPath, "/f"]);
       } finally {

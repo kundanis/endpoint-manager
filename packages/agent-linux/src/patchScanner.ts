@@ -1,5 +1,17 @@
 import type { PatchDetectedUpdate, PatchScanResultPayload } from "@em/shared";
-import { detectPackageManager, scanForUpgrades } from "./packageManager";
+import { detectPackageManager, scanForUpgrades, type PackageManager } from "./packageManager";
+
+// The package names the latest local scan found upgradable. A patch task may only touch these
+// (see patchInstaller.ts), so the server can't make this agent run apt/dnf on anything else.
+let lastScan: { manager: PackageManager; packageNames: Set<string> } | null = null;
+
+export function lastScannedPackageNames(manager: PackageManager): Set<string> | null {
+  return lastScan && lastScan.manager === manager ? lastScan.packageNames : null;
+}
+
+export function rememberScan(manager: PackageManager, packageNames: string[]): void {
+  lastScan = { manager, packageNames: new Set(packageNames) };
+}
 
 // Mirrors the Windows agent's updateId (a stable string PatchDefinition.updateId can key
 // on across scans) but built from (manager, package, target version) instead of a WUA GUID —
@@ -24,6 +36,7 @@ export async function scanForMissingPatches(): Promise<PatchScanResultPayload> {
 
   try {
     const scanned = await scanForUpgrades(manager);
+    rememberScan(manager, scanned.map((u) => u.packageName));
     const updates: PatchDetectedUpdate[] = scanned.map((u) => ({
       updateId: buildUpdateId(manager, u.packageName, u.newVersion),
       revisionNumber: 1, // no revision concept for apt/dnf/yum updates, unlike WUA's KBs

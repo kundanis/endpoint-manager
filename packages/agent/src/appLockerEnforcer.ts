@@ -7,6 +7,7 @@ import type { AllowlistWire, AppControlRuleWire } from "@em/shared";
 import { APPLOCKER_MSI_EXTENSIONS, APPLOCKER_SCRIPT_EXTENSIONS, MICROSOFT_PUBLISHER, appControlRuleProblem } from "@em/shared";
 import { APPLOCKER_MARKER, appLockerStateFile, REMOVE_APPLOCKER_RULES_PS } from "./appControlPaths";
 import type { RawEvent } from "./appControlEnforcer";
+import { AGENT_INSTALL_DIR, ENDPOINTPRO_DIR, ensureSecureDir, psEscape } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,8 +37,13 @@ const execFileAsync = promisify(execFile);
 // Needs the Application Identity service (AppIDSvc), which the agent starts. Windows 10/11 Pro,
 // Enterprise and Education all enforce AppLocker (edition checks were removed in 2022, KB5024351).
 
-const AGENT_FOLDER = path.join(process.env.ProgramData ?? "C:\\ProgramData", "EndpointPro");
-const PROBE_DIR = path.join(process.env.SystemRoot ?? "C:\\Windows", "Temp", "EndpointIQ-AppLockerProbe");
+// Only the locked install folder (SYSTEM and administrators can change it) is exempt: any other
+// folder under ProgramData\EndpointPro could be one a user made, and whatever they put in an
+// allowed folder would run.
+const AGENT_FOLDER = AGENT_INSTALL_DIR;
+// Probe files are made in a folder only SYSTEM and administrators can write to (not Windows\Temp,
+// where a user could put a link in its place), and outside AGENT_FOLDER, which every block exempts.
+const PROBE_DIR = path.join(ENDPOINTPRO_DIR, "AppLockerProbe");
 const REAPPLY_EVERY_MS = 30 * 60_000; // repair the policy if something else rewrote it
 const ALLOW_ALL_IDS: Record<Collection, string> = {
   Script: "e1d0a11c-0000-4000-8000-000000000001",
@@ -119,10 +125,6 @@ interface SavedState {
 export interface AppLockerResult {
   problem: string | null; // shown on the Sync status tab; null while everything is in force
   events: RawEvent[];
-}
-
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
 }
 
 function expandVariables(value: string): string {
@@ -493,6 +495,7 @@ export async function syncAppLocker(
   if (!state || state.hash !== hash || now - state.appliedAt > REAPPLY_EVERY_MS) {
     const probes = desired.denies.map((r) => ({ id: r.id, path: probeFor(r) })).filter((p): p is { id: string; path: string } => Boolean(p.path));
     try {
+      if (probes.length) await ensureSecureDir(PROBE_DIR);
       const out = await runPs(buildApplyScript(desired, probes));
       const line = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
       const res = JSON.parse(line ?? "{}") as {

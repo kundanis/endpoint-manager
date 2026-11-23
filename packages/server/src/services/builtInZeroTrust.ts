@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { RequiredSoftwareRequest, SecurityProductChoice } from "@em/shared";
+import { psQuote } from "../utils/psQuote";
 
 // The built-in Zero Trust policy. Installed from the console (Zero Trust -> Add built-in
 // policy) or by prisma/seed.ts; both create it only when missing and only add conditions it
@@ -183,7 +184,7 @@ export const MANAGEMENT_AGENTS: SecurityProductOption[] = [
 ];
 
 function psList(items: string[]): string {
-  return `@(${items.map((i) => `'${i.replace(/'/g, "''")}'`).join(", ")})`;
+  return `@(${items.map((i) => psQuote(i)).join(", ")})`;
 }
 
 const MATCH_ANY =

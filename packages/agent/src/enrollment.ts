@@ -1,8 +1,31 @@
 import os from "node:os";
-import type { EnrollRequest, EnrollResponse } from "@em/shared";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { selectPrimaryNetworkInterface, type EnrollRequest, type EnrollResponse } from "@em/shared";
 import { agentConfig } from "./config";
 import { loadState, saveState } from "./state";
 import { publicClient } from "./httpClient";
+
+const execFileAsync = promisify(execFile);
+
+// Hardware identity sent with enrollment so the server can tell a reinstall on this same
+// machine from someone else enrolling under this hostname (server enrollment.service.ts).
+// Same sources as inventory and check-in report, so the values match what the server has on
+// record. Best effort: enrollment never fails because these can't be read.
+async function hardwareIdentity(): Promise<{ serialNumber: string | null; macAddress: string | null }> {
+  let serialNumber: string | null = null;
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", "(Get-CimInstance -ClassName Win32_BIOS).SerialNumber"],
+      { timeout: 30_000 },
+    );
+    serialNumber = stdout.trim().slice(0, 100) || null;
+  } catch {
+    // leave null
+  }
+  return { serialNumber, macAddress: selectPrimaryNetworkInterface(os.networkInterfaces()).macAddress };
+}
 
 export async function ensureEnrolled(): Promise<{ agentId: string; apiKey: string }> {
   const existing = loadState();
@@ -23,6 +46,7 @@ export async function enroll(): Promise<{ agentId: string; apiKey: string }> {
     osVersion: os.release(),
     osArch: process.arch,
     agentVersion: agentConfig.agentVersion,
+    ...(await hardwareIdentity()),
   };
 
   const { data } = await publicClient.post<EnrollResponse>("/api/agent/enroll", payload);

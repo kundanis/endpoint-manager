@@ -2,6 +2,9 @@ import { DEFAULT_COMMAND_TIMEOUT_SEC } from "@em/shared";
 import { prisma } from "../db";
 import { getAgentFirewallExceptions } from "./agentConnection.service";
 import { createCommandJob } from "./command.service";
+import { psEscape } from "../utils/psQuote";
+import { emitInvalidate } from "../events/bus";
+import { decryptField } from "../utils/fieldEncryption";
 
 // Adapted from QurantineDats/Block-Quarantine.ps1 and Revert-Quarantine.ps1 (repo root) -
 // same New-NetFirewallRule-based default-deny-with-exceptions model, minus the interactive
@@ -12,9 +15,27 @@ import { createCommandJob } from "./command.service";
 // ever touches rules this feature created.
 const RULE_PREFIX = "EM-Quarantine";
 
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
+// Markers the two scripts contain - also how a finished task is recognised as a quarantine or
+// a release (recordQuarantineResult, getQuarantineActivity, command.service securityActionLabel).
+export const QUARANTINE_SCRIPT_MARKER = "pre-quarantine-";
+export const RELEASE_SCRIPT_MARKER = "Write-Output 'RELEASED'";
+
+export class QuarantineNotSupportedError extends Error {}
+
+// Which of the two a stored job is. CommandJob.script is stored encrypted (command.service
+// createCommandJob), so it can't be matched in SQL - only after decrypting it here.
+function quarantineJobKind(storedScript: string): "QUARANTINE" | "RELEASE" | null {
+  let script: string;
+  try {
+    script = decryptField(storedScript);
+  } catch {
+    script = storedScript; // stored before scripts were encrypted
+  }
+  if (script.includes(RELEASE_SCRIPT_MARKER)) return "RELEASE";
+  if (script.includes(QUARANTINE_SCRIPT_MARKER)) return "QUARANTINE";
+  return null;
 }
+
 
 // The exceptions are gathered fresh for every quarantine job rather than hardcoded (see
 // getAgentFirewallExceptions): this server's own LAN-facing IPv4s - a multi-homed server has
@@ -45,11 +66,12 @@ netsh advfirewall export "$backupPath" | Out-Null
 
 Set-NetFirewallProfile -Profile Domain, Private, Public -Enabled True -DefaultInboundAction Block -DefaultOutboundAction Block
 
-# Explicitly block LocalSubnet, ICMP (ping), and SMB - redundant with the default-block
-# above for anything not otherwise excepted, but explicit so it survives even if a broader
-# allow rule from another policy gets added later.
-New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Block-LocalSubnet-Out' -Direction Outbound -RemoteAddress LocalSubnet -Action Block | Out-Null
-New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Block-LocalSubnet-In'  -Direction Inbound  -RemoteAddress LocalSubnet -Action Block | Out-Null
+# Explicitly block ICMP (ping) and SMB - redundant with the default-block above, but explicit
+# so they stay blocked even if another policy adds a broader allow rule later. There is NO
+# "block the local subnet" rule: Windows Firewall applies a block rule over every allow rule,
+# so it also blocked this server and the router's DNS whenever the endpoint sits on the same
+# LAN as the server - the endpoint then lost contact and couldn't even receive its Release.
+# The local network is blocked by the default-block like everything else.
 New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Block-ICMPv4-Out' -Direction Outbound -Protocol ICMPv4 -Action Block | Out-Null
 New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Block-ICMPv4-In'  -Direction Inbound  -Protocol ICMPv4 -Action Block | Out-Null
 New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Block-ICMPv6-Out' -Direction Outbound -Protocol ICMPv6 -Action Block | Out-Null
@@ -62,6 +84,11 @@ New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Block-SMB-In'  -Direction Inbou
 # exception IPs below to actually talk to. The exception rules match the resolved IP, not
 # the hostname, so this doesn't widen what's reachable, only what's resolvable.
 New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Allow-DNS-Out' -Direction Outbound -Protocol UDP -RemotePort 53 -Action Allow | Out-Null
+New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Allow-DNS-TCP-Out' -Direction Outbound -Protocol TCP -RemotePort 53 -Action Allow | Out-Null
+# DHCP: without it the endpoint loses its IP address when the lease runs out, and with it the
+# connection to this server.
+New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Allow-DHCP-Out' -Direction Outbound -Protocol UDP -LocalPort 68 -RemotePort 67 -Action Allow | Out-Null
+New-NetFirewallRule -DisplayName '${RULE_PREFIX}-Allow-DHCP-In' -Direction Inbound -Protocol UDP -LocalPort 68 -RemotePort 67 -Action Allow | Out-Null
 
 # Allow this server's own address(es), each restricted to its port, in both directions -
 # covers check-ins/heartbeats (outbound) and the eventual Release command delivery (inbound).
@@ -104,29 +131,50 @@ Write-Output 'QUARANTINED'
 `;
 }
 
-// Mirrors Revert-Quarantine.ps1's no-backup-path branch: remove every rule this feature
-// owns and restore the profile defaults to Allow. Deliberately doesn't attempt the .wfw
-// restore path - that backup lives on the endpoint from whatever quarantine job created it,
-// and this release job has no way to know its path (or that quarantine even ran via this
-// path rather than a manual run of Block-Quarantine.ps1); removing the rules and resetting
-// the defaults gets back to an equivalent "everything allowed" state either way.
+// Removes every rule this feature owns and puts the profile defaults back to Windows' own:
+// block unsolicited inbound, allow outbound. (Setting inbound to Allow - what this used to do -
+// left a released machine accepting every incoming connection, more exposed than before it was
+// quarantined.) Doesn't restore the .wfw backup: this job can't know its path, and the
+// defaults plus the machine's own rules are what was in force before anyway.
 function buildReleaseScript(): string {
   return `
 $ErrorActionPreference = 'Stop'
 Get-NetFirewallRule -DisplayName '${RULE_PREFIX}-*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-Set-NetFirewallProfile -Profile Domain, Private, Public -DefaultInboundAction Allow -DefaultOutboundAction Allow
+Set-NetFirewallProfile -Profile Domain, Private, Public -DefaultInboundAction Block -DefaultOutboundAction Allow
+$left = @(Get-NetFirewallRule -DisplayName '${RULE_PREFIX}-*' -ErrorAction SilentlyContinue).Count
+if ($left -gt 0) { Write-Error "$left quarantine firewall rule(s) could not be removed."; exit 1 }
 Write-Output 'RELEASED'
 `;
+}
+
+// The quarantine scripts are Windows Firewall scripts: Linux and macOS agents have no
+// equivalent yet, so they're refused rather than sent a job that can only fail.
+async function windowsAgents(agentIds: string[]) {
+  const agents = await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, hostname: true, osPlatform: true } });
+  const others = agents.filter((a) => a.osPlatform !== "win32");
+  return {
+    found: agents.length,
+    windowsIds: agents.filter((a) => a.osPlatform === "win32").map((a) => a.id),
+    otherIds: others.map((a) => a.id),
+    skipped: others.map((a) => a.hostname),
+  };
 }
 
 // Bulk-capable — the script itself is agent-independent (no per-agent parameterization),
 // so the whole target list shares one CommandJob. The single-endpoint route
 // (admin.routes.ts's POST /agents/:id/quarantine, used by AgentsPage.tsx's per-row button)
 // just calls this with a 1-element array — same behavior, same contract, unchanged.
+//
+// The endpoint is marked quarantined only when its job reports success (recordQuarantineResult),
+// not when the job is sent: a job that fails (Group Policy overriding the firewall, a script
+// error) or never runs (endpoint offline) must not show the machine as isolated.
 export async function quarantineAgents(agentIds: string[], createdByAdminId: string) {
-  const existing = await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true } });
-  if (existing.length === 0) return null;
-  const validIds = existing.map((a) => a.id);
+  const targets = await windowsAgents(agentIds);
+  if (targets.found === 0) return null;
+  if (targets.windowsIds.length === 0) {
+    throw new QuarantineNotSupportedError("Quarantine is available for Windows endpoints only.");
+  }
+  const validIds = targets.windowsIds;
 
   const exceptions = await getAgentFirewallExceptions();
   if (exceptions.length === 0) {
@@ -145,14 +193,19 @@ export async function quarantineAgents(agentIds: string[], createdByAdminId: str
     createdByAdminId,
     bypassesPause: true,
   });
-  await prisma.agent.updateMany({ where: { id: { in: validIds } }, data: { quarantined: true } });
-  return { jobId };
+  return { jobId, skipped: targets.skipped };
 }
 
 export async function releaseAgents(agentIds: string[], createdByAdminId: string) {
-  const existing = await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true } });
-  if (existing.length === 0) return null;
-  const validIds = existing.map((a) => a.id);
+  const targets = await windowsAgents(agentIds);
+  if (targets.found === 0) return null;
+  // Linux/macOS endpoints were never actually isolated (older releases marked them anyway):
+  // just clear the mark.
+  if (targets.otherIds.length > 0) {
+    await prisma.agent.updateMany({ where: { id: { in: targets.otherIds } }, data: { quarantined: false } });
+  }
+  const validIds = targets.windowsIds;
+  if (validIds.length === 0) return { jobId: null, skipped: targets.skipped };
 
   const { jobId } = await createCommandJob({
     agentIds: validIds,
@@ -163,6 +216,57 @@ export async function releaseAgents(agentIds: string[], createdByAdminId: string
     createdByAdminId,
     bypassesPause: true,
   });
-  await prisma.agent.updateMany({ where: { id: { in: validIds } }, data: { quarantined: false } });
-  return { jobId };
+  return { jobId, skipped: targets.skipped };
+}
+
+// Called with every finished command result (command.service recordCommandResult): a
+// quarantine that reported QUARANTINED marks the endpoint quarantined, a release that reported
+// RELEASED clears it. A failed job leaves the mark as it was - a failed release means the
+// machine is still isolated, a failed quarantine means it never was.
+export async function recordQuarantineResult(
+  job: { script: string; bypassesPause: boolean },
+  agentId: string,
+  result: { status: string; stdout?: string | null },
+): Promise<void> {
+  if (!job.bypassesPause) return;
+  const kind = quarantineJobKind(job.script);
+  if (!kind) return;
+  const isRelease = kind === "RELEASE";
+  const isQuarantine = kind === "QUARANTINE";
+  if (result.status === "SUCCESS" && isRelease && result.stdout?.includes("RELEASED")) {
+    await prisma.agent.update({ where: { id: agentId }, data: { quarantined: false } });
+  } else if (result.status === "SUCCESS" && isQuarantine && result.stdout?.includes("QUARANTINED")) {
+    await prisma.agent.update({ where: { id: agentId }, data: { quarantined: true } });
+  }
+  // Open consoles refresh the endpoint right away - done, or failed - instead of on their
+  // next fallback poll.
+  emitInvalidate(["agents"]);
+}
+
+export type QuarantineActivity = { action: "QUARANTINE" | "RELEASE"; state: "PENDING" | "FAILED" };
+
+// The latest quarantine/release job per endpoint, when it's still waiting to run or failed -
+// so the console can show "Quarantining…", "Releasing…" or the failure instead of a mark that
+// doesn't match the machine. Absent when the latest one succeeded (the mark says it all).
+export async function getQuarantineActivity(agentIds?: string[]): Promise<Map<string, QuarantineActivity>> {
+  // Security-action jobs only (bypassesPause: quarantine, release, remote access, uninstall) -
+  // a small set; the scripts are encrypted, so which ones are quarantine jobs is decided here.
+  const tasks = await prisma.commandTask.findMany({
+    where: { ...(agentIds ? { agentId: { in: agentIds } } : {}), job: { bypassesPause: true } },
+    select: { agentId: true, status: true, job: { select: { id: true, createdAt: true, script: true } } },
+    orderBy: { job: { createdAt: "desc" } },
+  });
+  const kindByJob = new Map<string, ReturnType<typeof quarantineJobKind>>();
+  const out = new Map<string, QuarantineActivity>();
+  const seen = new Set<string>();
+  for (const t of tasks) {
+    if (seen.has(t.agentId)) continue; // newest first: only the latest quarantine/release counts
+    if (!kindByJob.has(t.job.id)) kindByJob.set(t.job.id, quarantineJobKind(t.job.script));
+    const action = kindByJob.get(t.job.id);
+    if (!action) continue;
+    seen.add(t.agentId);
+    if (t.status === "PENDING" || t.status === "DISPATCHED") out.set(t.agentId, { action, state: "PENDING" });
+    else if (t.status === "FAILED" || t.status === "TIMEOUT") out.set(t.agentId, { action, state: "FAILED" });
+  }
+  return out;
 }

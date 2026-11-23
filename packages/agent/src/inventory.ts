@@ -326,7 +326,9 @@ if ($null -eq $battery) {
   $fullChargeCapacity = $null
   $cycleCount = $null
   try {
-    $reportPath = Join-Path $env:TEMP "battery-report-$PID.xml"
+    # A random name: %TEMP% is C:\\Windows\\Temp for SYSTEM, where a user could prepare a
+    # predictable one (a process id is easy to guess) for powercfg to write through.
+    $reportPath = Join-Path $env:TEMP ('battery-report-' + [guid]::NewGuid().ToString('N') + '.xml')
     powercfg /batteryreport /xml /output $reportPath *> $null
     if (Test-Path $reportPath) {
       [xml]$xmlReport = Get-Content -Raw -Path $reportPath

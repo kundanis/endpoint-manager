@@ -17,6 +17,7 @@ import {
   useUpdateCommandTemplate,
 } from "../api/hooks";
 import type { CommandTemplateView } from "../api/types";
+import type { QuarantineDispatchResult } from "../api/hooks";
 import Collapsible from "../components/Collapsible";
 import EndpointLabel from "../components/EndpointLabel";
 import {
@@ -39,6 +40,7 @@ import {
   TaskCounts,
   TaskStatus,
   useConfirm,
+  useToast,
   usePagedList,
 } from "../components/ui";
 import { formatDateTime, pluralize } from "../format";
@@ -212,6 +214,7 @@ export default function CommandsPage() {
   const bulkQuarantine = useBulkQuarantine();
   const bulkRelease = useBulkRelease();
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -237,6 +240,14 @@ export default function CommandsPage() {
     setSelectedGroupIds((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
   }
 
+  // Quarantine is Windows only: say which Linux/macOS targets were left out.
+  function onQuarantineDispatched(result: QuarantineDispatchResult) {
+    if (result.jobId) setSelectedJobId(result.jobId);
+    if (result.skipped?.length) {
+      toast(`Skipped ${result.skipped.length} Linux/macOS endpoint(s) - quarantine is Windows only: ${result.skipped.join(", ")}`);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
@@ -250,7 +261,7 @@ export default function CommandsPage() {
       if (!confirmed) return;
       bulkQuarantine.mutate(
         { agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-        { onSuccess: (result) => setSelectedJobId(result.jobId) },
+        { onSuccess: onQuarantineDispatched },
       );
       return;
     }
@@ -264,7 +275,7 @@ export default function CommandsPage() {
       if (!confirmed) return;
       bulkRelease.mutate(
         { agentIds: selectedAgentIds, groupIds: selectedGroupIds },
-        { onSuccess: (result) => setSelectedJobId(result.jobId) },
+        { onSuccess: onQuarantineDispatched },
       );
       return;
     }

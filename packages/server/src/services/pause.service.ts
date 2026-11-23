@@ -1,5 +1,5 @@
 import { prisma } from "../db";
-import { quarantineAgents, releaseAgents } from "./quarantine.service";
+import { QuarantineNotSupportedError, quarantineAgents, releaseAgents } from "./quarantine.service";
 import { disableRemoteAccess, enableRemoteAccess } from "./remoteAccess.service";
 
 // Pausing does NOT stop the local Windows process, unlike quarantine/remote-access which
@@ -85,7 +85,11 @@ export async function resumeAgent(agentId: string, createdByAdminId: string): Pr
   });
 
   if (agent.pausedFromQuarantined) {
-    await quarantineAgents([agentId], createdByAdminId);
+    // A Linux/macOS endpoint marked quarantined by an older release was never isolated:
+    // nothing to put back.
+    await quarantineAgents([agentId], createdByAdminId).catch((err) => {
+      if (!(err instanceof QuarantineNotSupportedError)) throw err;
+    });
   }
   if (agent.pausedFromRemoteAccessEnabled && agent.pausedFromRemoteAccessAllowedIp) {
     await enableRemoteAccess(agentId, agent.pausedFromRemoteAccessAllowedIp, createdByAdminId);

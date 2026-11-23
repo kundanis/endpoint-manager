@@ -1,6 +1,7 @@
 import os from "node:os";
+import si from "systeminformation";
 import { execFileSync } from "node:child_process";
-import type { EnrollRequest, EnrollResponse } from "@em/shared";
+import { selectPrimaryNetworkInterface, type EnrollRequest, type EnrollResponse } from "@em/shared";
 import { agentConfig } from "./config";
 import { loadState, saveState } from "./state";
 import { publicClient } from "./httpClient";
@@ -13,6 +14,21 @@ function macOsProductVersion(): string {
   } catch {
     return os.release();
   }
+}
+
+// Hardware identity sent with enrollment so the server can tell a reinstall on this same
+// machine from someone else enrolling under this hostname (server enrollment.service.ts).
+// Same sources as inventory and check-in report, so the values match what the server has on
+// record. Best effort: enrollment never fails because these can't be read.
+async function hardwareIdentity(): Promise<{ serialNumber: string | null; macAddress: string | null }> {
+  let serialNumber: string | null = null;
+  try {
+    const system = await si.system();
+    serialNumber = system.serial && system.serial !== "0" ? system.serial.trim().slice(0, 100) : null;
+  } catch {
+    // leave null
+  }
+  return { serialNumber, macAddress: selectPrimaryNetworkInterface(os.networkInterfaces()).macAddress };
 }
 
 export async function ensureEnrolled(): Promise<{ agentId: string; apiKey: string }> {
@@ -34,6 +50,7 @@ export async function enroll(): Promise<{ agentId: string; apiKey: string }> {
     osVersion: macOsProductVersion(),
     osArch: process.arch,
     agentVersion: agentConfig.agentVersion,
+    ...(await hardwareIdentity()),
   };
 
   const { data } = await publicClient.post<EnrollResponse>("/api/agent/enroll", payload);

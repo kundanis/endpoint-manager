@@ -101,6 +101,14 @@ COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # fail with "exec ... no such file or directory").
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# The server runs as the image's unprivileged 'node' user. The entrypoint starts as root only
+# to hand root-owned data volumes from older releases to 'node' and stage the TLS
+# certificate, then drops privileges with setpriv (util-linux, already in the base image -
+# checked here so a base-image change fails the build, not a customer start).
+RUN command -v setpriv >/dev/null \
+ && mkdir -p /app/uploads \
+ && chown node:node /app/uploads
+
 # uploads (user content) and agent-installer (downloadable installers) persist via volumes.
 VOLUME ["/app/uploads"]
 EXPOSE 4000

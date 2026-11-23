@@ -110,7 +110,8 @@ class UsageTracker
 
         try
         {
-            AgentApi.Call("POST", "/usage", new Dictionary<string, object> { { "username", Environment.UserName }, { "items", items } });
+            // The user name is set by the agent, from the user its key belongs to (AgentApi).
+            AgentApi.Call("POST", "/usage", new Dictionary<string, object> { { "items", items } });
         }
         catch
         {

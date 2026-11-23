@@ -125,11 +125,27 @@ export async function scanForUpgrades(manager: PackageManager): Promise<ScannedU
   return packages.map((p) => ({ ...p, severity: securityNames.has(p.packageName) ? "HIGH" : null }));
 }
 
+// Package names arrive from the server inside patch updateIds and end up as root apt-get/dnf
+// arguments, so they must be plain names, never options ("-o APT::...", "--setopt=...") or
+// anything else. Debian policy: lowercase alphanumerics and + - . (starting alphanumeric),
+// plus an optional ":arch" qualifier. RPM: alphanumerics and . _ + - (not starting with - or .).
+const DEB_PACKAGE_NAME = /^[a-z0-9][a-z0-9+.-]*(:[a-z0-9]+)?$/;
+const RPM_PACKAGE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._+-]*$/;
+
+export function isValidPackageName(manager: PackageManager, name: string): boolean {
+  if (name.length === 0 || name.length > 255 || name.startsWith("-")) return false;
+  return (manager === "apt" ? DEB_PACKAGE_NAME : RPM_PACKAGE_NAME).test(name);
+}
+
 export function installUpdateCommand(manager: PackageManager, packageNames: string[]): { bin: string; args: string[] } {
+  const invalid = packageNames.filter((n) => !isValidPackageName(manager, n));
+  if (invalid.length > 0) throw new Error(`Refusing invalid package name(s): ${invalid.join(", ").slice(0, 300)}`);
+  // "--" ends option parsing (apt-get, dnf and yum all honour it), a second guard on top of
+  // the name check above.
   if (manager === "apt") {
     // --only-upgrade: refuse to freshly install a package that merely shares a name with
     // something not currently installed — this command only ever upgrades what's already there.
-    return { bin: "apt-get", args: ["install", "--only-upgrade", "-y", ...packageNames] };
+    return { bin: "apt-get", args: ["install", "--only-upgrade", "-y", "--", ...packageNames] };
   }
-  return { bin: manager, args: ["update", "-y", ...packageNames] };
+  return { bin: manager, args: ["update", "-y", "--", ...packageNames] };
 }

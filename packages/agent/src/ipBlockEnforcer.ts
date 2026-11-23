@@ -2,15 +2,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AxiosInstance } from "axios";
 import type { AssignedIpBlockResponse, IpBlockSyncResultPayload } from "@em/shared";
+import { psEscape } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
 
 const RULE_NAME_OUTBOUND = "EM-IPBLOCK-Outbound";
 const RULE_NAME_INBOUND = "EM-IPBLOCK-Inbound";
-
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
-}
 
 // Rewrites ONLY the two named rules this tool owns, from scratch, every sync — same
 // "exclusively owned, rewritten wholesale" discipline as Web Block's browser URLBlocklist

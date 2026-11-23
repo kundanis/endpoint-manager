@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import type { AxiosInstance } from "axios";
 import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlockSyncResultPayload } from "@em/shared";
 
@@ -8,7 +9,9 @@ import type { AssignedCommandBlockResponse, CommandBlockEventPayload, CommandBlo
 // Events tab. A command that finishes in less time than that can slip through.
 //
 // Never touched: PID 1, the agent itself and everything it started (deployments, scripts), and
-// anything run from the agent's own install folder. At most 30 kills a minute, as a backstop.
+// the agent's own service process (its bundled node running app/dist/index.js - identified by
+// the real executable path, never by command-line text, which any user can make say anything).
+// At most 30 kills a minute, as a backstop.
 
 const SCAN_MS = 250;
 const SYNC_MS = 20_000;
@@ -35,6 +38,33 @@ const seen = new Set<string>();
 const events: CommandBlockEventPayload[] = [];
 let kills: number[] = [];
 let lastError: string | null = null;
+
+// app/dist/../.. = the install root (/opt/endpointpro-agent).
+const INSTALL_DIR = (() => {
+  const dir = path.join(__dirname, "..", "..");
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+})();
+const AGENT_ENTRY = path.join(INSTALL_DIR, "app", "dist", "index.js");
+
+// The agent's own service process (e.g. a second instance during a restart): the kernel's
+// executable path is under the install folder AND it runs nothing but the agent entry point.
+// The bundled node is a general interpreter, so "exe under the install dir" alone is not
+// enough - `node -e ...` or `node evil.js` from there must still be blockable.
+function isAgentServiceProcess(pid: number): boolean {
+  try {
+    const exe = fs.readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, "");
+    if (!exe.startsWith(`${INSTALL_DIR}/`) || path.resolve(exe) !== exe) return false;
+    const argv = fs.readFileSync(`/proc/${pid}/cmdline`).toString("utf8").split("\0").filter(Boolean);
+    const args = argv.slice(1).filter((a) => a !== "--use-system-ca");
+    return args.length === 1 && path.resolve(INSTALL_DIR, args[0]) === AGENT_ENTRY;
+  } catch {
+    return false;
+  }
+}
 
 function readProcesses(): Proc[] {
   const out: Proc[] = [];
@@ -93,9 +123,9 @@ function scan(): void {
     alive.add(p.key);
     if (seen.has(p.key) && !recheckAll) continue;
     seen.add(p.key);
-    if (p.pid <= 1 || ownTree(p.pid) || /endpointpro/i.test(p.commandLine)) continue;
+    if (p.pid <= 1 || ownTree(p.pid)) continue;
     const rule = matchRule(p);
-    if (!rule) continue;
+    if (!rule || isAgentServiceProcess(p.pid)) continue;
     let closed = false;
     if (kills.length < MAX_KILLS_PER_MINUTE) {
       try {

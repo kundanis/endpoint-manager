@@ -204,6 +204,8 @@ export function useAdminUsers() {
   return useQuery({
     queryKey: ["adminUsers"],
     queryFn: () => api.get<AdminUserListItem[]>("/admin/admin-users"),
+    // Keeps the Signed in / Not signed in status current while the page is open.
+    refetchInterval: 30000,
   });
 }
 
@@ -476,7 +478,7 @@ export function useBulkQuarantine() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (params: { agentIds: string[]; groupIds: string[] }) =>
-      api.post<{ jobId: string }>("/admin/agents/quarantine-bulk", params),
+      api.post<QuarantineDispatchResult>("/admin/agents/quarantine-bulk", params),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
   });
 }
@@ -485,7 +487,7 @@ export function useBulkRelease() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (params: { agentIds: string[]; groupIds: string[] }) =>
-      api.post<{ jobId: string }>("/admin/agents/release-bulk", params),
+      api.post<QuarantineDispatchResult>("/admin/agents/release-bulk", params),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
   });
 }
@@ -983,7 +985,7 @@ export function useSetAgentLifecycle() {
 export function useQuarantineAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (agentId: string) => api.post<{ jobId: string }>(`/admin/agents/${agentId}/quarantine`),
+    mutationFn: (agentId: string) => api.post<QuarantineDispatchResult>(`/admin/agents/${agentId}/quarantine`),
     onSuccess: (_data, agentId) => {
       qc.invalidateQueries({ queryKey: ["agents"] });
       qc.invalidateQueries({ queryKey: ["agents", agentId] });
@@ -994,7 +996,7 @@ export function useQuarantineAgent() {
 export function useReleaseAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (agentId: string) => api.post<{ jobId: string }>(`/admin/agents/${agentId}/release`),
+    mutationFn: (agentId: string) => api.post<QuarantineDispatchResult>(`/admin/agents/${agentId}/release`),
     onSuccess: (_data, agentId) => {
       qc.invalidateQueries({ queryKey: ["agents"] });
       qc.invalidateQueries({ queryKey: ["agents", agentId] });
@@ -4245,4 +4247,11 @@ export function useThreatPolicySync(policyId: string | undefined) {
     enabled: !!policyId,
     refetchInterval: 15000,
   });
+}
+
+// jobId is null when nothing needed a job (a release of Linux/macOS endpoints only clears
+// their mark); skipped = Linux/macOS endpoints left out (quarantine is Windows only).
+export interface QuarantineDispatchResult {
+  jobId: string | null;
+  skipped?: string[];
 }

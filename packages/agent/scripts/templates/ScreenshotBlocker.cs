@@ -204,7 +204,7 @@ class ScreenshotBlocker
     void Blocked(string kind, string detail)
     {
         Dictionary<string, object> e = new Dictionary<string, object>();
-        e["username"] = Environment.UserName;
+        // No user name: the agent sets it, from the user its key belongs to (AgentApi).
         e["kind"] = kind;
         e["detail"] = detail;
         e["occurredAt"] = DateTime.UtcNow.ToString("o");

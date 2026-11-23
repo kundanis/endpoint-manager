@@ -1,8 +1,10 @@
 import fs from "node:fs";
+import http from "node:http";
 import https from "node:https";
 import { createApp } from "./app";
 import { config } from "./config";
 import { logger } from "./logger";
+import { plainHttpListener } from "./middleware/plainHttpListener";
 import { registerCallback } from "./services/licenseActivation.service";
 import { promoteScheduledPatchTasks } from "./services/patch.service";
 import { runAutoPatchPolicies } from "./services/autoPatchPolicy.service";
@@ -42,8 +44,11 @@ if (config.tlsPfxPath && config.tlsPfxPassphrase) {
     logger.info(`Server listening on https://localhost:${httpsPort}`);
   });
   if (config.tlsPort && config.tlsPort !== config.port) {
-    app.listen(config.port, () => {
-      logger.info(`Server also listening on http://localhost:${config.port} (agents)`);
+    // Agents only on plain HTTP: browser requests are redirected to HTTPS (see
+    // plainHttpListener.ts), so the console, login and admin API are never served unencrypted.
+    const redirectPort = config.httpsPublicPort ?? config.tlsPort;
+    http.createServer(plainHttpListener(app, redirectPort)).listen(config.port, () => {
+      logger.info(`Server also listening on http://localhost:${config.port} (agents only; browsers are sent to HTTPS port ${redirectPort})`);
     });
   }
 } else {

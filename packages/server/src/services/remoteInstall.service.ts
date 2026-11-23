@@ -2,7 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { StartRemoteInstallRequest } from "@em/shared";
+import { isValidRemoteInstallTarget, isValidRemoteInstallUsername, type StartRemoteInstallRequest } from "@em/shared";
 import { config } from "../config";
 import { prisma } from "../db";
 import { logger } from "../logger";
@@ -19,9 +19,51 @@ const MAX_STORED_OUTPUT_CHARS = 20_000;
 const PASSWORD_ENV_VAR = "EM_REMOTE_INSTALL_PW";
 const WINRM_PORT = 5985;
 
-function psEscape(value: string): string {
-  return value.replace(/'/g, "''");
+// Every variable value reaches the PowerShell scripts below through environment variables set
+// only on that one child process - never interpolated into the script text - so a target,
+// username, URL or token can't change what the script does, and the password / enrollment
+// token never appear in argv (process listings, execFile error messages). Each script reads
+// them and removes them from its environment straight away.
+const ENV = {
+  password: PASSWORD_ENV_VAR,
+  username: "EM_REMOTE_INSTALL_USER",
+  target: "EM_REMOTE_INSTALL_TARGET",
+  zipPath: "EM_REMOTE_INSTALL_ZIP",
+  serverUrl: "EM_REMOTE_INSTALL_SERVER_URL",
+  token: "EM_REMOTE_INSTALL_TOKEN",
+} as const;
+
+// Exported for tests.
+export const REMOTE_INSTALL_ENV = ENV;
+
+function readEnvLines(names: Record<string, string>): string {
+  return Object.entries(names)
+    .map(([psVar, envVar]) => `$${psVar} = $env:${envVar}; Remove-Item Env:\\${envVar} -ErrorAction SilentlyContinue`)
+    .join("\n");
 }
+
+export function redactSecrets(text: string, secrets: string[]): string {
+  let out = text;
+  for (const secret of secrets) if (secret) out = out.split(secret).join("[redacted]");
+  return out;
+}
+
+// Turns an execFile failure into text that's safe to store, return and log: execFile's own
+// error message (err.message / err.cmd) quotes the whole command line, so only the exit code,
+// whether it timed out and stderr are kept, with every secret redacted. Exported for tests.
+export function describeExecFailure(err: unknown, secrets: string[]): string {
+  const e = (err ?? {}) as { code?: unknown; killed?: boolean; signal?: unknown; stderr?: unknown };
+  const parts: string[] = [];
+  if (e.killed || e.signal) parts.push("PowerShell was stopped (timed out).");
+  else if (typeof e.code === "number") parts.push(`PowerShell exited with code ${e.code}.`);
+  else if (typeof e.code === "string") parts.push(`PowerShell could not be started (${e.code}).`);
+  else parts.push("PowerShell failed.");
+  const stderr = typeof e.stderr === "string" ? e.stderr.trim() : "";
+  if (stderr) parts.push(stderr);
+  return redactSecrets(parts.join("\n"), secrets);
+}
+
+class UnexpectedOutputError extends Error {}
 
 // Quick "is anything listening" check - much cheaper than attempting a full WinRM handshake
 // just to find out the port's closed. 3s is generous for a LAN target that's actually up.
@@ -59,29 +101,36 @@ function isPortOpen(host: string, port: number, timeoutMs = 3000): Promise<boole
 // set to Auto/Started by the two commands after it - only the listener never gets created,
 // so port 5985/5986 never opens even though the bootstrap process itself "ran" fine).
 // Confirmed for real against 10.10.6.207 (network profile "NetworkCategory=0"/Public).
-function buildWinrmBootstrapScript(target: string, username: string): string {
+function buildWinrmBootstrapScript(): string {
   return `
 $ErrorActionPreference = 'Stop'
-$securePw = ConvertTo-SecureString $env:${PASSWORD_ENV_VAR} -AsPlainText -Force
-$cred = New-Object System.Management.Automation.PSCredential('${psEscape(username)}', $securePw)
-$result = Invoke-WmiMethod -ComputerName '${psEscape(target)}' -Credential $cred -Class Win32_Process -Name Create -ArgumentList 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Enable-PSRemoting -Force -SkipNetworkProfileCheck; Set-Service WinRM -StartupType Automatic; Start-Service WinRM"'
+${readEnvLines({ pw: ENV.password, user: ENV.username, target: ENV.target })}
+$securePw = ConvertTo-SecureString $pw -AsPlainText -Force
+$pw = $null
+$cred = New-Object System.Management.Automation.PSCredential($user, $securePw)
+$result = Invoke-WmiMethod -ComputerName $target -Credential $cred -Class Win32_Process -Name Create -ArgumentList 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Enable-PSRemoting -Force -SkipNetworkProfileCheck; Set-Service WinRM -StartupType Automatic; Start-Service WinRM"'
 if ($result.ReturnValue -ne 0) { throw "WMI process creation returned code $($result.ReturnValue)" }
 Write-Output 'BOOTSTRAP_STARTED'
 `;
 }
 
 async function tryBootstrapWinrm(target: string, username: string, password: string): Promise<{ ok: boolean; detail: string }> {
-  const script = buildWinrmBootstrapScript(target, username);
+  const script = buildWinrmBootstrapScript();
   try {
     const { stdout } = await execFileAsync(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { timeout: WINRM_BOOTSTRAP_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: { ...process.env, [PASSWORD_ENV_VAR]: password } },
+      {
+        timeout: WINRM_BOOTSTRAP_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, [ENV.password]: password, [ENV.username]: username, [ENV.target]: target },
+      },
     );
-    if (!stdout.includes("BOOTSTRAP_STARTED")) return { ok: false, detail: `Unexpected bootstrap output: ${stdout.trim()}` };
+    if (!stdout.includes("BOOTSTRAP_STARTED")) {
+      return { ok: false, detail: `Unexpected bootstrap output: ${redactSecrets(stdout.trim(), [password])}` };
+    }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, detail: `WMI bootstrap failed: ${message}` };
+    return { ok: false, detail: `WMI bootstrap failed: ${describeExecFailure(err, [password])}` };
   }
 
   // Enable-PSRemoting + starting the service takes a few seconds on the target - poll
@@ -123,16 +172,18 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
 // The password never appears in this script text (and so never in argv/process listings) -
 // it's read from an environment variable set only on this one child process, then
 // immediately cleared inside the script itself as a second layer.
-function buildRemoteInstallScript(target: string, username: string, installerZipPath: string, serverUrl: string, enrollmentToken: string): string {
+// Exported for tests.
+export function buildRemoteInstallScript(): string {
   return `
 $ErrorActionPreference = 'Stop'
-$securePw = ConvertTo-SecureString $env:${PASSWORD_ENV_VAR} -AsPlainText -Force
-Remove-Item Env:\\${PASSWORD_ENV_VAR} -ErrorAction SilentlyContinue
-$cred = New-Object System.Management.Automation.PSCredential('${psEscape(username)}', $securePw)
+${readEnvLines({ pw: ENV.password, user: ENV.username, target: ENV.target, zipPath: ENV.zipPath, serverUrl: ENV.serverUrl, token: ENV.token })}
+$securePw = ConvertTo-SecureString $pw -AsPlainText -Force
+$pw = $null
+$cred = New-Object System.Management.Automation.PSCredential($user, $securePw)
 
-$session = New-PSSession -ComputerName '${psEscape(target)}' -Credential $cred -ErrorAction Stop
+$session = New-PSSession -ComputerName $target -Credential $cred -ErrorAction Stop
 try {
-  Copy-Item -Path '${psEscape(installerZipPath)}' -Destination 'C:\\Windows\\Temp\\EndpointProAgentInstaller.zip' -ToSession $session -Force
+  Copy-Item -LiteralPath $zipPath -Destination 'C:\\Windows\\Temp\\EndpointProAgentInstaller.zip' -ToSession $session -Force
 
   Invoke-Command -Session $session -ScriptBlock {
     param($ServerUrl, $Token)
@@ -176,7 +227,7 @@ try {
       Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
       Remove-Item -Path 'C:\\Windows\\Temp\\EndpointProAgentInstaller.zip' -Force -ErrorAction SilentlyContinue
     }
-  } -ArgumentList '${psEscape(serverUrl)}', '${psEscape(enrollmentToken)}'
+  } -ArgumentList $serverUrl, $token
 
   Write-Output 'INSTALLED'
 } finally {
@@ -214,7 +265,8 @@ async function runOneTarget(taskId: string, target: string, username: string, pa
     logger.info({ target }, "WinRM auto-bootstrapped via WMI for remote install");
   }
 
-  const script = buildRemoteInstallScript(target, username, config.agentInstallerZipPath, serverUrl, enrollmentToken);
+  const script = buildRemoteInstallScript();
+  const secrets = [password, enrollmentToken];
 
   try {
     const { stdout } = await execFileAsync(
@@ -223,26 +275,32 @@ async function runOneTarget(taskId: string, target: string, username: string, pa
       {
         timeout: PER_TARGET_TIMEOUT_MS,
         maxBuffer: 5 * 1024 * 1024,
-        env: { ...process.env, [PASSWORD_ENV_VAR]: password },
+        env: {
+          ...process.env,
+          [ENV.password]: password,
+          [ENV.username]: username,
+          [ENV.target]: target,
+          [ENV.zipPath]: config.agentInstallerZipPath,
+          [ENV.serverUrl]: serverUrl,
+          [ENV.token]: enrollmentToken,
+        },
       },
     );
-    if (!stdout.includes("INSTALLED")) throw new Error(`Unexpected output: ${stdout.trim()}`);
+    if (!stdout.includes("INSTALLED")) throw new UnexpectedOutputError(`Unexpected output: ${stdout.trim()}`);
 
     await prisma.remoteInstallTask.update({
       where: { id: taskId },
-      data: { status: "SUCCESS", output: truncate(stdout), completedAt: new Date() },
+      data: { status: "SUCCESS", output: truncate(redactSecrets(stdout, secrets)), completedAt: new Date() },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    // execFile's error on a non-zero exit / timeout carries partial stdout/stderr on the
-    // error object itself (Node's ExecFileException) - surface it, it's usually the only
-    // clue to what actually failed on the remote end (bad credential, WinRM unreachable,
-    // AV blocking the installer, etc).
-    const stderrText = (err as { stderr?: string })?.stderr ?? "";
-    logger.error({ err, target }, "Remote install failed for target");
+    // stderr (and the exit code) are usually the only clue to what failed on the remote end
+    // (bad credential, WinRM unreachable, AV blocking the installer, etc) - keep those, but
+    // never execFile's own message, which quotes the command line (see describeExecFailure).
+    const detail = err instanceof UnexpectedOutputError ? redactSecrets(err.message, secrets) : describeExecFailure(err, secrets);
+    logger.error({ target, detail: truncate(detail) }, "Remote install failed for target");
     await prisma.remoteInstallTask.update({
       where: { id: taskId },
-      data: { status: "FAILED", errorMessage: truncate(`${message}\n${stderrText}`.trim()), completedAt: new Date() },
+      data: { status: "FAILED", errorMessage: truncate(detail), completedAt: new Date() },
     });
   }
 }
@@ -255,6 +313,25 @@ async function runRemoteInstallJob(jobId: string, tasks: { id: string; target: s
   await runWithConcurrency(tasks, CONCURRENCY_LIMIT, (task) =>
     runOneTarget(task.id, task.target, username, password, serverUrl, enrollmentToken),
   );
+}
+
+// A target, username or server address the request schema should already have refused.
+// Extends RemoteInstallAccountError so the route answers 400 with the message.
+export class RemoteInstallInputError extends RemoteInstallAccountError {}
+
+// install.ps1 takes a comma-separated list of http(s) URLs. Exported for tests.
+export function isValidServerUrlList(value: string): boolean {
+  if (!value || value.length > 2000) return false;
+  return value.split(",").every((raw) => {
+    const part = raw.trim();
+    if (/[\s'"`$;]/.test(part)) return false;
+    try {
+      const u = new URL(part);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  });
 }
 
 export async function startRemoteInstall(
@@ -270,6 +347,10 @@ export async function startRemoteInstall(
 
   // Dedupe targets a careless paste might repeat - each still only needs one install attempt.
   const targets = Array.from(new Set(payload.targets.map((t) => t.trim()).filter(Boolean)));
+  // The request schema already checks these; re-checked here because this is what reaches
+  // PowerShell (and a saved account's username comes from the database, not the request).
+  const badTarget = targets.find((t) => !isValidRemoteInstallTarget(t));
+  if (badTarget !== undefined) throw new RemoteInstallInputError(`"${badTarget.slice(0, 100)}" is not a valid IP address or host name.`);
 
   // No account typed: use the remote install account saved in Asset settings. Checked before
   // any token is minted, so a missing account doesn't leave a stray token behind.
@@ -283,6 +364,9 @@ export async function startRemoteInstall(
       );
     }
     ({ username, password } = saved);
+  }
+  if (!isValidRemoteInstallUsername(username)) {
+    throw new RemoteInstallInputError("The admin username must look like DOMAIN\\user, .\\user, user or user@domain.");
   }
 
   // Callers that already have a token in hand (Enrollment Tokens page, right after creating
@@ -312,6 +396,7 @@ export async function startRemoteInstall(
   // them all to config.json so the agent can fail over between them. The browser-supplied
   // URL is only a fallback for a server with no address configured or detectable.
   const serverUrl = (await getAgentServerUrls()).join(",") || payload.serverUrl;
+  if (!isValidServerUrlList(serverUrl)) throw new RemoteInstallInputError("The server address must be one or more http(s) URLs.");
 
   const job = await prisma.remoteInstallJob.create({
     data: {

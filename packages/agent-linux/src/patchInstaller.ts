@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { PatchInstallResultPayload, PatchTaskWire } from "@em/shared";
-import { detectPackageManager, installUpdateCommand, scanForUpgrades } from "./packageManager";
-import { buildUpdateId } from "./patchScanner";
+import { detectPackageManager, installUpdateCommand, isValidPackageName, scanForUpgrades } from "./packageManager";
+import { lastScannedPackageNames, rememberScan } from "./patchScanner";
 
 const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 30 * 60 * 1000; // downloads + install can genuinely take a while
@@ -45,11 +45,29 @@ export async function installPatches(task: PatchTaskWire): Promise<PatchInstallR
   // built for a different manager (shouldn't normally happen; see comment in
   // packageManager.ts) is reported not-found rather than attempted, mirroring the Windows
   // agent's own handling of a no-longer-offered updateId.
+  // Package names become root apt-get/dnf arguments: only well-formed names that this
+  // endpoint's own latest scan reported upgradable are acted on (a fresh scan if none ran in
+  // this process yet). Anything else is reported not-found, never passed to the tool.
+  let upgradable = lastScannedPackageNames(manager);
+  if (!upgradable) {
+    try {
+      const scanned = await scanForUpgrades(manager);
+      rememberScan(manager, scanned.map((u) => u.packageName));
+      upgradable = new Set(scanned.map((u) => u.packageName));
+    } catch {
+      upgradable = new Set();
+    }
+  }
   const targets: { updateId: string; packageName: string }[] = [];
   const notFound: string[] = [];
   for (const updateId of task.updateIds) {
     const parsed = parseUpdateId(updateId);
-    if (!parsed || parsed.manager !== manager) {
+    if (
+      !parsed ||
+      parsed.manager !== manager ||
+      !isValidPackageName(manager, parsed.packageName) ||
+      !upgradable.has(parsed.packageName)
+    ) {
       notFound.push(updateId);
       continue;
     }
@@ -99,6 +117,7 @@ export async function installPatches(task: PatchTaskWire): Promise<PatchInstallR
   try {
     const rescanned = await scanForUpgrades(manager);
     stillUpgradable = new Set(rescanned.map((u) => u.packageName));
+    rememberScan(manager, [...stillUpgradable]);
   } catch {
     // Rescan failing doesn't mean the install failed — fall back to assuming success for
     // everything the batch command didn't throw on, same optimistic default the batch

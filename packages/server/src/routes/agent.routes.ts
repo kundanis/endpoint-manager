@@ -3,6 +3,7 @@ import { recordReport as recordScreenshotBlockReport, resolveAssignedForAgent as
 import { storeImage as storeScreenCaptureImage } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
 import express, { Router } from "express";
+import rateLimit from "express-rate-limit";
 import {
   agentUpdateStatusPayloadSchema,
   appControlScanResultPayloadSchema,
@@ -162,15 +163,35 @@ agentRouter.post("/network-scans/tasks/:taskId/result", async (req, res, next) =
   }
 });
 
+// How long after a deployment task finished its agent may still fetch the package (a retry
+// or a slow installer re-reading it).
+const PACKAGE_DOWNLOAD_GRACE_MS = 24 * 60 * 60 * 1000;
+
 agentRouter.get("/packages/:packageId/download", async (req, res, next) => {
   try {
-    const pkg = await getPackageRecord(req.params.packageId);
+    // Only a package actually deployed to THIS agent - an enrolled agent's key must not be a
+    // way to pull every installer uploaded to the server (they can carry licence keys or
+    // internal software). Same 404 as a missing package, so ids can't be probed.
+    const task = await prisma.deploymentTask.findFirst({
+      where: {
+        agentId: req.agentId!,
+        job: { packageId: req.params.packageId },
+        OR: [
+          { status: { notIn: ["SUCCESS", "FAILED"] } },
+          { completedAt: { gte: new Date(Date.now() - PACKAGE_DOWNLOAD_GRACE_MS) } },
+        ],
+      },
+      select: { id: true },
+    });
+    const pkg = task ? await getPackageRecord(req.params.packageId) : null;
     if (!pkg || !fs.existsSync(pkg.storagePath)) {
       return res.status(404).json({ error: "Package not found" });
     }
 
+    // res.attachment builds Content-Disposition with RFC 5987 encoding (filename*=UTF-8''...),
+    // so a name with quotes, CR/LF or non-ASCII characters can't break or inject headers.
+    res.attachment(pkg.filename);
     res.setHeader("Content-Type", "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${pkg.filename}"`);
     res.setHeader("Content-Length", String(pkg.fileSizeBytes));
 
     const stream = fs.createReadStream(pkg.storagePath);
@@ -572,7 +593,18 @@ agentRouter.post("/usb-control/events", async (req, res, next) => {
 // agent's own persisted apiKey (from state.json) to make this call, so no separate
 // credential needs distributing just to gate uninstall. Fails closed at the caller if this
 // request can't be made at all (offline) - deliberate, per the tamper-resistance design.
-agentRouter.post("/verify-uninstall-password", async (req, res, next) => {
+// Per agent, not per address: many agents can share one NAT address, and the password is
+// one secret for the whole fleet - so each agent key gets a handful of guesses only.
+const uninstallPasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `agent:${req.agentId}`,
+  message: { error: "Too many uninstall password attempts from this endpoint. Try again in 15 minutes." },
+});
+
+agentRouter.post("/verify-uninstall-password", uninstallPasswordRateLimiter, async (req, res, next) => {
   try {
     const payload = verifyUninstallPasswordRequestSchema.parse(req.body);
     const valid = await verifyUninstallPassword(payload.password);

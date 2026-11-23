@@ -62,6 +62,7 @@ export async function handleCheckin(
   if (agent?.paused) {
     const bypassCommands = await prisma.commandTask.findMany({
       where: { agentId, status: "PENDING", job: { bypassesPause: true } },
+      orderBy: { job: { createdAt: "asc" } }, // in the order the admin gave them
       include: { job: true },
     });
     if (bypassCommands.length > 0) {
@@ -88,9 +89,14 @@ export async function handleCheckin(
     };
   }
 
+  // The agent runs these one after another, in this order. Security actions (quarantine,
+  // release, remote access, uninstall) go first, so an endpoint coming back online is
+  // quarantined straight away rather than after whatever else queued up while it was offline;
+  // within each kind, oldest first (a quarantine then a release run in the order given).
   const pendingCommands = await prisma.commandTask.findMany({
     where: { agentId, status: "PENDING" },
     include: { job: true },
+    orderBy: [{ job: { bypassesPause: "desc" } }, { job: { createdAt: "asc" } }],
   });
   const pendingDeployments = await prisma.deploymentTask.findMany({
     where: { agentId, status: "PENDING" },

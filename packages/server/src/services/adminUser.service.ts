@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import type { AdminGrantKey, AdminRole, CreateAdminUserRequest, UpdateAdminUserRequest } from "@em/shared";
 import { prisma } from "../db";
+import { SESSION_IDLE_MS } from "./adminSession.service";
 
 export class EmailAlreadyExistsError extends Error {}
 export class AdminUserNotFoundError extends Error {}
@@ -31,12 +32,36 @@ async function countSuperAdmins(excludingId?: string): Promise<number> {
   });
 }
 
+// "::ffff:10.0.0.5" (an IPv4 address on a dual-stack socket) shown as "10.0.0.5".
+function displayIp(ip: string | null): string | null {
+  return ip?.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, "") ?? null;
+}
+
+// Each admin with the console sessions that are signed in right now - the same rule sign-in
+// and every request use (adminSession.service touchSession / auth.service sameRightsHolder):
+// not signed out, under 12 hours, and used in the last 30 minutes. The same account signed in
+// from two browsers has two sessions, each with its own address.
 export async function listAdminUsers() {
+  const now = Date.now();
   const admins = await prisma.adminUser.findMany({
     orderBy: { createdAt: "asc" },
-    include: { moduleGrants: { select: { moduleKey: true } } },
+    include: {
+      moduleGrants: { select: { moduleKey: true } },
+      sessions: {
+        where: { revokedAt: null, expiresAt: { gt: new Date(now) }, lastSeenAt: { gt: new Date(now - SESSION_IDLE_MS) } },
+        select: { ipAddress: true, createdAt: true, lastSeenAt: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
-  return admins.map(serialize);
+  return admins.map((admin) => ({
+    ...serialize(admin),
+    activeSessions: admin.sessions.map((s) => ({
+      ipAddress: displayIp(s.ipAddress),
+      signedInAt: s.createdAt.toISOString(),
+      lastSeenAt: s.lastSeenAt.toISOString(),
+    })),
+  }));
 }
 
 export async function createAdminUser(params: CreateAdminUserRequest, createdByAdminId: string) {

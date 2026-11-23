@@ -31,8 +31,13 @@ if [[ -f "$CONFIG_PATH" && -f "$STATE_PATH" ]]; then
   if [[ -n "$SERVER_URL" && -n "$AGENT_ID" && -n "$API_KEY" ]]; then
     CURL_CA=()
     [[ -f "$CA_PATH" ]] && CURL_CA=(--cacert "$CA_PATH")
+    # Headers go through a root-only file (curl -H @file, 7.55+), not the command line, where
+    # any local user could read the agent key from the process list.
+    HEADER_FILE="$(umask 077 && mktemp)"
+    printf 'X-Agent-Id: %s\nX-Agent-Key: %s\n' "$AGENT_ID" "$API_KEY" > "$HEADER_FILE"
     curl -s -m 10 "${CURL_CA[@]+"${CURL_CA[@]}"}" -X POST "$SERVER_URL/api/agent/uninstalled" \
-      -H "X-Agent-Id: $AGENT_ID" -H "X-Agent-Key: $API_KEY" >/dev/null 2>&1 || true
+      -H "@$HEADER_FILE" >/dev/null 2>&1 || true
+    rm -f "$HEADER_FILE"
   fi
 fi
 

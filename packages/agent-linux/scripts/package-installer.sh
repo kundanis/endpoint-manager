@@ -127,7 +127,10 @@ chmod +x "$STAGING_ROOT/install.sh" "$STAGING_ROOT/uninstall.sh"
 echo "Building tarball..."
 TARBALL_PATH="$DIST_INSTALLER_DIR/EndpointProAgentLinux.tar.gz"
 rm -f "$TARBALL_PATH"
-tar -czf "$TARBALL_PATH" -C "$STAGING_ROOT" .
+# Entries are owned by root (0:0), not this Windows user's UID (e.g. 197613): root extracting
+# with owners preserved would otherwise hand the install tree to whatever local account has
+# that UID. go-w for the same reason (the agent and install.sh also refuse/repair it).
+tar --owner=0 --group=0 --numeric-owner --mode=go-w -czf "$TARBALL_PATH" -C "$STAGING_ROOT" .
 
 # This exact tarball (config.json/.state are never staged into it - see above) doubles as
 # the self-update payload: the server streams it as-is from

@@ -79,7 +79,7 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
         steps: [
           { route: "/user-risk/settings", text: "Open Rules & settings and scroll to Email notifications.", target: { kind: "tab", label: "Rules & settings" } },
           { text: "Tick Send email notifications, add recipients and choose which severities to email." },
-          { text: "Enter your mail server (SMTP) details, select Save email settings, then Send test email." },
+          { text: "Enter your mail server (SMTP) details, select Save email settings, then Send test email. If you change the server, port or username, enter the password again. A login is only sent over an encrypted connection, so the server must support TLS or STARTTLS." },
         ],
       },
       {
@@ -169,8 +169,17 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     path: "/admin-users",
     superAdminOnly: true,
     summary: "Who can sign in to the console, as admin or super admin, and which modules each admin can use.",
-    keywords: ["users", "roles", "access", "permissions", "password reset", "signed in", "one at a time", "concurrent sign-in", "can't sign in"],
+    keywords: ["users", "roles", "access", "permissions", "password reset", "signed in", "one at a time", "concurrent sign-in", "can't sign in", "status", "online", "ip address", "who is logged in"],
     sections: [
+      {
+        title: "Who Is Signed In Now",
+        items: [
+          "The Status column shows a green Signed in for each administrator who is using the console now, with the IP address they signed in from and how long ago.",
+          "When the same account is signed in from more than one place, for example the same super admin on two computers, it shows how many places and every IP address.",
+          "A red Not signed in means the administrator has no session in use. A session counts as signed in until the person signs out, or for 30 minutes after its last use (for example after the browser was closed), and for at most 12 hours.",
+          "The page updates every 30 seconds. Point at an address to see when that session started and when it was last used.",
+        ],
+      },
       {
         title: "One Person per Role at a Time",
         items: [

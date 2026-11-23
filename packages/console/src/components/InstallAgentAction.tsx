@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Download } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useAgentSecurityStatus, useEnrollmentTokens, useRemoteInstallJob, useStartRemoteInstall } from "../api/hooks";
+import { useAgentSecurityStatus, useEnrollmentTokens, useMe, useRemoteInstallJob, useStartRemoteInstall } from "../api/hooks";
 import RemoteInstallStatusTable from "./RemoteInstallStatusTable";
 import { Button } from "./ui";
 
@@ -25,7 +25,10 @@ export default function InstallAgentAction({ hostname, ipAddress }: { hostname: 
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const { data: job } = useRemoteInstallJob(jobId);
   const { data: security } = useAgentSecurityStatus();
-  const savedAccount = security?.remoteInstallUsername ?? null;
+  // Only super admins may install with the saved account (the server refuses it for anyone
+  // else), so everyone else always types one.
+  const { data: me } = useMe();
+  const savedAccount = me?.role === "SUPER_ADMIN" ? (security?.remoteInstallUsername ?? null) : null;
   const typing = !savedAccount || useOther;
   // Group: only groups with an active enrollment token (not revoked or expired, uses left, value
   // kept). Picking one installs with that token, so the device joins its group. "No group" keeps

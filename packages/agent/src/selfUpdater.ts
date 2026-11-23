@@ -7,6 +7,7 @@ import type { AxiosInstance } from "axios";
 import type { AgentUpdateStatusPayload, AgentUpdateTaskWire } from "@em/shared";
 import { agentConfig } from "./config";
 import { getServerUrl } from "./httpClient";
+import { ensureSecureDir, psEscape, writeWorkFile } from "./secureFs";
 
 const execFileAsync = promisify(execFile);
 
@@ -33,8 +34,8 @@ function getInstallDir(): string {
 
 async function downloadUpdatePackage(client: AxiosInstance, task: AgentUpdateTaskWire): Promise<string> {
   const downloadsDir = path.join(agentConfig.stateDir, "downloads");
-  fs.mkdirSync(downloadsDir, { recursive: true });
-  const destPath = path.join(downloadsDir, `agent-update-${task.id}.zip`);
+  await ensureSecureDir(downloadsDir, { resetChildren: true });
+  const destPath = path.join(downloadsDir, `agent-update-${path.basename(String(task.id))}.zip`);
 
   const response = await client.get("/api/agent/self-update/package", { responseType: "stream" });
   await new Promise<void>((resolve, reject) => {
@@ -96,13 +97,13 @@ function buildHelperTaskXml(helperScriptPath: string, startBoundary: string): st
 export async function registerOneTimeTask(taskName: string, helperScriptPath: string, delayMs = 20_000): Promise<void> {
   const startBoundary = localIsoNoTimezone(new Date(Date.now() + delayMs));
   const taskXml = buildHelperTaskXml(helperScriptPath, startBoundary);
-  const taskXmlPath = path.join(process.env.TEMP ?? getInstallDir(), `${taskName}_${Date.now()}.xml`);
 
   // schtasks requires a BOM to correctly detect UTF-16LE (matching the XML's own
   // <?xml encoding="UTF-16"?> declaration) — Node's "utf16le" encoding alone writes raw
   // UTF-16LE bytes with no BOM, which schtasks misparses entirely. Same fix already proven
-  // in watchdogGuard.ts.
-  fs.writeFileSync(taskXmlPath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(taskXml, "utf16le")]));
+  // in watchdogGuard.ts. In the locked work folder, never %TEMP% (C:\Windows\Temp for SYSTEM,
+  // where a user could swap the definition of a task that runs as SYSTEM).
+  const taskXmlPath = await writeWorkFile(taskName, ".xml", Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(taskXml, "utf16le")]));
   try {
     await execFileAsync("schtasks", ["/create", "/tn", taskName, "/xml", taskXmlPath, "/f"]);
   } finally {
@@ -110,21 +111,67 @@ export async function registerOneTimeTask(taskName: string, helperScriptPath: st
   }
 }
 
+// The same lock register-service.ps1 (Lock-AgentFolder) applies - keep the two in step. The
+// install folder is owned by SYSTEM, SYSTEM has full control and administrators read access,
+// nothing is inherited from ProgramData (where users may create files), and everything inside
+// inherits only that - so no file or permission a user added survives. A junction or link put in
+// place of the folder (or of ProgramData\EndpointPro) is removed, never followed. The tray app's
+// and the launch blocker's folders are also readable by users (both run as the signed-in user).
+export const LOCK_INSTALL_DIR_PS = String.raw`
+function Set-FolderAcl($path, $sddl) {
+  $acl = New-Object System.Security.AccessControl.DirectorySecurity
+  $acl.SetSecurityDescriptorSddlForm($sddl, [System.Security.AccessControl.AccessControlSections]::Access)
+  [System.IO.Directory]::SetAccessControl($path, $acl)
+}
+function Lock-AgentFolder([switch]$AdminWrite) {
+  $root = Split-Path $installDir
+  foreach ($d in @($root, $installDir)) {
+    $item = Get-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+    if ($item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $item.PSIsContainer)) {
+      if ($item.PSIsContainer) { [IO.Directory]::Delete($d, $false) } else { [IO.File]::Delete($d) }
+    }
+    if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+  }
+  # Owned by Administrators first (only the owner, no permission changes), so the permissions
+  # below can be set whatever they were; SYSTEM becomes the owner at the end.
+  & takeown.exe /F $root /A 2>$null | Out-Null
+  & takeown.exe /F $installDir /R /A /D Y 2>$null | Out-Null
+  Set-FolderAcl $root 'D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)'
+  # Administrators: full control only while an administrator copies files in (install.ps1).
+  Set-FolderAcl $installDir $(if ($AdminWrite) { 'D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)' } else { 'D:PAI(A;OICI;FA;;;SY)(A;OICI;0x1200a9;;;BA)' })
+  if (@(Get-ChildItem -LiteralPath $installDir -Force).Count -gt 0) { & icacls.exe (Join-Path $installDir '*') /reset /T /C /Q 2>$null | Out-Null }
+  foreach ($sub in @('tray', 'app\blocker')) {
+    $p = Join-Path $installDir $sub
+    if (Test-Path -LiteralPath $p) { & icacls.exe $p /grant '*S-1-5-32-545:(OI)(CI)RX' /C /Q 2>$null | Out-Null }
+  }
+  & icacls.exe $root /setowner '*S-1-5-18' /C /Q 2>$null | Out-Null
+  & icacls.exe $installDir /setowner '*S-1-5-18' /T /C /Q 2>$null | Out-Null
+}
+`;
+
 // The detached helper's own script — stops the watchdog and the agent service (which kills
 // this very process) and the tray app (its files are in use), extracts the already-downloaded,
 // checksum-verified zip directly over the install root, re-registers and starts the service
 // (register-service.ps1 also puts the folder permissions back), then self-reports the real terminal result using the
 // agent's own state.json credentials (untouched by the extract — see package-installer.ps1,
-// config.json/.state are never part of this zip). Mirrors update.ps1's proactive
-// takeown/icacls fix for the same ownership-mismatch class of Access Denied error already
-// hit twice this session on real customer machines.
+// config.json/.state are never part of this zip). Lock-AgentFolder takes ownership of
+// everything first (the ownership-mismatch class of Access Denied error already hit twice on
+// real customer machines) without ever opening the folder to users.
+//
+// Every value is put in single quotes (psEscape): the server address and task id come from the
+// server, and inside double quotes PowerShell would run any $(...) in them as SYSTEM.
+//
+// The folder is never reset to the permissions it would inherit from ProgramData (which let
+// users create files) - LOCK_INSTALL_DIR_PS keeps it locked while the files are swapped.
 function buildHelperScript(params: { installDir: string; zipPath: string; taskId: string; serverUrl: string }): string {
   const { installDir, zipPath, taskId, serverUrl } = params;
+  const statusUrl = `${serverUrl}/api/agent/self-update/tasks/${encodeURIComponent(taskId)}/status`;
   return [
     `$ErrorActionPreference = 'SilentlyContinue'`,
-    `$installDir = "${installDir}"`,
-    `$zipPath = "${zipPath}"`,
-    `$statePath = Join-Path $installDir "app\\.state\\state.json"`,
+    `$installDir = '${psEscape(installDir)}'`,
+    `$zipPath = '${psEscape(zipPath)}'`,
+    `$statePath = Join-Path $installDir 'app\\.state\\state.json'`,
+    LOCK_INSTALL_DIR_PS,
     ``,
     // Retried up to 3 times (5s apart) — this is the ONLY place SUCCESS/FAILED ever gets
     // reported (see processAgentUpdate's own comment), so losing it here to one transient
@@ -138,7 +185,7 @@ function buildHelperScript(params: { installDir: string; zipPath: string; taskId
     `  $body = @{ status = $status; message = $message } | ConvertTo-Json`,
     `  for ($i = 1; $i -le 3; $i++) {`,
     `    try {`,
-    `      Invoke-RestMethod -Uri "${serverUrl}/api/agent/self-update/tasks/${taskId}/status" -Method Post -TimeoutSec 15 ` +
+    `      Invoke-RestMethod -Uri '${psEscape(statusUrl)}' -Method Post -TimeoutSec 15 ` +
       `-ContentType "application/json" -Body $body ` +
       `-Headers @{ "X-Agent-Id" = $agentState.agentId; "X-Agent-Key" = $agentState.apiKey } | Out-Null`,
     `      break`,
@@ -156,10 +203,11 @@ function buildHelperScript(params: { installDir: string; zipPath: string; taskId
     `taskkill /IM EndpointIQTray.exe /F 2>$null | Out-Null`,
     `Start-Sleep -Seconds 3`,
     ``,
+    // SYSTEM already has full control of the locked folder; this only makes sure nothing in it
+    // belongs to anyone else before the new files go in.
+    `Lock-AgentFolder`,
     `try {`,
     `  $ErrorActionPreference = 'Stop'`,
-    `  takeown /F $installDir /R /D Y 2>$null | Out-Null`,
-    `  icacls $installDir /reset /T /Q 2>$null | Out-Null`,
     `  Expand-Archive -Path $zipPath -DestinationPath $installDir -Force`,
     `  Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue`,
     `  Report-Status "SUCCESS" $null`,
@@ -169,7 +217,7 @@ function buildHelperScript(params: { installDir: string; zipPath: string; taskId
     `$ErrorActionPreference = 'SilentlyContinue'`,
     ``,
     // The service starts the tray app again in every signed-in session.
-    `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir "register-service.ps1")`,
+    `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'register-service.ps1')`,
     `schtasks /change /tn "${WATCHDOG_TASK_NAME}" /enable 2>$null | Out-Null`,
     ``,
     `schtasks /delete /tn "${HELPER_TASK_NAME}" /f 2>$null | Out-Null`,
@@ -216,14 +264,14 @@ export async function processAgentUpdate(
 
     await reportStatus({ status: "APPLYING" });
 
-    const helperScriptPath = path.join(process.env.TEMP ?? installDir, `${HELPER_TASK_NAME}.ps1`);
     const helperScript = buildHelperScript({
       installDir,
       zipPath,
       taskId: task.id,
       serverUrl: getServerUrl(),
     });
-    fs.writeFileSync(helperScriptPath, helperScript, "ascii");
+    // Runs as SYSTEM: written to the locked work folder under a new random name, never %TEMP%.
+    const helperScriptPath = await writeWorkFile(HELPER_TASK_NAME, ".ps1", helperScript, "utf8");
 
     await registerOneTimeTask(HELPER_TASK_NAME, helperScriptPath);
 

@@ -180,6 +180,13 @@ async function seedCommandTemplates(createdByAdminId: string) {
 async function main() {
   const email = process.env.ADMIN_EMAIL ?? "admin@local";
   const password = process.env.ADMIN_PASSWORD ?? "changeme";
+  // Production must never create the first super admin with a guessable password: refused
+  // below (only when the account is actually created) if ADMIN_PASSWORD is missing or weak.
+  const weakProductionPassword =
+    process.env.NODE_ENV === "production" &&
+    (!process.env.ADMIN_PASSWORD ||
+      ["changeme", "ch4ngeme_admin!"].includes(password.trim().toLowerCase()) || // the .env.example values
+      password.length < 12);
 
   let adminId: string;
   const existingAdmin = await prisma.adminUser.findUnique({ where: { email } });
@@ -197,6 +204,9 @@ async function main() {
       console.log(`Promoted ${email} to SUPER_ADMIN (no super admin existed yet).`);
     }
   } else {
+    if (weakProductionPassword) {
+      throw new Error("ADMIN_PASSWORD is missing, an example value or shorter than 12 characters - set a strong ADMIN_PASSWORD to create the first administrator.");
+    }
     const passwordHash = await bcrypt.hash(password, 10);
     // The bootstrap admin must be a super admin - otherwise no account could ever create
     // the first super admin (or any other admin at all) post-install.
