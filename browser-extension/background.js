@@ -1,4 +1,4 @@
-// Endpoint IQ Mail Guard - service worker. The content script (gmail.js) can't call the server
+// Endpoint IQ Browser Guard - service worker (email: Mail Guard; AI websites: AI Guard, further down). The content script (gmail.js) can't call the server
 // itself (Gmail's page rules and mixed-content blocking apply to it), so every server call goes
 // through here. Only two calls exist, the same as the Outlook add-in's:
 //   GET  /api/email-addin/policy?email=...  -> which personal-data categories to check for this mailbox,
@@ -57,7 +57,65 @@ async function loadPdfReader(sender) {
   });
 }
 
+// ---- AI Guard prompt protection (aiguard.js on AI websites) ----------------------------------
+// The agent writes this endpoint's id and key into browser policy next to serverUrl; they only
+// let the extension read this endpoint's AI prompt settings and report prompt events.
+
+async function endpointIdentity() {
+  try {
+    const managed = await chrome.storage.managed.get(["endpointId", "endpointKey"]);
+    if (managed && managed.endpointId && managed.endpointKey) return { id: String(managed.endpointId), key: String(managed.endpointKey) };
+  } catch (e) {
+    // no policy on this browser
+  }
+  return null;
+}
+
+const AI_OFF = { enabled: false, action: "WARN", patternKeys: [], keywordTypes: [], fileTypes: [], appName: null, policyId: null };
+
+async function getAiPolicy(host) {
+  const base = await serverUrl();
+  const who = await endpointIdentity();
+  if (!base || !who || !host) return AI_OFF;
+  const res = await fetch(`${base}/api/ai-guard-ext/policy?host=${encodeURIComponent(host)}`, {
+    cache: "no-store",
+    headers: { "X-EIQ-Endpoint": who.id, "X-EIQ-Key": who.key },
+  });
+  if (!res.ok) return AI_OFF;
+  const body = await res.json();
+  return {
+    enabled: body.enabled === true,
+    action: ["WARN", "BLOCK", "REDACT"].includes(body.action) ? body.action : "WARN",
+    patternKeys: Array.isArray(body.patternKeys) ? body.patternKeys : [],
+    keywordTypes: Array.isArray(body.keywordTypes) ? body.keywordTypes : [],
+    fileTypes: Array.isArray(body.fileTypes) ? body.fileTypes : [],
+    appName: typeof body.appName === "string" ? body.appName : null,
+    policyId: typeof body.policyId === "string" ? body.policyId : null,
+  };
+}
+
+async function reportAiEvent(payload) {
+  const base = await serverUrl();
+  const who = await endpointIdentity();
+  if (!base || !who) return;
+  await fetch(`${base}/api/ai-guard-ext/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-EIQ-Endpoint": who.id, "X-EIQ-Key": who.key },
+    body: JSON.stringify(payload),
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === "aiPolicy") {
+    getAiPolicy(msg.host)
+      .then(sendResponse)
+      .catch(() => sendResponse(AI_OFF));
+    return true;
+  }
+  if (msg && msg.type === "aiEvent") {
+    reportAiEvent(msg.payload).catch(() => {});
+    return false;
+  }
   if (msg && msg.type === "policy") {
     getPolicy(msg.email)
       .then(sendResponse)

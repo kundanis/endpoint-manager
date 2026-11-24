@@ -5,6 +5,7 @@ import { useLicenseStatus, useMe, useModuleVisibility } from "../api/hooks";
 import type { AdminPermissionKey, LicenseModuleKey } from "../api/types";
 import { LICENSE_MODULE_LABELS } from "../navConfig";
 import { Card, EmptyState, PageHeader, Skeleton } from "./ui";
+import { FeatureGate } from "../licenseFeatures";
 
 // Module display names come from navConfig.ts (the sidebar labels).
 const MODULE_LABELS = LICENSE_MODULE_LABELS;
@@ -19,9 +20,12 @@ export default function RequireModule({
   module,
   permission,
   superAdminOnly,
+  feature,
   children,
 }: {
   module: LicenseModuleKey;
+  // A sub-module licensed on its own: shown locked when the licence lacks it.
+  feature?: string;
   // An extra grant needed on top of the module (mirrors requirePermission on the server).
   permission?: AdminPermissionKey;
   // Super admins only (mirrors requireSuperAdmin on the server).
@@ -47,19 +51,10 @@ export default function RequireModule({
     return <Navigate to="/dashboard" replace />;
   }
 
+  // A module the licence doesn't include is hidden, like the menu hides it.
   const locked = !!status?.enforcementEnabled && !(status.modules ?? []).includes(module);
   if (locked) {
-    return (
-      <>
-        <PageHeader title={MODULE_LABELS[module]} />
-        <Card>
-          <EmptyState icon={Lock} title="This module is locked">
-            {MODULE_LABELS[module]} isn't included in your current license. Contact your vendor to add it, then it
-            will unlock automatically the next time your license re-validates.
-          </EmptyState>
-        </Card>
-      </>
-    );
+    return <Navigate to="/dashboard" replace />;
   }
 
   // Independent of the license check above - a super admin always passes, a plain admin
@@ -107,5 +102,5 @@ export default function RequireModule({
     );
   }
 
-  return <>{children}</>;
+  return feature ? <FeatureGate feature={feature}>{children}</FeatureGate> : <>{children}</>;
 }

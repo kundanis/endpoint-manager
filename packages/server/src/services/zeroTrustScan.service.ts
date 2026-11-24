@@ -2,13 +2,14 @@ import type { AssignedZeroTrustPolicyWire, SecurityRuleOperator, ZeroTrustScanRe
 import { prisma } from "../db";
 import { evaluateRule } from "./securityConfigEvaluate.util";
 import { isAgentPaused } from "./pause.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 export async function resolveAssignedPoliciesForAgent(agentId: string): Promise<AssignedZeroTrustPolicyWire[]> {
   // Agent.paused (a whole endpoint being held back from management), not to be confused
   // with a policy's own `enabled: false` below.
   if (await isAgentPaused(agentId)) return [];
 
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
 
   const assignments = await prisma.zeroTrustPolicyAssignment.findMany({

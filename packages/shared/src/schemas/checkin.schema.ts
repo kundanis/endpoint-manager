@@ -15,6 +15,9 @@ export const checkinRequestSchema = z.object({
   // admin manually re-ran the installer over an existing install). Optional so pre-update
   // agents that don't send it yet still pass validation.
   agentVersion: z.string().min(1).optional(),
+  // Windows users signed in to the PC right now (DOMAIN\user) - for endpoint user consent
+  // (data/consent.ts). Sent by agent 0.2.35+.
+  signedInUsers: z.array(z.string().min(1).max(300)).max(50).optional(),
 });
 export type CheckinRequest = z.infer<typeof checkinRequestSchema>;
 

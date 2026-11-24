@@ -1,6 +1,6 @@
 {
   "name": "@em/agent",
-  "version": "0.2.31",
+  "version": "0.2.39",
   "private": true,
   "main": "dist/index.js",
   "scripts": {

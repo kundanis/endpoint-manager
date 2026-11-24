@@ -74,6 +74,12 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => v.trim().toLowerCase() === "true"),
+  // AI Guard (generative-AI discovery and control), same rule as THREAT_PROTECTION: offered on a
+  // deployment whose licence enforcement is off only when "true"; with enforcement on, the licence decides.
+  AI_GUARD: z
+    .string()
+    .default("false")
+    .transform((v) => v.trim().toLowerCase() === "true"),
   // Extra (public) networks allowed to reach the admin console/login/admin API, on top of
   // private addresses - comma-separated IPs or CIDRs, e.g. "203.0.113.7,198.51.100.0/24".
   // Needed when the server is cloud-hosted (EC2) and admins connect from the internet; see
@@ -154,6 +160,7 @@ export const config = {
   advancedAppControl: parsed.data.ADVANCED_APP_CONTROL,
   productEdition: parsed.data.PRODUCT_EDITION,
   threatProtection: parsed.data.THREAT_PROTECTION,
+  aiGuard: parsed.data.AI_GUARD,
   trustedProxy: parsed.data.TRUSTED_PROXY,
   adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")
     .map((s) => s.trim())

@@ -15,11 +15,14 @@ import { config } from "../config";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
 import { isAgentPaused } from "./pause.service";
+import { aiGuardAppControlRules } from "./aiGuard.service";
+import { effectiveMemberships } from "./groupTree.service";
+import { isFeatureLicensed } from "./licenseActivation.service";
 
 // The policies this agent enforces: assigned directly or via a group, enabled, not excepted for
 // it, and none while the agent is paused.
 async function activePolicyIdsForAgent(agentId: string): Promise<{ policyIds: string[]; groupIds: string[] }> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
   if (await isAgentPaused(agentId)) return { policyIds: [], groupIds };
 
@@ -40,12 +43,19 @@ async function activePolicyIdsForAgent(agentId: string): Promise<{ policyIds: st
 // while advanced application control is on: older agents read every entry of .rules as a block.
 export async function resolveAssignedAppControlForAgent(agentId: string): Promise<AssignedAppControlResponse> {
   const { policyIds } = await activePolicyIdsForAgent(agentId);
+  // Application control policies are licensed on their own (EPM_APP); AI Guard's blocked AI
+  // programs below aren't part of it.
+  const licensed = await isFeatureLicensed("EPM_APP");
   const policies =
-    policyIds.length > 0 ? await prisma.appControlPolicy.findMany({ where: { id: { in: policyIds } }, include: { rules: true } }) : [];
+    licensed && policyIds.length > 0 ? await prisma.appControlPolicy.findMany({ where: { id: { in: policyIds } }, include: { rules: true } }) : [];
   const all = blockRules(policies.filter((p) => p.mode !== "ALLOWLIST"));
-  const rules = all.filter((r) => !isAdvancedAppControlRuleType(r.ruleType));
+  // AI Guard's blocked AI desktop programs (aiGuard.service.ts) - nothing while paused.
+  const taken = new Set(all.map((r) => `${r.ruleType}:${r.value.toLowerCase()}`));
+  const aiRules = (await aiGuardAppControlRules(agentId)).filter((r) => !taken.has(`${r.ruleType}:${r.value.toLowerCase()}`));
+  const rules = [...all.filter((r) => !isAdvancedAppControlRuleType(r.ruleType)), ...aiRules];
   if (!config.advancedAppControl) return { rules };
-  const allowlist = combineAllowlists(policies.filter((p) => p.mode === "ALLOWLIST"));
+  // Allowlisting is licensed on its own (EPM_ALLOWLIST): without it, allowlist policies apply nothing.
+  const allowlist = (await isFeatureLicensed("EPM_ALLOWLIST")) ? combineAllowlists(policies.filter((p) => p.mode === "ALLOWLIST")) : undefined;
   return { rules, advanced: { rules: all.filter((r) => isAdvancedAppControlRuleType(r.ruleType)), ...(allowlist ? { allowlist } : {}) } };
 }
 

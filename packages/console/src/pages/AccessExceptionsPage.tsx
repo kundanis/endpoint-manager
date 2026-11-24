@@ -13,6 +13,7 @@ import {
   useRejectPolicyAccessException,
   useEndPolicyAccessException,
   useScreenshotBlockPolicies,
+  useAiPolicies,
   useUsbControlPolicies,
   useWebBlockPolicies,
 } from "../api/hooks";
@@ -49,6 +50,7 @@ const POLICY_TYPE_LABELS: Record<PolicyAccessExceptionType, string> = {
   USB_CONTROL: "USB device control",
   SCREENSHOT_BLOCK: "Screenshot blocking",
   DLP: "DLP",
+  AI_GUARD: "AI Guard",
 };
 const POLICY_TYPES = Object.keys(POLICY_TYPE_LABELS) as PolicyAccessExceptionType[];
 
@@ -95,6 +97,7 @@ function usePoliciesForType(policyType: PolicyAccessExceptionType) {
   const usbControl = useUsbControlPolicies();
   const dlp = useDlpPolicies();
   const screenshotBlock = useScreenshotBlockPolicies();
+  const aiGuard = useAiPolicies();
 
   switch (policyType) {
     case "APP_CONTROL":
@@ -111,6 +114,8 @@ function usePoliciesForType(policyType: PolicyAccessExceptionType) {
       return dlp.data ?? [];
     case "SCREENSHOT_BLOCK":
       return screenshotBlock.data ?? [];
+    case "AI_GUARD":
+      return aiGuard.data ?? [];
   }
 }
 
@@ -261,7 +266,7 @@ function RequestForm() {
                 <option value="">{term ? (shownGroups.length ? `Select a group… (${shownGroups.length} match)` : "No group matches the search") : "Select a group…"}</option>
                 {shownGroups.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.name} ({g.memberCount} endpoint{g.memberCount === 1 ? "" : "s"})
+                    {g.path ?? g.name} ({g.memberCount} endpoint{g.memberCount === 1 ? "" : "s"})
                   </option>
                 ))}
               </select>
@@ -460,12 +465,12 @@ export default function AccessExceptionsPage() {
                         </td>
                         <td style={{ maxWidth: 360 }}>{r.reason}</td>
                         <td className="ep-num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          {r.durationMinutes} min
+                          {r.durationMinutes === 0 ? "Permanent" : `${r.durationMinutes} min`}
                         </td>
                         <td>
                           <Badge tone={badge.tone}>{badge.label}</Badge>
                         </td>
-                        <td className="app-muted">{formatDateTime(r.expiresAt)}</td>
+                        <td className="app-muted">{r.expiresAt?.startsWith("9999") ? "Until ended" : formatDateTime(r.expiresAt)}</td>
                         <td>
                           {r.status === "PENDING" && (
                             <div className="app-cell-actions">

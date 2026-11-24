@@ -1,6 +1,7 @@
 import type { PatchInstallResultPayload, PatchScanResultPayload } from "@em/shared";
 import { normalizeSeverity } from "@em/shared";
 import { prisma } from "../db";
+import { membersOfGroups } from "./groupTree.service";
 
 export interface LatestMissingPatchView {
   title: string;
@@ -69,7 +70,7 @@ export async function recordPatchScan(agentId: string, payload: PatchScanResultP
 export async function resolvePatchScope(filter: { agentId?: string; groupId?: string }): Promise<string[] | undefined> {
   if (filter.agentId) return [filter.agentId];
   if (filter.groupId) {
-    return (await prisma.agentGroupMembership.findMany({ where: { groupId: filter.groupId }, select: { agentId: true } })).map((m) => m.agentId);
+    return (await membersOfGroups([filter.groupId])).map((m) => m.agentId);
   }
   return undefined;
 }

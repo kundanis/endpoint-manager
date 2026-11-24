@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Activity, ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, PanelLeftClose, PanelLeftOpen, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Database, KeyRound, LayoutGrid, Lock, LogOut, Menu, Monitor, Network, Package, PanelLeftClose, PanelLeftOpen, Settings, Shield, Users, type LucideIcon, CircleHelp, ShieldCheck, Sparkles } from "lucide-react";
 import { useLicenseStatus, useLogout, useMe, useModuleVisibility } from "../api/hooks";
 import { useServerEvents } from "../api/serverEvents";
 import type { ModuleVisibilityView } from "../api/types";
@@ -8,6 +8,7 @@ import { NAV_MODULES, type NavModule } from "../navConfig";
 import Logo from "./Logo";
 import NotificationBell from "./NotificationBell";
 import { HelpProvider, useHelp } from "../help/HelpProvider";
+import { LockIcon, useFeatureLicensed } from "../licenseFeatures";
 
 const RAIL_KEY = "ep.sidebar.collapsed";
 
@@ -22,6 +23,7 @@ const MODULE_ICONS: Record<string, LucideIcon> = {
   data: Database,
   user: Users,
   threat: ShieldCheck,
+  "ai-guard": Sparkles,
   licensing: KeyRound,
   "admin-users": Settings,
 };
@@ -189,8 +191,11 @@ export default function Layout() {
     setExpandedKey((prev) => (prev === key ? null : key));
   }
 
+  const { licensed: featureLicensed } = useFeatureLicensed();
+  // A module the licence doesn't include is hidden (its sub-modules and features show locked).
   const navModules = NAV_MODULES.filter((module) => !module.superAdminOnly || me?.role === "SUPER_ADMIN")
     .filter((module) => !isModuleHidden(module, visibility))
+    .filter((module) => !isModuleLocked(module, licenseStatus))
     .filter((module) => !module.items || visibleItems(module, visibility, me).length > 0);
 
   function renderModule(module: NavModule) {
@@ -237,8 +242,14 @@ export default function Layout() {
         {!rail && isExpanded && (
           <div className="ep-sub">
             {visibleItems(module, visibility, me).map((item) => (
-              <NavLink key={item.path} to={item.path} className={({ isActive }) => (isActive ? "ep-on-sub" : "")}>
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) => `${isActive ? "ep-on-sub" : ""} ${item.feature && !featureLicensed(item.feature) ? "app-ni-locked" : ""}`}
+                title={item.feature && !featureLicensed(item.feature) ? "Not included in your licence" : undefined}
+              >
                 {item.label}
+                {item.feature && !featureLicensed(item.feature) && <LockIcon />}
               </NavLink>
             ))}
           </div>

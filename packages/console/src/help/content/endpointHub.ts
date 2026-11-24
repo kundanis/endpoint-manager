@@ -204,7 +204,7 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         items: [
           "Overview: hardware, OS and end of support, agent version (with one-click update), network, asset details, disks, battery, OS licence and admin notes.",
           "Security posture (on Overview): vulnerabilities, Zero Trust, patches, security configuration and, on Windows with Threat Protection, threats detected (open, and in the last 30 days). Select one to open that page for this endpoint. Events opens every module's events for this endpoint.",
-          "Applied Policies (on Overview, below Security Posture): every policy assigned to this endpoint, directly or through one of its groups, with its module and its status (Applied, Assigned, Sync failed, Exception active, Paused or Disabled). These modules run on Windows endpoints only; on a Linux or Mac endpoint, an assigned policy shows Windows only. Click a policy's name to open it.",
+          "Applied Policies (on Overview, below Security Posture): every enabled policy assigned to this endpoint, directly or through one of its groups, listed module by module, with its status (Applied, Assigned, Sync failed, Exception active or Paused). Disabled policies have no effect, so they aren't listed. These modules run on Windows endpoints only; on a Linux or Mac endpoint, an assigned policy shows Windows only. Click a policy's name to open it.",
           "Software: installed applications with licence status; uninstall them remotely. System software (Windows components, drivers, runtimes such as .NET and Visual C++, OEM tools, Defender and the Endpoint IQ agent) shows System software instead of Uninstall and can't be removed from the console. Sync now fetches the current list from the device.",
           "Block (software with no licence recorded): the endpoint closes the program whenever it starts and the user sees a message; it stays installed. Release lets it run again. Blocks are kept in an Application control policy named Unlicensed software: <endpoint>, and need access to Application control.",
           "Security: security benchmark results with one-click fixes, and Zero Trust results.",
@@ -439,19 +439,59 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
     ],
   },
   {
+    id: "user-consent",
+    module: "Endpoint Hub",
+    title: "User Consent",
+    path: "/user-consent",
+    summary: "Ask each Windows user to agree to your data processing notice (Digital Personal Data Protection Act, 2023) before their data is collected.",
+    keywords: ["dpdp", "consent", "privacy", "notice", "gdpr", "personal data", "grievance", "data protection", "employee consent", "active", "inactive", "consent pending"],
+    sections: [
+      {
+        title: "Setting It Up",
+        items: [
+          "Open Endpoint Hub → User Consent. A starting notice is filled in: check it with your legal or HR team, complete it for your organisation and add the grievance contact (the person users contact about their data).",
+          "Switch on Ask endpoint users for consent and select Save. Only super admins can change the notice.",
+          "Changing the title, notice text or grievance contact makes a new version, and every user is asked again. Switching consent on or off doesn't.",
+        ],
+      },
+      {
+        title: "What Users See",
+        items: [
+          "The consent window never opens by itself: the user opens it from the Endpoint IQ tray icon - right-click it and choose Privacy consent (shown in bold while an answer is needed), or click the icon. Tell your users to do this once consent is switched on.",
+          "The user ticks I have read this notice and I agree, and selects Save - or selects Decline. They can read the notice or change their answer later from the tray icon's menu (Privacy consent).",
+          "Each Windows user answers for themselves; on a shared PC every user who signs in is asked. Needs Windows agent 0.2.36 or later; Linux and Mac endpoints aren't asked.",
+        ],
+      },
+      {
+        title: "What Happens Until Users Agree",
+        items: [
+          "The endpoint keeps checking in (Online/Offline works as before) and keeps applying your security policies - blocked websites, applications, USB devices, AI tools and so on.",
+          "It sends no monitoring data: no inventory, application and website usage, screen capture reports, DLP and data discovery results, data movement, USB and command events, security sign-in signals or AI Guard reports. Data from that time is discarded, not sent later.",
+          "Endpoints shows Consent pending next to Online/Offline until the signed-in users answer, Active once every one of them agreed, and Inactive when one declined. Consent: update agent means the endpoint's agent is older than 0.2.36.",
+          "Each user's answer, when they gave it and when they last signed in is on the endpoint's Overview, under User Consent.",
+        ],
+      },
+    ],
+  },
+  {
     id: "asset-settings",
     module: "Endpoint Hub",
     title: "Asset Settings",
     path: "/asset-settings",
     summary: "Tamper protection, asset groups and custom fields for every managed endpoint.",
-    keywords: ["groups", "uninstall password", "tamper", "custom field", "remote install", "install account", "winrm"],
+    keywords: ["groups", "sub group", "subgroup", "hierarchy", "parent group", "site", "branch", "office", "uninstall password", "tamper", "custom field", "remote install", "install account", "winrm"],
     sections: [
       {
         title: "Tabs",
         items: [
           "Tamper protection: an uninstall password, checked by the server, that stops users removing the agent. After 10 wrong passwords in 15 minutes an endpoint must wait before trying again.",
+          "With a password set, a user can also remove the agent from the PC: right-click the Endpoint IQ tray icon, choose Uninstall agent… and enter the password (Windows agent 0.2.39 or later). Without a password, that option refuses and the agent can only be removed from the console.",
+          "The tray icon's menu also shows the groups the PC belongs to, and - when it isn't connected - why: the licence's endpoint limit has been reached, the server's licence isn't active, the PC was removed from the console, or the server can't be reached. The agent keeps retrying every minute and connects by itself once the cause is fixed.",
           "Remote install: save the Windows admin account Install agent uses, so it isn't asked each time. Only super admins can save it and install with it; other admins type an account for each install. The password is stored encrypted and never shown again.",
           "Asset groups: group endpoints by team, site or role to target policies, packages and updates.",
+          "Groups can sit under other groups, as deep as you need (for example Mumbai › Andheri Office, Mumbai › Ghatkopar Office). Choose the Parent group when creating a group, use Add sub group in a group's menu, or change Parent group in Group Settings to move it with its sub groups and endpoints. Sub group names must differ only within the same parent.",
+          "A policy assigned to a group applies to every group below it: a policy on Mumbai covers the endpoints of Andheri and Ghatkopar. An endpoint can be in a group at any level. Filtering by a group anywhere (Endpoints, Patches, Vulnerabilities, Events, AI Guard...) includes its sub groups.",
+          "The one-policy-per-endpoint rule counts the whole tree: a group can't get a policy of a module while a group above or below it has another one, and a move that would give endpoints two policies is refused. A group with sub groups can't be deleted until they are moved or deleted.",
           "Custom fields: add your own text, number, date or list fields to every endpoint.",
         ],
       },

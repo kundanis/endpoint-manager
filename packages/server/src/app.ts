@@ -43,6 +43,9 @@ import { commandBlockRouter } from "./routes/commandBlock.routes";
 import { ipBlockRouter } from "./routes/ipBlock.routes";
 import { screenshotBlockRouter } from "./routes/screenshotBlock.routes";
 import { threatProtectionRouter } from "./routes/threatProtection.routes";
+import { aiGuardRouter } from "./routes/aiGuard.routes";
+import { consentRouter } from "./routes/consent.routes";
+import { aiGuardExtRouter } from "./routes/aiGuardExt.routes";
 import { usbControlRouter } from "./routes/usbControl.routes";
 import { dataTypesRouter } from "./routes/dataTypes.routes";
 import { policyAccessExceptionRouter } from "./routes/policyAccessException.routes";
@@ -57,7 +60,7 @@ import { adminUsersRouter } from "./routes/adminUsers.routes";
 import { moduleVisibilityRouter } from "./routes/moduleVisibility.routes";
 import { agentAuthMiddleware } from "./middleware/agentAuth";
 import { adminAuthMiddleware } from "./middleware/adminAuth";
-import { requireModule } from "./middleware/requireModule";
+import { requireFeature, requireModule } from "./middleware/requireModule";
 import { requireModuleAccess, requireModuleVisible, requirePermission, requireSuperAdmin } from "./middleware/requireAdminRole";
 import { errorHandler } from "./middleware/errorHandler";
 import { publicAccessAllowlist } from "./middleware/publicAccessAllowlist";
@@ -115,7 +118,8 @@ export function createApp() {
   // (classic Outlook's JavaScript runtime calls them without a page origin of its own).
   app.use(
     cors((req, callback) => {
-      const isAddinApi = (req.url ?? "").startsWith("/api/email-addin/");
+      // ... and the Browser Guard extension's AI Guard endpoints, the same way.
+      const isAddinApi = (req.url ?? "").startsWith("/api/email-addin/") || (req.url ?? "").startsWith("/api/ai-guard-ext/");
       callback(null, isAddinApi ? { origin: "*", credentials: false } : { origin: false });
     }),
   );
@@ -152,6 +156,7 @@ export function createApp() {
   // emailAddin.routes.ts for why (the add-in's sandboxed runtime can't hold either kind of
   // credential this app otherwise requires).
   app.use("/api/email-addin", emailAddinRouter);
+  app.use("/api/ai-guard-ext", aiGuardExtRouter);
   // License Server -> this deployment (revoke notices); see licenseCallback.routes.ts.
   app.use("/api/license-callback", licenseCallbackRouter);
   app.use("/api/agent", agentAuthMiddleware, agentRouter);
@@ -175,38 +180,40 @@ export function createApp() {
   app.use("/api/admin/notifications", adminAuthMiddleware, notificationsRouter);
   // Events: every module's events in one place; each kind is filtered inside by the admin's access.
   app.use("/api/admin/event-center", adminAuthMiddleware, eventCenterRouter);
-  app.use("/api/admin/commands", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandsRouter);
-  app.use("/api/admin/command-templates", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), commandTemplatesRouter);
-  app.use("/api/admin/packages", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), packagesRouter);
-  app.use("/api/admin/deployments", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), deploymentsRouter);
+  app.use("/api/admin/commands", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), requireFeature("EH_COMMANDS"), commandsRouter);
+  app.use("/api/admin/command-templates", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), requireFeature("EH_COMMANDS"), commandTemplatesRouter);
+  app.use("/api/admin/packages", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), requireFeature("EH_PACKAGES"), packagesRouter);
+  app.use("/api/admin/deployments", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), requireFeature("EH_PACKAGES"), deploymentsRouter);
   app.use("/api/admin/agent-updates", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), agentUpdatesRouter);
-  app.use("/api/admin/patches", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), patchesRouter);
-  app.use("/api/admin/vulnerabilities", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), vulnerabilitiesRouter);
+  app.use("/api/admin/patches", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), requireFeature("SP_PATCHES"), patchesRouter);
+  app.use("/api/admin/vulnerabilities", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), requireFeature("SP_VULNERABILITIES"), vulnerabilitiesRouter);
+  app.use("/api/admin/consent", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), consentRouter);
   app.use("/api/admin/asset-groups", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), assetGroupsRouter);
   app.use("/api/admin/custom-fields", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), customFieldsRouter);
   app.use("/api/admin/software-licenses", adminAuthMiddleware, requireModuleVisible("SOFTWARE_MANAGER"), requireModule("SOFTWARE_MANAGER"), requireModuleAccess("SOFTWARE_MANAGER"), softwareLicensesRouter);
   app.use("/api/admin/network-scans", adminAuthMiddleware, requireModuleVisible("NETWORK_MANAGER"), requireModule("NETWORK_MANAGER"), requireModuleAccess("NETWORK_MANAGER"), networkScanRouter);
   app.use("/api/admin/network-vlans", adminAuthMiddleware, requireModuleVisible("NETWORK_MANAGER"), requireModule("NETWORK_MANAGER"), requireModuleAccess("NETWORK_MANAGER"), networkVlanRouter);
-  app.use("/api/admin/security-config", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), securityConfigRouter);
-  app.use("/api/admin/zero-trust", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), zeroTrustRouter);
-  app.use("/api/admin/data-discovery", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataDiscoveryRouter);
-  app.use("/api/admin/dlp", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dlpRouter);
-  app.use("/api/admin/data-movement", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataMovementRouter);
-  app.use("/api/admin/screen-capture", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), screenCaptureRouter);
-  app.use("/api/admin/app-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), appControlRouter);
-  app.use("/api/admin/web-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), webBlockRouter);
-  app.use("/api/admin/pii-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), piiBlockRouter);
-  app.use("/api/admin/pii-email-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), piiEmailBlockRouter);
-  app.use("/api/admin/command-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), commandBlockRouter);
-  app.use("/api/admin/ip-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), ipBlockRouter);
-  app.use("/api/admin/screenshot-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), screenshotBlockRouter);
+  app.use("/api/admin/security-config", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), requireFeature("SP_SECURITY_CONFIG"), securityConfigRouter);
+  app.use("/api/admin/zero-trust", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), requireFeature("SP_ZERO_TRUST"), zeroTrustRouter);
+  app.use("/api/admin/data-discovery", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("DG_DISCOVERY"), dataDiscoveryRouter);
+  app.use("/api/admin/dlp", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("DG_DLP_CONTENT"), dlpRouter);
+  app.use("/api/admin/data-movement", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("DG_MOVEMENT_FILES"), dataMovementRouter);
+  app.use("/api/admin/screen-capture", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("DG_MOVEMENT_SCREEN"), screenCaptureRouter);
+  app.use("/api/admin/app-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_APP"), appControlRouter);
+  app.use("/api/admin/web-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_WEB"), webBlockRouter);
+  app.use("/api/admin/pii-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("DG_DLP_PII"), piiBlockRouter);
+  app.use("/api/admin/pii-email-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_EMAIL_ATTACH"), piiEmailBlockRouter);
+  app.use("/api/admin/command-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_COMMAND"), commandBlockRouter);
+  app.use("/api/admin/ip-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_IP"), ipBlockRouter);
+  app.use("/api/admin/screenshot-block", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_SCREENSHOT"), screenshotBlockRouter);
   app.use("/api/admin/threat-protection", adminAuthMiddleware, requireModuleVisible("THREAT_PROTECTION"), requireModule("THREAT_PROTECTION"), requireModuleAccess("THREAT_PROTECTION"), threatProtectionRouter);
-  app.use("/api/admin/usb-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), usbControlRouter);
+  app.use("/api/admin/ai-guard", adminAuthMiddleware, requireModuleVisible("AI_GUARD"), requireModule("AI_GUARD"), requireModuleAccess("AI_GUARD"), aiGuardRouter);
+  app.use("/api/admin/usb-control", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), requireFeature("EPM_USB"), usbControlRouter);
   app.use("/api/admin/data-types", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), dataTypesRouter);
   app.use("/api/admin/policy-exceptions", adminAuthMiddleware, requireModuleVisible("DATA_MANAGER"), requireModule("DATA_MANAGER"), requireModuleAccess("DATA_MANAGER"), policyAccessExceptionRouter);
   app.use("/api/admin/agent-security", adminAuthMiddleware, requireModuleVisible("ENDPOINT_MANAGER"), requireModule("ENDPOINT_MANAGER"), requireModuleAccess("ENDPOINT_MANAGER"), agentSecurityRouter);
-  app.use("/api/admin/user-productivity", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), userProductivityRouter);
-  app.use("/api/admin/user-risk", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), requirePermission("USER_RISK"), userRiskRouter);
+  app.use("/api/admin/user-productivity", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), requireFeature("IG_PRODUCTIVITY"), userProductivityRouter);
+  app.use("/api/admin/user-risk", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireModuleAccess("USER_MANAGER"), requireFeature("IG_USER_RISK"), requirePermission("USER_RISK"), userRiskRouter);
   app.use("/api/admin/audit-log", adminAuthMiddleware, requireModuleVisible("USER_MANAGER"), requireModule("USER_MANAGER"), requireSuperAdmin, adminAuditRouter);
   app.use("/api/admin/edr", adminAuthMiddleware, requireModuleVisible("SECURITY_MANAGER"), requireModule("SECURITY_MANAGER"), requireModuleAccess("SECURITY_MANAGER"), edrRouter);
   app.use("/api/admin/license", adminAuthMiddleware, licenseActivationRouter);

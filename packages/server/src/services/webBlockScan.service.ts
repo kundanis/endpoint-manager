@@ -2,9 +2,12 @@ import type { AssignedWebBlockResponse, WebBlockSyncResultPayload } from "@em/sh
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
 import { isAgentPaused } from "./pause.service";
+import { AI_GUARD_SYNC_PREFIX, activeAiPoliciesForAgent, aiGuardBlockedDomains, recordAiGuardSync } from "./aiGuard.service";
+import { effectiveMemberships } from "./groupTree.service";
+import { isFeatureLicensed } from "./licenseActivation.service";
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   return memberships.map((m) => m.groupId);
 }
 
@@ -13,7 +16,21 @@ async function groupIdsForAgent(agentId: string): Promise<string[]> {
 // combined browser URLBlocklist, not independent per-policy actions.
 export async function resolveAssignedRulesForAgent(agentId: string): Promise<AssignedWebBlockResponse> {
   if (await isAgentPaused(agentId)) return { policyIds: [], domains: [] };
+  // Web & email blocking policies are licensed on their own (EPM_WEB); AI Guard's blocks below
+  // aren't part of it.
+  const own = (await isFeatureLicensed("EPM_WEB")) ? await resolveWebBlockPolicies(agentId) : { policyIds: [], domains: [] };
+  // AI Guard's blocked AI websites ride on the same enforcement (aiGuard.service.ts); its policy
+  // ids travel as "aiguard:<id>" so the sync the agent reports back covers them too.
+  const aiPolicies = await activeAiPoliciesForAgent(agentId);
+  if (aiPolicies.length === 0) return own;
+  const aiDomains = await aiGuardBlockedDomains(agentId);
+  return {
+    policyIds: [...own.policyIds, ...aiPolicies.map((p) => `${AI_GUARD_SYNC_PREFIX}${p.id}`)],
+    domains: [...new Set([...own.domains, ...aiDomains])],
+  };
+}
 
+async function resolveWebBlockPolicies(agentId: string): Promise<AssignedWebBlockResponse> {
   const groupIds = await groupIdsForAgent(agentId);
 
   const assignments = await prisma.webBlockPolicyAssignment.findMany({
@@ -41,6 +58,7 @@ export async function resolveAssignedRulesForAgent(agentId: string): Promise<Ass
 // snapshot, not an audit log (no per-domain event stream exists for this module).
 export async function recordSyncResult(agentId: string, payload: WebBlockSyncResultPayload): Promise<void> {
   if (payload.policyIds.length === 0) return;
+  await recordAiGuardSync(agentId, payload);
   const groupIds = await groupIdsForAgent(agentId);
 
   await prisma.webBlockPolicyAssignment.updateMany({

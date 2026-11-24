@@ -19,4 +19,8 @@ export interface MailGuardAgentSettings {
   install: boolean;
   chromeExtensionId: string;
   edgeExtensionId: string;
+  // AI Guard prompt protection (agent 0.2.32+): this endpoint's id and the key the Browser Guard
+  // extension presents to /api/ai-guard-ext - written into the extension's browser policy.
+  endpointId?: string;
+  endpointKey?: string;
 }

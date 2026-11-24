@@ -1,6 +1,7 @@
 import type { AgentApplicablePolicy, AgentPauseRequestView, EndpointPauseRequest, PolicyAccessExceptionType } from "@em/shared";
 import { ENDPOINT_USER_REQUESTER_PREFIX } from "@em/shared";
 import { prisma } from "../db";
+import { effectiveMemberships } from "./groupTree.service";
 
 // Pause requests raised by the endpoint's own user from the Endpoint IQ tray app. They are
 // ordinary access exception requests (PolicyAccessException, PENDING), so admins approve or
@@ -14,7 +15,7 @@ interface AssignmentTable {
   findMany(args: object): Promise<{ policyId: string }[]>;
 }
 
-const PAUSABLE: { type: PolicyAccessExceptionType; area: "EPM" | "DLP"; label: string; policy: string; assignment: string }[] = [
+const PAUSABLE: { type: PolicyAccessExceptionType; area: "EPM" | "DLP" | "AI Guard"; label: string; policy: string; assignment: string }[] = [
   { type: "APP_CONTROL", area: "EPM", label: "Application control", policy: "appControlPolicy", assignment: "appControlPolicyAssignment" },
   { type: "WEB_BLOCK", area: "EPM", label: "Web blocking", policy: "webBlockPolicy", assignment: "webBlockPolicyAssignment" },
   { type: "COMMAND_BLOCK", area: "EPM", label: "Command blocking", policy: "commandBlockPolicy", assignment: "commandBlockPolicyAssignment" },
@@ -22,13 +23,14 @@ const PAUSABLE: { type: PolicyAccessExceptionType; area: "EPM" | "DLP"; label: s
   { type: "USB_CONTROL", area: "EPM", label: "USB device control", policy: "usbControlPolicy", assignment: "usbControlPolicyAssignment" },
   { type: "SCREENSHOT_BLOCK", area: "EPM", label: "Screenshot blocking", policy: "screenshotBlockPolicy", assignment: "screenshotBlockPolicyAssignment" },
   { type: "DLP", area: "DLP", label: "Content policy", policy: "dlpPolicy", assignment: "dlpPolicyAssignment" },
+  { type: "AI_GUARD", area: "AI Guard", label: "AI tools", policy: "aiGuardPolicy", assignment: "aiGuardPolicyAssignment" },
 ];
 
 export class PolicyNotApplicableError extends Error {}
 
 // Every enabled pausable policy assigned to this endpoint, directly or through one of its groups.
 async function assignedPolicies(agentId: string) {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
   const policyTables = prisma as unknown as Record<string, PolicyTable>;
   const assignmentTables = prisma as unknown as Record<string, AssignmentTable>;

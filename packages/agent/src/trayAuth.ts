@@ -35,6 +35,11 @@ export interface TrayUser {
 const bySid = new Map<string, { token: string; user: TrayUser }>();
 const byToken = new Map<string, TrayUser>();
 
+// Windows users signed in to the PC now (their profiles are loaded), SYSTEM left out.
+export function signedInUsers(): TrayUser[] {
+  return [...bySid.values()].filter((e) => e.user.sid !== SYSTEM_SID && !/^S-1-/.test(e.user.account)).map((e) => e.user);
+}
+
 export function userForToken(token: string | string[] | undefined): TrayUser | null {
   if (typeof token !== "string" || token.length < 32) return null;
   return byToken.get(token) ?? null;

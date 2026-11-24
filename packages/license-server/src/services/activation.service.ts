@@ -6,6 +6,11 @@ function parseModules(raw: string): LicenseModule[] {
   return JSON.parse(raw);
 }
 
+// null = everything in the licensed modules.
+function parseFeatures(raw: string | null): string[] | null {
+  return raw ? (JSON.parse(raw) as string[]) : null;
+}
+
 export class LicenseKeyNotFoundError extends Error {}
 export class LicenseKeyRevokedError extends Error {}
 export class LicenseKeyExpiredError extends Error {}
@@ -49,13 +54,14 @@ export async function activate(keyString: string, deploymentId: string): Promise
     validityType: existing.validityType as ActivateResponse["validityType"],
     validUntil: existing.validUntil ? existing.validUntil.toISOString() : null,
     modules: parseModules(existing.modules),
+    features: parseFeatures(existing.features),
     bindingToken,
   };
 }
 
 // Proof of possession for an already-activated key: the key, the deployment it's bound to,
 // and the bindingToken handed out at activation must all match.
-async function findBoundKey(keyString: string, deploymentId: string, bindingToken: string) {
+export async function findBoundKey(keyString: string, deploymentId: string, bindingToken: string) {
   const keyStringHash = hashToken(keyString);
   const existing = await prisma.licenseKey.findUnique({ where: { keyStringHash } });
   if (!existing) throw new LicenseKeyNotFoundError();
@@ -85,6 +91,7 @@ export async function revalidate(
     validityType: existing.validityType as RevalidateResponse["validityType"],
     validUntil: existing.validUntil ? existing.validUntil.toISOString() : null,
     modules: parseModules(existing.modules),
+    features: parseFeatures(existing.features),
   };
 }
 

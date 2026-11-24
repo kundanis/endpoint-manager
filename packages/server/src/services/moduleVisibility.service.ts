@@ -17,16 +17,19 @@ function parseArray(json: string): string[] {
 //  - the Threat Protection edition shows only Endpoints (list, enrollment, agent updates),
 //    Threat Protection, Licensing and Administrators;
 //  - a full deployment with licence enforcement off shows Threat Protection only when
-//    THREAT_PROTECTION=true (it's sold separately; with enforcement on, the licence decides).
+//    THREAT_PROTECTION=true (it's sold separately; with enforcement on, the licence decides),
+//    and AI Guard only when AI_GUARD=true (same rule). The Threat Protection edition never has AI Guard.
 export function fixedHidden(): { moduleKeys: AdminModuleKey[]; itemPaths: string[] } {
   if (config.productEdition === "threat-protection") {
     return {
-      moduleKeys: ["NETWORK_MANAGER", "SOFTWARE_MANAGER", "SECURITY_MANAGER", "DATA_MANAGER", "USER_MANAGER"],
+      moduleKeys: ["NETWORK_MANAGER", "SOFTWARE_MANAGER", "SECURITY_MANAGER", "DATA_MANAGER", "USER_MANAGER", "AI_GUARD"],
       itemPaths: ["/commands", "/packages", "/asset-settings"],
     };
   }
-  if (!config.licenseEnforcementEnabled && !config.threatProtection) return { moduleKeys: ["THREAT_PROTECTION"], itemPaths: [] };
-  return { moduleKeys: [], itemPaths: [] };
+  const moduleKeys: AdminModuleKey[] = [];
+  if (!config.licenseEnforcementEnabled && !config.threatProtection) moduleKeys.push("THREAT_PROTECTION");
+  if (!config.licenseEnforcementEnabled && !config.aiGuard) moduleKeys.push("AI_GUARD");
+  return { moduleKeys, itemPaths: [] };
 }
 
 async function savedVisibility(): Promise<{ hiddenModuleKeys: string[]; hiddenItemPaths: string[] }> {

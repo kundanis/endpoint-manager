@@ -11,6 +11,7 @@ export const POLICY_ACCESS_EXCEPTION_TYPES = [
   "USB_CONTROL",
   "DLP",
   "SCREENSHOT_BLOCK",
+  "AI_GUARD",
 ] as const;
 export type PolicyAccessExceptionType = (typeof POLICY_ACCESS_EXCEPTION_TYPES)[number];
 
@@ -20,7 +21,11 @@ export type PolicyAccessExceptionType = (typeof POLICY_ACCESS_EXCEPTION_TYPES)[n
 export const ENDPOINT_USER_REQUESTER_PREFIX = "endpoint-user:";
 
 // The durations an endpoint user can ask for (an admin can grant up to 7 days from the console).
-export const ENDPOINT_PAUSE_DURATIONS_MINUTES = [15, 60, 240, 480, 1440] as const;
+// 0 = permanent: the pause lasts until an administrator ends it (Access Exceptions -> End now).
+export const ENDPOINT_PAUSE_DURATIONS_MINUTES = [15, 60, 240, 480, 1440, 0] as const;
+export const PERMANENT_PAUSE_MINUTES = 0;
+// What a permanent pause is stored as: an end date no one reaches (no schema change needed).
+export const PERMANENT_PAUSE_UNTIL = "9999-12-31T00:00:00.000Z";
 
 export const endpointPauseRequestSchema = z.object({
   items: z
@@ -38,7 +43,7 @@ export interface AgentApplicablePolicy {
   policyType: PolicyAccessExceptionType;
   policyId: string;
   name: string;
-  area: "EPM" | "DLP";
+  area: "EPM" | "DLP" | "AI Guard";
   typeLabel: string;
   pausedUntil: string | null; // an approved pause is in effect until then
   pendingRequestId: string | null; // a pause request is waiting for an admin

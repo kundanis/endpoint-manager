@@ -53,6 +53,7 @@ import {
 } from "../components/ui";
 import { formatDateTime, pluralize } from "../format";
 import { useLinkedPolicySelection } from "../usePolicyLink";
+import { useFeatureLicensed } from "../licenseFeatures";
 
 // Policy page template (EPM / DLP): section header → policy list → selected policy's tabs.
 
@@ -494,6 +495,7 @@ function EventsPanel({ policyId }: { policyId: string }) {
 }
 
 export default function AppControlPage() {
+  const allowlistLicensed = useFeatureLicensed().licensed("EPM_ALLOWLIST");
   const { data: policies, isLoading, isError, error, refetch } = useAppControlPolicies();
   const createPolicy = useCreateAppControlPolicy();
   const updatePolicy = useUpdateAppControlPolicy();
@@ -750,10 +752,11 @@ export default function AppControlPage() {
                 label="Type"
                 options={[
                   { value: "BLOCK", label: "Block list" },
-                  { value: "ALLOWLIST", label: "Allowlist" },
+                  { value: "ALLOWLIST", label: allowlistLicensed ? "Allowlist" : "Allowlist (not in your licence)" },
                 ]}
                 value={newMode}
-                onChange={setNewMode}
+                // Allowlisting is licensed on its own (EPM_ALLOWLIST).
+                onChange={(v) => (v === "ALLOWLIST" && !allowlistLicensed ? undefined : setNewMode(v))}
               />
             </Field>
           )}

@@ -202,7 +202,7 @@ export default function EventsPage() {
             <option value="">Group: All</option>
             {(options?.groups ?? []).map((g) => (
               <option key={g.id} value={g.id}>
-                {g.name}
+                {g.path ?? g.name}
               </option>
             ))}
           </select>

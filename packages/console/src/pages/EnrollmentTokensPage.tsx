@@ -917,7 +917,7 @@ export default function EnrollmentTokensPage() {
                   <option value="">No group</option>
                   {groups?.map((g) => (
                     <option key={g.id} value={g.id}>
-                      {g.name}
+                      {g.path ?? g.name}
                     </option>
                   ))}
                   {createdGroup && !groups?.some((g) => g.id === createdGroup.id) && <option value={createdGroup.id}>{createdGroup.name}</option>}

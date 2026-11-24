@@ -7,10 +7,12 @@ import type {
 } from "@em/shared";
 import { SCREENSHOT_TOOL_PROCESSES } from "@em/shared";
 import { prisma } from "../db";
+import { assertAssignable } from "./policyExclusivity.service";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 import { isAgentPaused } from "./pause.service";
 import { isPolicyExcepted } from "./policyAccessException.service";
+import { effectiveMemberships, effectiveMembershipsOf } from "./groupTree.service";
 
 // EPM -> Screenshot blocking: policies, assignment, what each endpoint enforces, and the blocked
 // attempts endpoints report.
@@ -18,7 +20,7 @@ import { isPolicyExcepted } from "./policyAccessException.service";
 type PolicyRow = NonNullable<Awaited<ReturnType<typeof prisma.screenshotBlockPolicy.findUnique>>>;
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   return memberships.map((m) => m.groupId);
 }
 
@@ -103,6 +105,8 @@ export async function deletePolicy(id: string): Promise<boolean> {
 export async function assignPolicy(policyId: string, params: AssignScreenshotBlockPolicyRequest) {
   const existing = await prisma.screenshotBlockPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
   const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  // One SCREENSHOT_BLOCK policy per endpoint (policyExclusivity.service.ts).
+  await assertAssignable("SCREENSHOT_BLOCK", policyId, fresh.agentIds, fresh.groupIds);
   if (fresh.agentIds.length + fresh.groupIds.length > 0) {
     await prisma.screenshotBlockPolicyAssignment.createMany({
       data: [...fresh.agentIds.map((agentId) => ({ policyId, agentId })), ...fresh.groupIds.map((groupId) => ({ policyId, groupId }))],
@@ -141,7 +145,7 @@ export async function getPolicyActivity(policyId: string, days: number) {
     prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, hostname: true } }),
     prisma.screenshotBlockEvent.findMany({ where: { agentId: { in: agentIds }, occurredAt: { gte: since } }, select: { agentId: true, kind: true, occurredAt: true } }),
     prisma.screenshotBlockPolicyAssignment.findMany({ where: { policyId } }),
-    prisma.agentGroupMembership.findMany({ where: { agentId: { in: agentIds } }, select: { agentId: true, groupId: true } }),
+    effectiveMembershipsOf(agentIds),
   ]);
   const assignmentFor = (agentId: string) =>
     assignments.find((a) => a.agentId === agentId) ??

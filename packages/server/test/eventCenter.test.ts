@@ -29,7 +29,8 @@ test("endpoint and group filters drop kinds not tied to an endpoint", () => {
   assert.equal(sourceWhere(src("user-risk"), { ...base, agentId: "a1" }), null);
   assert.equal(sourceWhere(src("email-block"), { ...base, groupId: "g1" }), null);
   assert.ok(and(sourceWhere(src("dlp"), { ...base, agentId: "a1" })).some((c) => c.agentId === "a1"));
-  assert.ok(and(sourceWhere(src("dlp"), { ...base, groupId: "g1" })).some((c) => JSON.stringify(c).includes('"groupId":"g1"')));
+  // A group filter is the endpoints of the group and its sub groups (resolved before sourceWhere).
+  assert.ok(and(sourceWhere(src("dlp"), { ...base, groupId: "g1", groupAgentIds: ["a1", "a2"] })).some((c) => JSON.stringify(c) === '{"agentId":{"in":["a1","a2"]}}'));
 });
 
 test("category and type filters", () => {

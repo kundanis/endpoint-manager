@@ -2,15 +2,16 @@ import { Outlet } from "react-router-dom";
 import { ShieldOff } from "lucide-react";
 import { useEmergencyRelease, useMe, useResumeAllAgents } from "../api/hooks";
 import { Button, PageHeader, Tabs, useConfirm, useToast } from "../components/ui";
+import { useFeatureLicensed, withLocks } from "../licenseFeatures";
 
 const EPM_TABS = [
-  { to: "app-control", label: "Application control" },
-  { to: "web-block", label: "Web & email blocking" },
-  { to: "email-attachment-block", label: "Email attachment blocking" },
-  { to: "command-block", label: "Command blocking" },
-  { to: "ip-block", label: "IP blocking" },
-  { to: "usb-control", label: "USB device control" },
-  { to: "screenshot-block", label: "Screenshot blocking" },
+  { to: "app-control", label: "Application control", feature: "EPM_APP" },
+  { to: "web-block", label: "Web & email blocking", feature: "EPM_WEB" },
+  { to: "email-attachment-block", label: "Email attachment blocking", feature: "EPM_EMAIL_ATTACH" },
+  { to: "command-block", label: "Command blocking", feature: "EPM_COMMAND" },
+  { to: "ip-block", label: "IP blocking", feature: "EPM_IP" },
+  { to: "usb-control", label: "USB device control", feature: "EPM_USB" },
+  { to: "screenshot-block", label: "Screenshot blocking", feature: "EPM_SCREENSHOT" },
 ];
 
 // Emergency release: if a policy is causing trouble on devices, pause every endpoint at once -
@@ -59,6 +60,7 @@ function EmergencyRelease() {
 }
 
 export default function EpmPage() {
+  const { licensed } = useFeatureLicensed();
   return (
     <>
       <PageHeader
@@ -66,7 +68,7 @@ export default function EpmPage() {
         description="Restrict which software can execute, which sites are reachable, which commands can run, which USB storage devices are trusted and whether screenshots can be taken on assigned endpoints."
         actions={<EmergencyRelease />}
       />
-      <Tabs items={EPM_TABS} />
+      <Tabs items={withLocks(EPM_TABS, licensed)} />
       <Outlet />
     </>
   );

@@ -9,8 +9,10 @@ import type {
 } from "@em/shared";
 import { commandBlockRuleProblem } from "@em/shared";
 import { prisma } from "../db";
+import { assertAssignable } from "./policyExclusivity.service";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
+import { membershipsUnderGroups } from "./groupTree.service";
 
 async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<string[]> {
   const assignments = await prisma.commandBlockPolicyAssignment.findMany({ where: { policyId } });
@@ -145,6 +147,8 @@ export async function assignPolicy(policyId: string, params: AssignCommandBlockP
   // Only targets not already assigned - repeat assignments used to add duplicate rows.
   const existing = await prisma.commandBlockPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
   const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  // One COMMAND_BLOCK policy per endpoint (policyExclusivity.service.ts).
+  await assertAssignable("COMMAND_BLOCK", policyId, fresh.agentIds, fresh.groupIds);
   if (fresh.agentIds.length + fresh.groupIds.length > 0) {
     await prisma.commandBlockPolicyAssignment.createMany({
       data: [
@@ -189,7 +193,7 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
   const memberships =
     groupIds.length > 0 && assignedAgentIds.length > 0
-      ? await prisma.agentGroupMembership.findMany({ where: { groupId: { in: groupIds }, agentId: { in: assignedAgentIds } }, select: { agentId: true, groupId: true } })
+      ? await membershipsUnderGroups(groupIds, assignedAgentIds)
       : [];
   const assignmentForAgent = (agentId: string) =>
     assignments.find((a) => a.agentId === agentId) ??

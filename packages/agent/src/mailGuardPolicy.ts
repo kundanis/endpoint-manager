@@ -15,8 +15,9 @@ const execFileAsync = promisify(execFile);
 // Chrome and Edge, through browser policy under HKLM (a standard user can't change it):
 //  - its server address, for every ID the extension can have (store copies and the unpacked
 //    test copy), so it always reports to this agent's server;
+//  - this endpoint's id and Browser Guard key, for AI Guard prompt protection on AI websites;
 //  - a force-install entry for the store copy while the server says an Email attachment
-//    blocking policy is in use (the browser then installs it and won't let the user remove or
+//    blocking policy or AI Guard prompt protection is in use (the browser then installs it and won't let the user remove or
 //    disable it), removed again when none is.
 // The force-install lists may hold other tools' entries: only values naming our ID are touched.
 
@@ -62,7 +63,14 @@ async function apply(client: AxiosInstance, last: MailGuardAgentSettings | null)
   const ids = new Set([MAIL_GUARD_DEV_EXTENSION_ID, settings?.chromeExtensionId, settings?.edgeExtensionId].filter((id): id is string => Boolean(id)));
   for (const browser of BROWSERS) {
     for (const id of ids) {
-      await execFileAsync("reg.exe", ["add", `${browser.root}\\3rdparty\\extensions\\${id}\\policy`, "/v", "serverUrl", "/t", "REG_SZ", "/d", url, "/f"]);
+      const policyKey = `${browser.root}\\3rdparty\\extensions\\${id}\\policy`;
+      await execFileAsync("reg.exe", ["add", policyKey, "/v", "serverUrl", "/t", "REG_SZ", "/d", url, "/f"]);
+      // AI Guard prompt protection: who this endpoint is, for the extension's calls to
+      // /api/ai-guard-ext (the key only covers those - see the server's aiGuardPrompt.service.ts).
+      if (settings?.endpointId && settings.endpointKey) {
+        await execFileAsync("reg.exe", ["add", policyKey, "/v", "endpointId", "/t", "REG_SZ", "/d", settings.endpointId, "/f"]);
+        await execFileAsync("reg.exe", ["add", policyKey, "/v", "endpointKey", "/t", "REG_SZ", "/d", settings.endpointKey, "/f"]);
+      }
     }
     const storeId = settings ? browser.idOf(settings) : "";
     if (storeId) await setForceInstall(browser.root, storeId, browser.updateUrl, settings!.install);

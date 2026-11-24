@@ -6,8 +6,10 @@ import type {
   UpdatePiiBlockPolicyRequest,
 } from "@em/shared";
 import { prisma } from "../db";
+import { assertAssignable } from "./policyExclusivity.service";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
+import { membershipsUnderGroups } from "./groupTree.service";
 
 async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<string[]> {
   const assignments = await prisma.piiBlockPolicyAssignment.findMany({ where: { policyId } });
@@ -103,6 +105,8 @@ export async function assignPolicy(policyId: string, params: AssignPiiBlockPolic
   // Only targets not already assigned - repeat assignments used to add duplicate rows.
   const existing = await prisma.piiBlockPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
   const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  // One PII_BLOCK policy per endpoint (policyExclusivity.service.ts).
+  await assertAssignable("PII_BLOCK", policyId, fresh.agentIds, fresh.groupIds);
   if (fresh.agentIds.length + fresh.groupIds.length > 0) {
     await prisma.piiBlockPolicyAssignment.createMany({
       data: [
@@ -149,7 +153,7 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
   const memberships =
     groupIds.length > 0
-      ? await prisma.agentGroupMembership.findMany({ where: { groupId: { in: groupIds } }, select: { agentId: true, groupId: true } })
+      ? await membershipsUnderGroups(groupIds)
       : [];
 
   const agentIds = [...new Set([...directAgentIds, ...memberships.map((m) => m.agentId)])];

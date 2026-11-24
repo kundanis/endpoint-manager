@@ -31,9 +31,33 @@ static class Program
             if (!created) return; // already running in this session
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            // An error in one window must never close the tray app: log it and carry on.
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (s, e) => TrayLog.Write("UI error: " + e.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => TrayLog.Write("Fatal error: " + e.ExceptionObject);
             TrayContext context = new TrayContext();
             if (Array.Exists(args, a => a.Equals("/policies", StringComparison.OrdinalIgnoreCase))) context.ShowPolicies();
             Application.Run(context);
+        }
+    }
+}
+
+// Errors go to %LOCALAPPDATA%\EndpointIQ\tray.log (kept small) instead of closing the app.
+static class TrayLog
+{
+    public static void Write(string text)
+    {
+        try
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EndpointIQ");
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, "tray.log");
+            if (File.Exists(file) && new FileInfo(file).Length > 512 * 1024) File.Delete(file);
+            File.AppendAllText(file, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + text + Environment.NewLine);
+        }
+        catch
+        {
+            // logging must never fail the app
         }
     }
 }
@@ -127,6 +151,7 @@ static class AgentApi
 
     public static string Duration(int minutes)
     {
+        if (minutes == 0) return "Permanent (until IT ends it)";
         if (minutes < 60) return minutes + " minutes";
         if (minutes < 1440) return (minutes / 60) + (minutes == 60 ? " hour" : " hours");
         return (minutes / 1440) + (minutes == 1440 ? " day" : " days");
@@ -141,12 +166,22 @@ class TrayContext : ApplicationContext
     readonly Icon baseIcon;
     readonly ToolStripMenuItem statusItem = new ToolStripMenuItem("Checking…") { Enabled = false };
     readonly ToolStripMenuItem syncItem = new ToolStripMenuItem("Last sync: –") { Enabled = false };
+    // Why the PC isn't connected (licence limit reached, removed from the console, network...).
+    readonly ToolStripMenuItem problemItem = new ToolStripMenuItem("") { Visible = false };
+    readonly ToolStripMenuItem groupItem = new ToolStripMenuItem("") { Enabled = false, Visible = false };
+    readonly System.Windows.Forms.Timer infoTimer = new System.Windows.Forms.Timer { Interval = 300000 };
+    string problemText = "", problemSince = "", lastProblemShown = "";
     readonly System.Windows.Forms.Timer statusTimer = new System.Windows.Forms.Timer { Interval = 15000 };
     readonly System.Windows.Forms.Timer requestTimer = new System.Windows.Forms.Timer { Interval = 60000 };
+    readonly System.Windows.Forms.Timer consentTimer = new System.Windows.Forms.Timer { Interval = 60000 };
+    readonly ToolStripMenuItem consentItem = new ToolStripMenuItem("Privacy consent…");
+    ConsentForm consentForm; // endpoint user consent (DPDP), see ConsentForm.cs
+    bool consentPending;     // this user hasn't answered the notice in force
     readonly Dictionary<string, string> knownStatus = new Dictionary<string, string>();
     readonly SynchronizationContext ui;
     PoliciesForm policiesForm;
     ScreenshotBlocker screenshotBlocker; // EPM screenshot blocking, see ScreenshotBlocker.cs
+    AiClipboardGuard aiClipboardGuard; // AI Guard: sensitive data on its way into AI desktop apps, see AiClipboardGuard.cs
     string version = "", hostname = "", server = "";
     int lastState = -1; // 0 offline, 1 connected, 2 agent not running
 
@@ -157,13 +192,19 @@ class TrayContext : ApplicationContext
 
         ContextMenuStrip menu = new ContextMenuStrip();
         menu.Items.Add(statusItem);
+        menu.Items.Add(problemItem);
         menu.Items.Add(syncItem);
+        menu.Items.Add(groupItem);
+        problemItem.Click += (s, e) => ShowProblem();
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Sync now", null, (s, e) => SyncNow()));
         ToolStripMenuItem policies = new ToolStripMenuItem("Policies and pause requests…", null, (s, e) => ShowPolicies());
         policies.Font = new Font(policies.Font, FontStyle.Bold);
         menu.Items.Add(policies);
+        consentItem.Click += (s, e) => ShowConsent();
+        menu.Items.Add(consentItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Uninstall agent…", null, (s, e) => ShowUninstall()));
         menu.Items.Add(new ToolStripMenuItem("About Endpoint IQ", null, (s, e) => ShowAbout()));
 
         icon.ContextMenuStrip = menu;
@@ -171,15 +212,28 @@ class TrayContext : ApplicationContext
         icon.Text = "Endpoint IQ Agent";
         icon.Visible = true;
         icon.DoubleClick += (s, e) => ShowPolicies();
+        // A click while consent is still to be given opens the consent form (the user's own choice).
+        icon.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left && consentPending) ShowConsent(); };
 
         statusTimer.Tick += (s, e) => RefreshStatus();
         requestTimer.Tick += (s, e) => CheckRequests(false);
+        consentTimer.Tick += (s, e) => CheckConsent();
+        infoTimer.Tick += (s, e) => RefreshInfo();
+        infoTimer.Start();
         statusTimer.Start();
         requestTimer.Start();
+        consentTimer.Start();
         RefreshStatus();
+        RefreshInfo();
         CheckRequests(true);
+        // Shortly after sign-in (the agent may still be issuing this user's key): only updates the
+        // menu - the consent form never opens by itself.
+        System.Windows.Forms.Timer firstConsentCheck = new System.Windows.Forms.Timer { Interval = 8000 };
+        firstConsentCheck.Tick += (s, e) => { firstConsentCheck.Stop(); CheckConsent(); };
+        firstConsentCheck.Start();
 
         screenshotBlocker = new ScreenshotBlocker(text => icon.ShowBalloonTip(5000, "Endpoint IQ", text, ToolTipIcon.Warning));
+        aiClipboardGuard = new AiClipboardGuard(text => icon.ShowBalloonTip(8000, "Endpoint IQ - AI Guard", text, ToolTipIcon.Warning));
 
         UsageTracker usage = new UsageTracker();
         Application.ApplicationExit += (s, e) => usage.Flush();
@@ -202,9 +256,14 @@ class TrayContext : ApplicationContext
         {
             int state;
             string last = "";
+            string problem = "", since = "";
             try
             {
                 object s = AgentApi.Call("GET", "/status", null);
+                Dictionary<string, object> sd = s as Dictionary<string, object>;
+                object p = sd != null && sd.ContainsKey("problem") ? sd["problem"] : null;
+                problem = AgentApi.Str(p, "text") ?? "";
+                since = AgentApi.When(AgentApi.Str(p, "since"));
                 version = AgentApi.Str(s, "version") ?? "";
                 hostname = AgentApi.Str(s, "hostname") ?? "";
                 server = AgentApi.Str(s, "serverUrl") ?? "";
@@ -215,13 +274,28 @@ class TrayContext : ApplicationContext
             {
                 state = 2;
             }
-            OnUi(() => ShowState(state, last));
+            OnUi(() =>
+            {
+                problemText = state == 0 ? problem : "";
+                problemSince = since;
+                ShowState(state, last);
+            });
         });
     }
 
     void ShowState(int state, string last)
     {
-        statusItem.Text = state == 1 ? "Connected to Endpoint IQ" : state == 0 ? "Can't reach the Endpoint IQ server" : "Endpoint IQ agent isn't running";
+        statusItem.Text = state == 1 ? "Connected to Endpoint IQ" : state == 0 ? "Not connected to the Endpoint IQ server" : "Endpoint IQ agent isn't running";
+        // The reason, shortened in the menu; click it for the whole text.
+        problemItem.Visible = problemText != "";
+        problemItem.Text = problemText.Length > 70 ? problemText.Substring(0, 67) + "… (details)" : problemText;
+        problemItem.ToolTipText = problemText;
+        if (problemText != "" && problemText != lastProblemShown)
+        {
+            lastProblemShown = problemText;
+            icon.ShowBalloonTip(10000, "Endpoint IQ - not connected", problemText, ToolTipIcon.Warning);
+        }
+        if (problemText == "") lastProblemShown = "";
         syncItem.Text = "Last sync: " + (last == "" ? "–" : last) + (version != "" ? "   ·   v" + version : "");
         string tip = "Endpoint IQ Agent – " + (state == 1 ? "connected" : state == 0 ? "offline" : "not running");
         icon.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
@@ -314,12 +388,107 @@ class TrayContext : ApplicationContext
         });
     }
 
+    // Keeps the menu up to date. The consent form opens only when the user opens it (menu, or a
+    // click on the icon).
+    void CheckConsent()
+    {
+        Background(() =>
+        {
+            object c;
+            try
+            {
+                c = AgentApi.Call("GET", "/consent", null);
+            }
+            catch
+            {
+                return;
+            }
+            bool required = AgentApi.Str(c, "required") == "True";
+            string decision = AgentApi.Str(c, "decision");
+            OnUi(() =>
+            {
+                try
+                {
+                    consentPending = required && decision == "PENDING";
+                    consentItem.Visible = required;
+                    consentItem.Text = !required ? "Privacy consent…" : decision == "AGREED" ? "Privacy consent (agreed)…" : decision == "DECLINED" ? "Privacy consent (declined)…" : "Privacy consent – please answer…";
+                }
+                catch (Exception e)
+                {
+                    TrayLog.Write("Consent check: " + e);
+                }
+            });
+        });
+    }
+
+    public void ShowConsent()
+    {
+        try
+        {
+            if (consentForm == null || consentForm.IsDisposed)
+            {
+                consentForm = new ConsentForm(baseIcon, decision =>
+                {
+                    consentPending = false;
+                    icon.ShowBalloonTip(6000, "Endpoint IQ", decision == "AGREED" ? "Thank you - your consent was saved." : "Your answer was saved: you declined.", ToolTipIcon.Info);
+                    CheckConsent();
+                });
+            }
+            consentForm.Show();
+            if (consentForm.WindowState == FormWindowState.Minimized) consentForm.WindowState = FormWindowState.Normal;
+            consentForm.Activate();
+        }
+        catch (Exception e)
+        {
+            TrayLog.Write("Consent window: " + e);
+        }
+    }
+
     public void ShowPolicies()
     {
+        if (consentPending)
+        {
+            ShowConsent();
+            return;
+        }
         if (policiesForm == null || policiesForm.IsDisposed) policiesForm = new PoliciesForm(baseIcon);
         policiesForm.Show();
         if (policiesForm.WindowState == FormWindowState.Minimized) policiesForm.WindowState = FormWindowState.Normal;
         policiesForm.Activate();
+    }
+
+    void ShowProblem()
+    {
+        MessageBox.Show(problemText + (problemSince != "" ? "\n\nSince " + problemSince + "." : ""), "Endpoint IQ - not connected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    // The groups this PC is in ("Mumbai › Andheri"), from the server through the agent.
+    void RefreshInfo()
+    {
+        Background(() =>
+        {
+            List<string> groups = new List<string>();
+            try
+            {
+                object info = AgentApi.Call("GET", "/info", null);
+                Dictionary<string, object> d = info as Dictionary<string, object>;
+                if (d != null && d.ContainsKey("groups")) foreach (object g in AgentApi.List(d["groups"])) groups.Add(Convert.ToString(g));
+            }
+            catch
+            {
+                return; // not connected: keep what was shown
+            }
+            OnUi(() =>
+            {
+                groupItem.Visible = true;
+                groupItem.Text = groups.Count == 0 ? "Group: none" : (groups.Count == 1 ? "Group: " : "Groups: ") + string.Join(", ", groups.ToArray());
+            });
+        });
+    }
+
+    void ShowUninstall()
+    {
+        using (UninstallForm f = new UninstallForm(baseIcon)) f.ShowDialog();
     }
 
     void ShowAbout()
@@ -343,7 +512,7 @@ class PoliciesForm : Form
     readonly TextBox reason = new TextBox();
     readonly Button submit = new Button();
     readonly Label message = new Label();
-    readonly int[] durations = { 15, 60, 240, 480, 1440 };
+    readonly int[] durations = { 15, 60, 240, 480, 1440, 0 }; // 0 = permanent, until an administrator ends it
     bool loading;
 
     public PoliciesForm(Icon appIcon)
@@ -387,7 +556,7 @@ class PoliciesForm : Form
         FlowLayoutPanel form = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 10, 0, 0) };
         form.Controls.Add(new Label { Text = "Pause for", AutoSize = true, Margin = new Padding(0, 7, 6, 0) });
         duration.DropDownStyle = ComboBoxStyle.DropDownList;
-        duration.Width = 120;
+        duration.Width = 200;
         foreach (int m in durations) duration.Items.Add(AgentApi.Duration(m));
         duration.SelectedIndex = 1;
         form.Controls.Add(duration);
@@ -589,6 +758,105 @@ class PoliciesForm : Form
                 MessageBox.Show(this, "Your request was sent to your IT administrator. You'll get a notification when they answer.",
                     "Request sent", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }));
+        });
+    }
+}
+
+// ---- Uninstall from the PC ------------------------------------------------------------------
+
+// Asks for the organisation's uninstall password (Asset Settings -> Tamper protection). The
+// server checks it - and refuses when no password is set - and the agent then removes itself the
+// same way as an uninstall started from the console.
+class UninstallForm : Form
+{
+    readonly TextBox password = new TextBox();
+    readonly Button go = new Button();
+    readonly Label message = new Label();
+
+    public UninstallForm(Icon appIcon)
+    {
+        Text = "Uninstall Endpoint IQ Agent";
+        Icon = appIcon;
+        Font = new Font("Segoe UI", 9.5f);
+        StartPosition = FormStartPosition.CenterScreen;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ClientSize = new Size(460, 230);
+
+        TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 5 };
+        Controls.Add(layout);
+        layout.Controls.Add(new Label
+        {
+            Text = "Removing the agent stops your organisation's protection and management of this PC. Enter the uninstall password your IT administrator gave you.",
+            AutoSize = true,
+            MaximumSize = new Size(420, 0),
+            Margin = new Padding(0, 0, 0, 10),
+        });
+        layout.Controls.Add(new Label { Text = "Uninstall password", AutoSize = true });
+        password.UseSystemPasswordChar = true;
+        password.Width = 420;
+        password.MaxLength = 200;
+        layout.Controls.Add(password);
+        FlowLayoutPanel actions = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 10, 0, 0) };
+        go.Text = "Uninstall";
+        go.AutoSize = true;
+        go.Click += (s, e) => Submit();
+        Button cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        actions.Controls.Add(go);
+        actions.Controls.Add(cancel);
+        layout.Controls.Add(actions);
+        message.AutoSize = true;
+        message.MaximumSize = new Size(420, 0);
+        message.Margin = new Padding(0, 8, 0, 0);
+        layout.Controls.Add(message);
+        AcceptButton = go;
+        CancelButton = cancel;
+    }
+
+    void Submit()
+    {
+        if (password.Text.Length == 0)
+        {
+            message.Text = "Enter the uninstall password.";
+            return;
+        }
+        if (MessageBox.Show(this, "Uninstall the Endpoint IQ agent from this PC?", "Uninstall Endpoint IQ Agent", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+        go.Enabled = false;
+        message.Text = "Checking the password…";
+        string pw = password.Text;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            string error = null;
+            try
+            {
+                Dictionary<string, object> body = new Dictionary<string, object>();
+                body["password"] = pw;
+                AgentApi.Call("POST", "/uninstall", body);
+            }
+            catch (Exception e)
+            {
+                error = e.Message;
+            }
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (IsDisposed) return;
+                    if (error != null)
+                    {
+                        message.Text = error;
+                        go.Enabled = true;
+                        return;
+                    }
+                    MessageBox.Show(this, "The password was accepted. The agent is being removed; the Endpoint IQ icon disappears within a minute.", "Uninstall Endpoint IQ Agent", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Close();
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+                // window closed meanwhile
+            }
         });
     }
 }

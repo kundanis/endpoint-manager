@@ -1,3 +1,4 @@
+import { withConsentGate } from "./consent";
 import crypto from "node:crypto";
 import https from "node:https";
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
@@ -290,5 +291,6 @@ export function agentClient(
     },
   );
 
-  return withFailover(client);
+  // Monitoring data waits for the endpoint users' consent (consent.ts).
+  return withConsentGate(withFailover(client));
 }

@@ -25,6 +25,7 @@ import type {
 } from "@em/shared";
 import { NAV_MODULES } from "../navConfig";
 import { api } from "./client";
+import type { AiAction, AiAlertSettingsView, AiAppRisk, AiAppView, AiComponentView, AiGuardPolicyView, AiPromptAction, AiPromptDataTypeOption, AiPromptEventView, AiUsageView, LicenseChangeNoticeView } from "./types";
 import type {
   AppControlPolicyEvent,
   CommandBlockPolicyEvent,
@@ -881,6 +882,8 @@ export function useAssetGroups() {
   return useQuery({
     queryKey: ["assetGroups"],
     queryFn: () => api.get<AssetGroupListItem[]>("/admin/asset-groups"),
+    // In tree order: each main group followed by its sub groups ("Mumbai", "Mumbai › Andheri"...).
+    select: (groups) => [...groups].sort((a, b) => (a.path ?? a.name).localeCompare(b.path ?? b.name)),
     refetchInterval: 10000,
   });
 }
@@ -896,7 +899,7 @@ export function useAssetGroup(id: string | undefined) {
 export function useCreateAssetGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; description?: string | null }) =>
+    mutationFn: (body: { name: string; description?: string | null; parentId?: string | null }) =>
       api.post<AssetGroupListItem>("/admin/asset-groups", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assetGroups"] }),
   });
@@ -905,7 +908,7 @@ export function useCreateAssetGroup() {
 export function useUpdateAssetGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string; name?: string; description?: string | null }) =>
+    mutationFn: ({ id, ...body }: { id: string; name?: string; description?: string | null; parentId?: string | null }) =>
       api.patch<AssetGroupListItem>(`/admin/asset-groups/${id}`, body),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["assetGroups"] });
@@ -4254,4 +4257,219 @@ export function useThreatPolicySync(policyId: string | undefined) {
 export interface QuarantineDispatchResult {
   jobId: string | null;
   skipped?: string[];
+}
+
+// Licence change requests pushed by the License Server (Licensing page). Refreshed by the
+// server's live events when one arrives; the interval is only a fallback.
+export function useLicenseChangeNotices(enabled = true) {
+  return useQuery({
+    queryKey: ["licenseChangeNotices"],
+    queryFn: () => api.get<LicenseChangeNoticeView[]>("/admin/license/change-requests"),
+    enabled,
+    refetchInterval: 120000,
+  });
+}
+
+function useLicenseChangeMutation<V, R>(fn: (v: V) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["licenseChangeNotices"] });
+      qc.invalidateQueries({ queryKey: ["licenseStatus"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useCheckLicenseChanges() {
+  return useLicenseChangeMutation(() => api.post<{ open: number }>("/admin/license/change-requests/check"));
+}
+
+export function useAcceptLicenseChange() {
+  return useLicenseChangeMutation((id: string) => api.post<LicenseChangeNoticeView>(`/admin/license/change-requests/${id}/accept`));
+}
+
+export function useRejectLicenseChange() {
+  return useLicenseChangeMutation((p: { id: string; reason?: string }) =>
+    api.post<LicenseChangeNoticeView>(`/admin/license/change-requests/${p.id}/reject`, { reason: p.reason }),
+  );
+}
+
+// ---- AI Guard ----
+
+export function useAiUsage(days: number, groupId: string) {
+  return useQuery({
+    queryKey: ["aiGuardUsage", days, groupId],
+    queryFn: () => api.get<AiUsageView>(`/admin/ai-guard/usage?days=${days}${groupId ? `&groupId=${encodeURIComponent(groupId)}` : ""}`),
+    refetchInterval: 120000,
+  });
+}
+
+export function useAiApps() {
+  return useQuery({ queryKey: ["aiGuardApps"], queryFn: () => api.get<AiAppView[]>("/admin/ai-guard/apps") });
+}
+
+export interface AiCustomAppInput {
+  name: string;
+  category: string;
+  risk: AiAppRisk;
+  domains: string[];
+  executables: string[];
+}
+
+function useAiGuardMutation<V, R>(fn: (v: V) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["aiGuardApps"] });
+      qc.invalidateQueries({ queryKey: ["aiGuardPolicies"] });
+      qc.invalidateQueries({ queryKey: ["aiGuardUsage"] });
+      qc.invalidateQueries({ queryKey: ["aiGuardComponents"] });
+    },
+  });
+}
+
+export function useCreateAiApp() {
+  return useAiGuardMutation((v: AiCustomAppInput) => api.post<unknown>("/admin/ai-guard/apps", v));
+}
+
+export function useUpdateAiApp() {
+  return useAiGuardMutation((v: AiCustomAppInput & { id: string }) => api.put<unknown>(`/admin/ai-guard/apps/${v.id}`, v));
+}
+
+export function useDeleteAiApp() {
+  return useAiGuardMutation((id: string) => api.del<unknown>(`/admin/ai-guard/apps/${id}`));
+}
+
+export function useAiPolicies() {
+  return useQuery({ queryKey: ["aiGuardPolicies"], queryFn: () => api.get<AiGuardPolicyView[]>("/admin/ai-guard/policies") });
+}
+
+export interface AiPolicyInput {
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  defaultAction: AiAction;
+  appActions: Record<string, AiAction>;
+  promptProtection?: boolean;
+  promptDataTypes?: string[];
+  promptAction?: AiPromptAction;
+}
+
+export function useAiPromptDataTypes() {
+  return useQuery({ queryKey: ["aiGuardPromptDataTypes"], queryFn: () => api.get<AiPromptDataTypeOption[]>("/admin/ai-guard/prompt-data-types") });
+}
+
+export function useAiPromptEvents(days: number, groupId: string) {
+  return useQuery({
+    queryKey: ["aiGuardPromptEvents", days, groupId],
+    queryFn: () => api.get<AiPromptEventView[]>(`/admin/ai-guard/prompt-events?days=${days}${groupId ? `&groupId=${encodeURIComponent(groupId)}` : ""}`),
+    refetchInterval: 120000,
+  });
+}
+
+export function useCreateAiPolicy() {
+  return useAiGuardMutation((v: AiPolicyInput) => api.post<AiGuardPolicyView>("/admin/ai-guard/policies", v));
+}
+
+export function useUpdateAiPolicy() {
+  return useAiGuardMutation((v: AiPolicyInput & { id: string }) => api.put<AiGuardPolicyView>(`/admin/ai-guard/policies/${v.id}`, v));
+}
+
+export function useDeleteAiPolicy() {
+  return useAiGuardMutation((id: string) => api.del<unknown>(`/admin/ai-guard/policies/${id}`));
+}
+
+export function useSetAiPolicyAssignments() {
+  return useAiGuardMutation((v: { id: string; agentIds: string[]; groupIds: string[] }) =>
+    api.put<AiGuardPolicyView>(`/admin/ai-guard/policies/${v.id}/assignments`, { agentIds: v.agentIds, groupIds: v.groupIds }),
+  );
+}
+
+// Each endpoint the AI policy reaches, with its last website-block sync (which carries AI Guard).
+export function useAiPolicySyncStatus(policyId: string) {
+  return useQuery({
+    queryKey: ["aiGuardPolicies", policyId, "sync"],
+    queryFn: () => api.get<SyncStatusRowView[]>(`/admin/ai-guard/policies/${policyId}/sync-status`),
+    refetchInterval: 30000,
+  });
+}
+
+export interface SyncStatusRowView {
+  agentId: string;
+  hostname: string;
+  groupName: string | null;
+  lastLoggedOnUser: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+  lastSyncedAt: string | null;
+}
+
+// ---- AI Guard phase 3 ----
+
+export function useAiComponents(groupId: string) {
+  return useQuery({
+    queryKey: ["aiGuardComponents", groupId],
+    queryFn: () => api.get<AiComponentView[]>(`/admin/ai-guard/components${groupId ? `?groupId=${encodeURIComponent(groupId)}` : ""}`),
+  });
+}
+
+// Allow or block one AI add-on on one endpoint (on top of the endpoint's policy).
+export function useSetAiEndpointBlock() {
+  return useAiGuardMutation((v: { agentId: string; key: string; blocked: boolean }) => api.put<unknown>("/admin/ai-guard/components/endpoint-block", v));
+}
+
+// Scan now: endpoints look for AI add-ons again (agent 0.2.34+, within 5 minutes).
+export function useRequestAiScan() {
+  return useMutation({
+    mutationFn: (v: { agentId?: string; groupId?: string }) => api.post<{ requested: number }>("/admin/ai-guard/components/scan", v),
+  });
+}
+
+export function useAiAlertSettings() {
+  return useQuery({ queryKey: ["aiGuardAlerts"], queryFn: () => api.get<AiAlertSettingsView>("/admin/ai-guard/alerts") });
+}
+
+export function useSaveAiAlertSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: Pick<AiAlertSettingsView, "enabled" | "recipients" | "alertOnPrompts" | "alertOnBlockedApps" | "weeklySummary">) =>
+      api.put<AiAlertSettingsView>("/admin/ai-guard/alerts", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["aiGuardAlerts"] }),
+  });
+}
+
+export function useTestAiAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<void>("/admin/ai-guard/alerts/test"),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["aiGuardAlerts"] }),
+  });
+}
+
+// ---- Endpoint user consent (DPDP) ----
+
+export function useConsentNotice() {
+  return useQuery({ queryKey: ["consentNotice"], queryFn: () => api.get<import("./types").ConsentNoticeView>("/admin/consent/notice") });
+}
+
+export function useSaveConsentNotice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { required: boolean; title: string; body: string; grievanceContact: string }) =>
+      api.put<import("./types").ConsentNoticeView>("/admin/consent/notice", v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["consentNotice"] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useEndpointConsent(agentId: string) {
+  return useQuery({
+    queryKey: ["endpointConsent", agentId],
+    queryFn: () => api.get<import("./types").EndpointConsentRecords>(`/admin/consent/endpoints/${agentId}`),
+  });
 }

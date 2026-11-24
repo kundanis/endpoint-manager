@@ -1,3 +1,4 @@
+import ConsentBadge from "../components/ConsentBadge";
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -55,6 +56,7 @@ import {
   useAddAgentNote,
   useAgent,
   useAgentAppliedPolicies,
+  useEndpointConsent,
   useAgentAppControlEvents,
   useAgentCommandBlockEvents,
   useAgentDataDiscoveryFindings,
@@ -87,6 +89,7 @@ import {
   useReleaseSoftware,
   useSyncInventory,
 } from "../api/hooks";
+import { LockIcon, useFeatureLicensed } from "../licenseFeatures";
 
 const LIFECYCLE_OPTIONS: LifecycleStatus[] = ["ACTIVE", "IN_REPAIR", "RETIRED", "IN_STORAGE"];
 const DEVICE_TYPE_LABEL: Record<"LAPTOP" | "DESKTOP" | "SERVER", string> = {
@@ -390,7 +393,7 @@ function AgentCard({ agent }: { agent: AgentDetail }) {
               agent.groups.length > 0 ? (
                 <span className="app-badge-row">
                   {agent.groups.map((g) => (
-                    <Tag key={g.id}>{g.name}</Tag>
+                    <Tag key={g.id}>{g.path ?? g.name}</Tag>
                   ))}
                 </span>
               ) : (
@@ -602,17 +605,41 @@ function SecurityPostureCard({ agent }: { agent: AgentDetail }) {
   );
 }
 
-// Every policy assigned to this endpoint, directly or through a group, each opening its policy.
-// Modules hidden for the admin (licence or module visibility) are left out.
+// Allow/block modules where an endpoint may have only one policy (the server's
+// policyExclusivity.service.ts refuses a second). Two here means they predate that rule.
+const ONE_POLICY_MODULES = new Set([
+  "Application control",
+  "Web blocking",
+  "Command blocking",
+  "IP blocking",
+  "USB control",
+  "Screenshot blocking",
+  "PII data blocking",
+  "DLP content",
+  "Threat protection",
+  "AI Guard",
+]);
+
+// Every enabled policy assigned to this endpoint, directly or through a group, listed module by
+// module, each opening its policy. Disabled policies and modules hidden for the admin (licence or
+// module visibility) are left out.
 function AppliedPoliciesCard({ agentId }: { agentId: string }) {
   const { data, isLoading, error } = useAgentAppliedPolicies(agentId);
   const isHidden = useItemHiddenCheck();
-  const policies = (data?.policies ?? [])
-    .filter((p) => !isHidden(p.navPath))
-    .sort((a, b) => a.module.localeCompare(b.module) || a.name.localeCompare(b.name));
+  const visible = (data?.policies ?? []).filter((p) => !isHidden(p.navPath));
+  const disabledCount = visible.filter((p) => !p.enabled).length;
+  const policies = visible.filter((p) => p.enabled).sort((a, b) => a.module.localeCompare(b.module) || a.name.localeCompare(b.name));
+  const modules: { module: string; items: typeof policies }[] = [];
+  for (const p of policies) {
+    const last = modules[modules.length - 1];
+    if (last && last.module === p.module) last.items.push(p);
+    else modules.push({ module: p.module, items: [p] });
+  }
+  const perModule = new Map<string, number>();
+  for (const p of policies) perModule.set(p.module, (perModule.get(p.module) ?? 0) + 1);
+  const conflicting = [...perModule].filter(([m, n]) => n > 1 && ONE_POLICY_MODULES.has(m)).map(([m]) => m);
 
   function status(p: (typeof policies)[number]): { tone: BadgeTone; text: string; title?: string } {
-    if (!p.enabled) return { tone: "neu", text: "Disabled" };
     // Only the Windows agent enforces these modules.
     if (data?.platform && data.platform !== "win32")
       return { tone: "neu", text: "Windows only", title: "This module runs on Windows endpoints only, so the policy has no effect here" };
@@ -624,7 +651,14 @@ function AppliedPoliciesCard({ agentId }: { agentId: string }) {
   }
 
   return (
-    <Card title="Applied Policies" hint={policies.length > 0 ? `${policies.length} ${plural(policies.length, "policy", "policies")}` : undefined}>
+    <Card
+      title="Applied Policies"
+      hint={
+        policies.length > 0
+          ? `${policies.length} ${plural(policies.length, "policy", "policies")} in ${modules.length} ${plural(modules.length, "module", "modules")}`
+          : undefined
+      }
+    >
       {isLoading ? (
         <Skeleton lines={4} />
       ) : error ? (
@@ -634,39 +668,104 @@ function AppliedPoliciesCard({ agentId }: { agentId: string }) {
       ) : policies.length === 0 ? (
         <EmptyState icon={ShieldCheck} title="No policies apply to this endpoint">
           Assign a policy to this endpoint or one of its groups from the policy's Assignment tab.
+          {disabledCount > 0 && ` ${disabledCount} assigned ${plural(disabledCount, "policy is", "policies are")} disabled.`}
+        </EmptyState>
+      ) : (
+        <div className="app-stack">
+        {conflicting.length > 0 && (
+          <Alert tone="warn" title={`More than one policy in ${conflicting.join(", ")}`}>
+            An endpoint should have only one policy per module here, because two can disagree (one allows something the other
+            blocks). These were assigned before that rule; remove one assignment so the endpoint follows a single policy.
+          </Alert>
+        )}
+        <div className="app-table-scroll">
+          <table className="ep-tbl">
+            <thead>
+              <tr>
+                <th scope="col">Module</th>
+                <th scope="col">Policy</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {modules.map((m) =>
+                m.items.map((p, i) => {
+                  const s = status(p);
+                  return (
+                    <tr key={`${p.module}|${p.policyId}`}>
+                      {i === 0 && (
+                        <td rowSpan={m.items.length} style={{ verticalAlign: "top" }}>
+                          <b>{m.module}</b>
+                        </td>
+                      )}
+                      <td>
+                        <Link className="ep-link" to={p.link}>
+                          {p.name}
+                        </Link>
+                        {p.detail && <span className="app-muted"> · {p.detail}</span>}
+                      </td>
+                      <td>
+                        <span title={s.title}>
+                          <Badge tone={s.tone}>{s.text}</Badge>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                }),
+              )}
+            </tbody>
+          </table>
+        </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Endpoint user consent (DPDP): each Windows user's answer to the consent notice on this endpoint.
+function UserConsentCard({ agent }: { agent: AgentDetail }) {
+  const { data } = useEndpointConsent(agent.id);
+  if (!data || (!data.required && data.users.length === 0) || agent.osPlatform !== "win32") return null;
+  const label: Record<string, { tone: BadgeTone; text: string }> = {
+    AGREED: { tone: "ok", text: "Agreed" },
+    DECLINED: { tone: "neu", text: "Declined" },
+    PENDING: { tone: "med", text: "Not answered" },
+  };
+  return (
+    <Card title="User Consent" hint={<ConsentBadge consent={agent.consent} />}>
+      {!data.required ? (
+        <p className="app-muted">Consent isn't asked at the moment (Endpoint Hub → User Consent). Earlier answers are kept below.</p>
+      ) : data.users.length === 0 ? (
+        <EmptyState icon={ShieldCheck} title="No user has signed in since consent was switched on">
+          {agent.consent?.needsAgentUpdate
+            ? "This endpoint's agent is older than the consent form: update it to 0.2.36 or later under Agent Updates."
+            : "Users answer from the Endpoint IQ tray icon: right-click it and choose Privacy consent."}
         </EmptyState>
       ) : (
         <div className="app-table-scroll">
           <table className="ep-tbl">
             <thead>
               <tr>
-                <th scope="col">Policy</th>
-                <th scope="col">Module</th>
-                <th scope="col">Status</th>
+                <th scope="col">Windows user</th>
+                <th scope="col">Answer</th>
+                <th scope="col">Answered</th>
+                <th scope="col">Last signed in</th>
               </tr>
             </thead>
             <tbody>
-              {policies.map((p) => {
-                const s = status(p);
-                return (
-                  <tr key={`${p.module}|${p.policyId}`}>
-                    <td>
-                      <Link className="ep-link" to={p.link}>
-                        {p.name}
-                      </Link>
-                    </td>
-                    <td>
-                      {p.module}
-                      {p.detail && <span className="app-muted"> · {p.detail}</span>}
-                    </td>
-                    <td>
-                      <span title={s.title}>
-                        <Badge tone={s.tone}>{s.text}</Badge>
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {data.users.map((u) => (
+                <tr key={u.account}>
+                  <td className="ep-mono">{u.account}</td>
+                  <td>
+                    <Badge tone={label[u.decision].tone}>{label[u.decision].text}</Badge>
+                    {u.decision === "PENDING" && u.answeredVersion !== null && (
+                      <span className="app-muted"> · answered version {u.answeredVersion} ({u.answeredDecision === "AGREED" ? "agreed" : "declined"})</span>
+                    )}
+                  </td>
+                  <td>{u.decidedAt ? formatDateTime(u.decidedAt) : <span className="app-muted">—</span>}</td>
+                  <td>{formatRelative(u.lastActiveAt)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -1016,9 +1115,11 @@ function GroupMembershipEditor({ agentId, currentGroupIds }: { agentId: string; 
       <div className="app-stack">
         <div className="app-check-grid">
           {groups.map((g) => (
-            <Check key={g.id} checked={selected.includes(g.id)} onChange={() => toggle(g.id)} label={g.name} />
+            <Check key={g.id} checked={selected.includes(g.id)} onChange={() => toggle(g.id)} label={g.path ?? g.name} />
           ))}
         </div>
+        {/* e.g. a group that would give this endpoint a second policy of an allow/block module */}
+        {setGroups.isError && <Alert tone="critical">{(setGroups.error as Error).message}</Alert>}
         <div className="app-actions-row app-end">
           <Button onClick={() => setGroups.mutate({ agentId, groupIds: selected })} disabled={setGroups.isPending}>
             {setGroups.isPending ? "Saving…" : "Save groups"}
@@ -1041,6 +1142,7 @@ function downloadRdpFile(hostname: string, ipAddress: string) {
 }
 
 function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
+  const remoteAccessLicensed = useFeatureLicensed().licensed("EH_REMOTE_ACCESS");
   const enable = useEnableRemoteAccess();
   const disable = useDisableRemoteAccess();
   const confirm = useConfirm();
@@ -1099,8 +1201,13 @@ function RemoteAccessPanel({ agent }: { agent: AgentDetail }) {
               </Button>
             </>
           ) : (
-            <Button onClick={handleEnable} disabled={enable.isPending}>
+            <Button
+              onClick={handleEnable}
+              disabled={enable.isPending || !remoteAccessLicensed}
+              title={remoteAccessLicensed ? undefined : "Remote access isn't included in your licence"}
+            >
               {enable.isPending ? "Enabling…" : "Enable remote access"}
+              {!remoteAccessLicensed && <LockIcon />}
             </Button>
           )}
         </div>
@@ -2292,6 +2399,7 @@ export default function AgentDetailPage() {
           <div className="app-stack">
             <SecurityPostureCard agent={agent} />
             <AppliedPoliciesCard agentId={agent.id} />
+            <UserConsentCard agent={agent} />
             <NotesFeed agentId={agent.id} />
           </div>
         </Row>

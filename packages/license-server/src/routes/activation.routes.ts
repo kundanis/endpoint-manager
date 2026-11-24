@@ -2,6 +2,8 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import {
   activateRequestSchema,
+  pendingLicenseChangesRequestSchema,
+  respondToLicenseChangeRequestSchema,
   registerCallbackRequestSchema,
   revalidateRequestSchema,
   unlockRequestRequestSchema,
@@ -17,6 +19,12 @@ import {
   revalidate,
 } from "../services/activation.service";
 import { createUnlockRequest } from "../services/unlockRequest.service";
+import {
+  ChangeRequestClosedError,
+  ChangeRequestNotFoundError,
+  pendingChangeRequestsFor,
+  respondToChangeRequest,
+} from "../services/changeRequest.service";
 
 export const activationRouter = Router();
 
@@ -91,6 +99,36 @@ activationRouter.post("/unlock-request", publicRateLimiter, async (req, res, nex
   } catch (err) {
     if (err instanceof LicenseKeyNotFoundError) {
       return res.status(404).json({ error: "License key not found" });
+    }
+    next(err);
+  }
+});
+
+// --- Licence change requests, called by the bound deployment (binding proof) ---------------
+
+activationRouter.post("/change-requests/respond", publicRateLimiter, async (req, res, next) => {
+  try {
+    const p = respondToLicenseChangeRequestSchema.parse(req.body);
+    res.json(await respondToChangeRequest(p, p.requestId, p.decision, p.reason));
+  } catch (err) {
+    if (err instanceof LicenseKeyNotFoundError || err instanceof BindingMismatchError) {
+      return res.status(403).json({ error: "License key or binding could not be verified" });
+    }
+    if (err instanceof ChangeRequestNotFoundError) return res.status(404).json({ error: "Change request not found" });
+    if (err instanceof ChangeRequestClosedError) {
+      return res.status(409).json({ error: "This request was withdrawn or has already been answered" });
+    }
+    next(err);
+  }
+});
+
+activationRouter.post("/change-requests/pending", publicRateLimiter, async (req, res, next) => {
+  try {
+    const p = pendingLicenseChangesRequestSchema.parse(req.body);
+    res.json(await pendingChangeRequestsFor(p));
+  } catch (err) {
+    if (err instanceof LicenseKeyNotFoundError || err instanceof BindingMismatchError) {
+      return res.status(403).json({ error: "License key or binding could not be verified" });
     }
     next(err);
   }

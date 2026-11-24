@@ -4,6 +4,7 @@ import { prisma } from "../db";
 import { isAgentPaused } from "./pause.service";
 import { shouldSaveImages } from "./screenCaptureImage.service";
 import { policySources } from "./screenCapturePolicy.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 const MAX_OPENED_BY = 10; // programs kept per screenshot (fits the 2000-character column)
 
@@ -13,7 +14,7 @@ export async function resolveAssignedForAgent(agentId: string): Promise<Assigned
   const none: AssignedScreenCaptureWire = { sources: [], extraPaths: [], trackOpenedBy: false, saveImages: false };
   if (await isAgentPaused(agentId)) return none;
 
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
   const assignments = await prisma.screenCapturePolicyAssignment.findMany({
     where: { OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] },

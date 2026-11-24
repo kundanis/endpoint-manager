@@ -10,6 +10,7 @@ import {
   removeGroupMember,
   updateGroup,
 } from "../services/assetGroup.service";
+import { GroupTreeError } from "../services/groupTree.service";
 
 export const assetGroupsRouter = Router();
 
@@ -18,6 +19,7 @@ assetGroupsRouter.post("/", async (req, res, next) => {
     const payload = createAssetGroupRequestSchema.parse(req.body);
     res.status(201).json(await createGroup(payload));
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -26,6 +28,7 @@ assetGroupsRouter.get("/", async (_req, res, next) => {
   try {
     res.json(await listGroups());
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -36,6 +39,7 @@ assetGroupsRouter.get("/:id", async (req, res, next) => {
     if (!group) return res.status(404).json({ error: "Group not found" });
     res.json(group);
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -45,6 +49,7 @@ assetGroupsRouter.patch("/:id", async (req, res, next) => {
     const payload = updateAssetGroupRequestSchema.parse(req.body);
     res.json(await updateGroup(req.params.id, payload));
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -55,6 +60,7 @@ assetGroupsRouter.delete("/:id", async (req, res, next) => {
     if (!deleted) return res.status(404).json({ error: "Group not found" });
     res.status(204).send();
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -71,6 +77,7 @@ assetGroupsRouter.post("/:id/members", async (req, res, next) => {
     await addGroupMembers(req.params.id, payload.agentIds);
     res.status(204).send();
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });
@@ -80,6 +87,7 @@ assetGroupsRouter.delete("/:id/members/:agentId", async (req, res, next) => {
     await removeGroupMember(req.params.id, req.params.agentId);
     res.status(204).send();
   } catch (err) {
+    if (err instanceof GroupTreeError) return res.status(400).json({ error: err.message });
     next(err);
   }
 });

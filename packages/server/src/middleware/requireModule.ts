@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { LicenseModule } from "@license/shared";
-import { isModuleLicensed } from "../services/licenseActivation.service";
+import { isFeatureLicensed, isModuleLicensed } from "../services/licenseActivation.service";
 
 // Applied per top-level module's router mount in app.ts (after adminAuthMiddleware) — a
 // pure defense-in-depth boundary matching the console's own nav-level lock, so a locked
@@ -16,6 +16,21 @@ export function requireModule(moduleKey: LicenseModule) {
       const licensed = await isModuleLicensed(moduleKey);
       if (!licensed) {
         return res.status(403).json({ error: `The ${moduleKey} module is not included in this license`, moduleKey });
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// The same for a sub-module or feature within a licensed module (@license/shared features). The
+// console shows these locked; this keeps their API closed too.
+export function requireFeature(featureKey: string) {
+  return async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!(await isFeatureLicensed(featureKey))) {
+        return res.status(403).json({ error: "This feature is not included in your licence. Contact your vendor to add it.", featureKey });
       }
       next();
     } catch (err) {

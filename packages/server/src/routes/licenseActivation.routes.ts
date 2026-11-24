@@ -15,6 +15,18 @@ import {
   testLicenseServerConnection,
 } from "../services/licenseServerConfig.service";
 
+import type { Response } from "express";
+import { requireSuperAdmin } from "../middleware/requireAdminRole";
+import {
+  ChangeRequestNotFoundError,
+  ChangeRequestNotOpenError,
+  LicenseServerError,
+  NoLicenseError,
+  checkForLicenseChanges,
+  listLicenseChangeNotices,
+  respondToLicenseChange,
+} from "../services/licenseChange.service";
+
 export const licenseActivationRouter = Router();
 
 const activateRequestSchema = z.object({
@@ -102,5 +114,60 @@ licenseActivationRouter.post("/unlock-request", async (req, res, next) => {
       return res.status(503).json({ error: err.message || "License Server is unreachable" });
     }
     next(err);
+  }
+});
+
+// --- Licence change requests from the License Server ----------------------------------------
+// Anyone who can open Licensing sees them; only a super admin can answer or check for new ones.
+
+function sendLicenseChangeError(err: unknown, res: Response): boolean {
+  if (err instanceof ChangeRequestNotFoundError) {
+    res.status(404).json({ error: "Licence request not found" });
+  } else if (err instanceof ChangeRequestNotOpenError) {
+    res.status(409).json({ error: "This request has already been answered or withdrawn" });
+  } else if (err instanceof NoLicenseError) {
+    res.status(409).json({ error: "No licence is activated on this server" });
+  } else if (err instanceof LicenseServerError) {
+    res.status(502).json({ error: err.message });
+  } else if (err instanceof LicenseServerUnreachableError) {
+    res.status(502).json({ error: "The License Server is not configured or can't be reached" });
+  } else {
+    return false;
+  }
+  return true;
+}
+
+licenseActivationRouter.get("/change-requests", async (_req, res, next) => {
+  try {
+    res.json(await listLicenseChangeNotices());
+  } catch (err) {
+    next(err);
+  }
+});
+
+licenseActivationRouter.post("/change-requests/check", requireSuperAdmin, async (_req, res, next) => {
+  try {
+    res.json({ open: await checkForLicenseChanges() });
+  } catch (err) {
+    if (!sendLicenseChangeError(err, res)) next(err);
+  }
+});
+
+const rejectLicenseChangeSchema = z.object({ reason: z.string().max(1000).optional() });
+
+licenseActivationRouter.post("/change-requests/:id/accept", requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json(await respondToLicenseChange(req.params.id, "ACCEPT", req.adminId!));
+  } catch (err) {
+    if (!sendLicenseChangeError(err, res)) next(err);
+  }
+});
+
+licenseActivationRouter.post("/change-requests/:id/reject", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const { reason } = rejectLicenseChangeSchema.parse(req.body ?? {});
+    res.json(await respondToLicenseChange(req.params.id, "REJECT", req.adminId!, reason));
+  } catch (err) {
+    if (!sendLicenseChangeError(err, res)) next(err);
   }
 });

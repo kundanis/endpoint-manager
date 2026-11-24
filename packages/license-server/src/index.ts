@@ -4,9 +4,11 @@ import { createApp } from "./app";
 import { config } from "./config";
 import { logger } from "./logger";
 import { scheduleRevokeNoticeRetries } from "./services/revokeNotice.service";
+import { scheduleChangeRequestWork } from "./services/changeRequest.service";
 
 const app = createApp();
 scheduleRevokeNoticeRetries();
+scheduleChangeRequestWork();
 
 if (config.tlsPfxPath && config.tlsPfxPassphrase) {
   const pfx = fs.readFileSync(config.tlsPfxPath);

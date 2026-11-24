@@ -65,6 +65,8 @@ import { getQuarantineActivity, QuarantineNotSupportedError, quarantineAgents, r
 import { AgentNotFoundError, disableRemoteAccess, enableRemoteAccess, normalizeAdminIp } from "../services/remoteAccess.service";
 import { pauseAgent, pauseAllAgents, resumeAgent, resumeAllAgents, AgentNotFoundError as PauseAgentNotFoundError } from "../services/pause.service";
 import { requireSuperAdmin } from "../middleware/requireAdminRole";
+import { endpointConsentStates } from "../services/consent.service";
+import { groupPaths } from "../services/groupTree.service";
 import { incrementTotalAgentsUninstalled } from "../services/licenseActivation.service";
 import {
   buildBatteryView,
@@ -74,6 +76,7 @@ import {
   extractOsEditionLabel,
   summarizeDiskLayout,
 } from "../services/agentDerived.util";
+import { requireFeature } from "../middleware/requireModule";
 
 export const adminRouter = Router();
 
@@ -129,6 +132,8 @@ adminRouter.get("/agents", async (_req, res, next) => {
     } = await getAgentRollupsCached();
     // Live, like the list itself: a quarantine/release still waiting to run, or one that failed.
     const quarantineActivity = await getQuarantineActivity();
+    const consent = await endpointConsentStates(agents);
+    const paths = await groupPaths();
 
     res.json(
       agents.map((a) => ({
@@ -142,7 +147,7 @@ adminRouter.get("/agents", async (_req, res, next) => {
         macAddress: a.macAddress,
         tags: JSON.parse(a.tags) as string[],
         lifecycleStatus: a.lifecycleStatus,
-        groups: a.groupMemberships.map((m) => ({ id: m.group.id, name: m.group.name })),
+        groups: a.groupMemberships.map((m) => ({ id: m.group.id, name: m.group.name, path: paths.get(m.group.id) ?? m.group.name })),
         serialNumber: a.serialNumber,
         vendor: a.vendor,
         purchaseDate: a.purchaseDate?.toISOString() ?? null,
@@ -155,6 +160,7 @@ adminRouter.get("/agents", async (_req, res, next) => {
         deviceType: a.deviceTypeOverride ?? deriveDeviceType(a.inventory?.pcSystemType ?? null, extractOsEditionLabel(a.inventory?.osInfo)),
         quarantined: a.quarantined,
         quarantineActivity: quarantineActivity.get(a.id) ?? null,
+        consent: consent.get(a.id) ?? null,
         paused: a.paused,
         pausedAt: a.pausedAt?.toISOString() ?? null,
         zeroTrustNonCompliantCount: ztCountByAgent.get(a.id) ?? 0,
@@ -198,6 +204,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
     });
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     const customFieldValues = await getAgentCustomFieldValues(agent.id);
+    const paths = await groupPaths();
     const [openVulnerabilityCount, nonCompliantZtFindingsRaw, lastPatchInstalledByAgent, latestUpdateTaskByAgent, latestAvailablePatch, missingPatchCount] =
       await Promise.all([
         prisma.vulnerabilityFinding.count({ where: { agentId: agent.id, status: "OPEN" } }),
@@ -230,7 +237,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       macAddress: agent.macAddress,
       tags: JSON.parse(agent.tags) as string[],
       lifecycleStatus: agent.lifecycleStatus,
-      groups: agent.groupMemberships.map((m) => ({ id: m.group.id, name: m.group.name })),
+      groups: agent.groupMemberships.map((m) => ({ id: m.group.id, name: m.group.name, path: paths.get(m.group.id) ?? m.group.name })),
       customFieldValues,
       serialNumber: agent.serialNumber,
       vendor: agent.vendor,
@@ -244,6 +251,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       deviceType: agent.deviceTypeOverride ?? deriveDeviceType(agent.inventory?.pcSystemType ?? null, extractOsEditionLabel(agent.inventory?.osInfo)),
       quarantined: agent.quarantined,
       quarantineActivity: (await getQuarantineActivity([agent.id])).get(agent.id) ?? null,
+      consent: (await endpointConsentStates([agent])).get(agent.id) ?? null,
       paused: agent.paused,
       pausedAt: agent.pausedAt?.toISOString() ?? null,
       remoteAccessEnabled: agent.remoteAccessEnabled,
@@ -307,7 +315,7 @@ adminRouter.patch("/agents/:id/asset-details", async (req, res, next) => {
   }
 });
 
-adminRouter.post("/agents/:id/quarantine", async (req, res, next) => {
+adminRouter.post("/agents/:id/quarantine", requireFeature("EH_QUARANTINE"), async (req, res, next) => {
   try {
     const result = await quarantineAgents([req.params.id], req.adminId!);
     if (!result) return res.status(404).json({ error: "Agent not found" });
@@ -329,7 +337,7 @@ adminRouter.post("/agents/:id/release", async (req, res, next) => {
   }
 });
 
-adminRouter.post("/agents/:id/remote-access/enable", async (req, res, next) => {
+adminRouter.post("/agents/:id/remote-access/enable", requireFeature("EH_REMOTE_ACCESS"), async (req, res, next) => {
   try {
     const adminIp = normalizeAdminIp(req.ip ?? "");
     if (!adminIp) return res.status(400).json({ error: "Could not determine the admin's source IP address" });
@@ -486,7 +494,7 @@ adminRouter.post("/agents/:id/uninstall-agent", async (req, res, next) => {
   }
 });
 
-adminRouter.post("/agents/quarantine-bulk", async (req, res, next) => {
+adminRouter.post("/agents/quarantine-bulk", requireFeature("EH_QUARANTINE"), async (req, res, next) => {
   try {
     const payload = dispatchTargetRequestSchema.parse(req.body);
     const resolvedAgentIds = await resolveTargetAgentIds(payload.agentIds, payload.groupIds);
@@ -759,7 +767,7 @@ adminRouter.delete("/enrollment-tokens/:id", async (req, res, next) => {
 // Fire-and-forget on the service side - responds with a jobId immediately, console polls
 // the GET below for progress. See remoteInstall.service.ts for why username/password never
 // touch the database.
-adminRouter.post("/remote-install", async (req, res, next) => {
+adminRouter.post("/remote-install", requireFeature("EH_REMOTE_INSTALL"), async (req, res, next) => {
   try {
     const payload = startRemoteInstallRequestSchema.parse(req.body);
     // The saved account is a domain credential only super admins can set. Letting any

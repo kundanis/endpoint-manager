@@ -61,6 +61,9 @@ model LicenseKey {
   // customer's license must not suddenly lose access to everything the moment this
   // ships) — new keys always have this explicitly set by the issuing admin.
   modules           String          @default("[\"ENDPOINT_MANAGER\",\"NETWORK_MANAGER\",\"SOFTWARE_MANAGER\",\"SECURITY_MANAGER\",\"DATA_MANAGER\",\"USER_MANAGER\"]") @db.NVarChar(1000)
+  // JSON array of the features included within those modules (@license/shared features.ts);
+  // null = everything in them (every key issued before features existed, and keys sold whole).
+  features          String?         @db.NVarChar(2000)
   validityType      String          @db.NVarChar(20) // ONE_YEAR | TWO_YEAR | THREE_YEAR | PERPETUAL
   // Null until activation (computed then as activatedAt + N years); stays null forever
   // for PERPETUAL. Not set at issuance time since validity counts from first use, not
@@ -93,6 +96,7 @@ model LicenseKey {
   activatedAt       DateTime?
   revokedAt         DateTime?
   unlockRequests    UnlockRequest[]
+  changeRequests    LicenseChangeRequest[]
 
   @@index([entityId])
 }
@@ -114,4 +118,33 @@ model UnlockRequest {
   resolutionNote         String?    @db.NVarChar(1000)
 
   @@index([licenseKeyId])
+}
+
+// A change to an activated key, pushed to its deployment for the customer's admin to accept or
+// reject (see @license/shared changeRequest.schema.ts). The key itself only changes when the
+// customer accepts, or - for a reduction - when autoApplyAt passes. At most one PENDING per key:
+// a new request cancels the previous one.
+model LicenseChangeRequest {
+  id               String     @id @default(uuid())
+  licenseKeyId     String
+  licenseKey       LicenseKey @relation(fields: [licenseKeyId], references: [id], onDelete: Cascade)
+  kind             String     @db.NVarChar(20) // ADDITION | REDUCTION
+  status           String     @default("PENDING") @db.NVarChar(20) // PENDING | ACCEPTED | REJECTED | AUTO_APPLIED | CANCELLED
+  message          String?    @db.NVarChar(1000)
+  currentTerms     String     @db.NVarChar(2000) // JSON LicenseTerms when the request was made
+  proposedTerms    String     @db.NVarChar(2000) // JSON LicenseTerms
+  autoApplyAt      DateTime?
+  createdByAdminId String
+  createdAt        DateTime   @default(now())
+  // Delivery to the deployment: the status last delivered, so a later state (cancelled,
+  // auto-applied) is pushed again. Retried every few minutes until it lands.
+  deliveredStatus  String?    @db.NVarChar(20)
+  deliveredAt      DateTime?
+  lastDeliveryError String?   @db.NVarChar(1000)
+  respondedAt      DateTime?
+  responseReason   String?    @db.NVarChar(1000)
+  appliedAt        DateTime?
+
+  @@index([licenseKeyId])
+  @@index([status])
 }

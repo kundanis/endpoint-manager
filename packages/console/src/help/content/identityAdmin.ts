@@ -132,12 +132,33 @@ export const ADMIN_TOPICS: HelpTopic[] = [
     title: "Licensing",
     path: "/licensing",
     summary: "The licence for this deployment: seats, validity, licensed modules, and which modules everyone sees.",
-    keywords: ["license key", "activate", "seats", "module visibility", "hide module", "threat protection", "edition"],
+    keywords: ["license key", "activate", "seats", "feature", "sub module", "locked feature", "not included", "licence contents", "module visibility", "hide module", "threat protection", "edition", "licence request", "accept", "reject", "add module", "renewal", "revoked"],
     sections: [
+      {
+        title: "Modules, Sub-Modules and Features",
+        items: [
+          "A licence includes modules (Endpoint Hub, Security Posture, Data Governance...) and, within them, sub-modules and features - for example Data Governance › EPM › USB Device Control. Licence Contents on this page shows the whole tree: a tick for what's included, a lock for what isn't.",
+          "A module your licence doesn't include is hidden from the menu. A sub-module or feature it doesn't include stays visible with a lock: its page explains that it isn't licensed, nobody can change it, and its policies don't apply on endpoints. Its data is kept.",
+          "Some parts come with their module and can't be bought separately (for example Endpoints & Assets, Data Types and Access Exceptions).",
+          "A licence sold by whole modules includes every feature in them. To add a feature, ask your vendor: it arrives as a licence request below.",
+        ],
+      },
+      {
+        title: "Licence Requests From the Vendor",
+        items: [
+          "This server never checks back with the License Server on its own. When the vendor changes your licence (adds or removes a module, changes the number of endpoints or the end date), the License Server sends a request here, and it appears under Licence Requests with an alert in the bell for super admins.",
+          "Each request lists every change and its impact on this server. Additions (a new module, more endpoints, a later end date) apply only when a super admin selects Accept; Reject sends your reason back to the vendor and nothing changes.",
+          "Reductions (anything removed or lowered) can be accepted or rejected too, but apply by themselves on the date shown, 15 days after they were sent, unless the vendor withdraws them.",
+          "A revocation applies at once and is shown here with what it means for this server.",
+          "If the License Server can't reach this server (a private network or a firewall), the vendor tells you a request was sent: select Check for licence requests to fetch it. That checks once; it never repeats on its own.",
+          "Accepting fetches the new licence from the License Server, so this server must be able to reach it at that moment.",
+        ],
+      },
       {
         title: "Threat Protection and Editions",
         items: [
           "Threat Protection (Microsoft Defender management) is sold separately: it appears once the licence includes it. Where licence enforcement is off, the server's THREAT_PROTECTION=true setting turns it on.",
+          "AI Guard (generative-AI discovery and control) is sold separately the same way: it appears once the licence includes it, or - where licence enforcement is off - with the server's AI_GUARD=true setting. The Threat Protection edition doesn't include it.",
           "The Endpoint IQ Threat Protection edition (PRODUCT_EDITION=threat-protection) shows only Endpoints, Threat Protection, Licensing and Administrators. Moving to full Endpoint IQ keeps all data and agents: change the edition setting and the licence.",
           "Modules an edition doesn't include aren't listed under Module visibility.",
         ],

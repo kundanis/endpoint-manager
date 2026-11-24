@@ -2,6 +2,8 @@ import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import type { AgentListItem } from "../api/types";
 import EndpointLabel from "./EndpointLabel";
+import { useAssetGroups } from "../api/hooks";
+import { groupsBelow } from "../groupTree";
 
 // Shared "pick endpoints" checklist — used by every "Assign to" / "Target endpoints"
 // panel across the console (policy assignment pages, command/patch/package/agent-update
@@ -50,7 +52,9 @@ export default function EndpointCheckboxList({
     .filter((a) => !hostTerm || a.hostname.toLowerCase().includes(hostTerm))
     .filter((a) => !userTerm || (a.inventory?.lastLoggedOnUser ?? "").toLowerCase().includes(userTerm));
 
-  const selectedGroupIdSet = new Set(selectedGroupIds ?? []);
+  // A selected group covers its sub groups' endpoints too.
+  const { data: allGroups } = useAssetGroups();
+  const selectedGroupIdSet = groupsBelow(allGroups, selectedGroupIds ?? []);
   function impliedByGroup(agent: AgentListItem): boolean {
     return selectedGroupIdSet.size > 0 && agent.groups.some((g) => selectedGroupIdSet.has(g.id));
   }

@@ -14,8 +14,11 @@ import { ALLOWLIST_RULE_TYPES, DEFAULT_MICROSOFT_PRODUCTS, appControlRuleProblem
 import type { AppControlPolicy, AppControlRule } from "@prisma/client";
 import { config } from "../config";
 import { prisma } from "../db";
+import { assertAssignable } from "./policyExclusivity.service";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
+import { membershipsUnderGroups } from "./groupTree.service";
+import { isFeatureLicensed } from "./licenseActivation.service";
 
 async function resolveAssignedAgentIdsForPolicy(policyId: string): Promise<string[]> {
   const assignments = await prisma.appControlPolicyAssignment.findMany({ where: { policyId } });
@@ -69,6 +72,9 @@ export function ruleView(r: AppControlRule) {
 export async function createPolicy(params: CreateAppControlPolicyRequest, createdByAdminId: string) {
   if (params.mode === "ALLOWLIST" && !config.advancedAppControl) {
     throw new PolicyModeError("Allowlist policies need advanced application control, which isn't switched on for this server.");
+  }
+  if (params.mode === "ALLOWLIST" && !(await isFeatureLicensed("EPM_ALLOWLIST"))) {
+    throw new PolicyModeError("Allowlisting is not included in your licence. Contact your vendor to add it.");
   }
   const policy = await prisma.appControlPolicy.create({
     data: {
@@ -253,6 +259,8 @@ export async function assignPolicy(policyId: string, params: AssignAppControlPol
   // Only targets not already assigned - repeat assignments used to add duplicate rows.
   const existing = await prisma.appControlPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
   const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  // One APP_CONTROL policy per endpoint (policyExclusivity.service.ts).
+  await assertAssignable("APP_CONTROL", policyId, fresh.agentIds, fresh.groupIds);
   if (fresh.agentIds.length + fresh.groupIds.length > 0) {
     await prisma.appControlPolicyAssignment.createMany({
       data: [
@@ -297,7 +305,7 @@ export async function getPolicyAgentBreakdown(policyId: string) {
   const groupIds = assignments.filter((a) => a.groupId).map((a) => a.groupId!);
   const memberships =
     groupIds.length > 0 && assignedAgentIds.length > 0
-      ? await prisma.agentGroupMembership.findMany({ where: { groupId: { in: groupIds }, agentId: { in: assignedAgentIds } }, select: { agentId: true, groupId: true } })
+      ? await membershipsUnderGroups(groupIds, assignedAgentIds)
       : [];
   const assignmentForAgent = (agentId: string) =>
     assignments.find((a) => a.agentId === agentId) ??

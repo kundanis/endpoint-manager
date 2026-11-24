@@ -7,6 +7,9 @@ export interface NavItem {
   permission?: AdminPermissionKey;
   // Shown only to super admins.
   superAdminOnly?: boolean;
+  // A sub-module licensed on its own (@license/shared features): shown locked when the licence
+  // includes the module but not this.
+  feature?: string;
 }
 
 export interface NavModule {
@@ -45,10 +48,11 @@ export const NAV_MODULES: NavModule[] = [
     items: [
       { path: "/endpoints", label: "Endpoints" },
       { path: "/enrollment-tokens", label: "Enrollment Tokens" },
-      { path: "/commands", label: "Commands" },
-      { path: "/packages", label: "Packages" },
+      { path: "/commands", label: "Commands", feature: "EH_COMMANDS" },
+      { path: "/packages", label: "Packages", feature: "EH_PACKAGES" },
       { path: "/agent-updates", label: "Agent Updates" },
       { path: "/asset-settings", label: "Asset Settings" },
+      { path: "/user-consent", label: "User Consent" },
     ],
   },
   {
@@ -62,10 +66,10 @@ export const NAV_MODULES: NavModule[] = [
     label: "Security Posture",
     licenseModule: "SECURITY_MANAGER",
     items: [
-      { path: "/vulnerabilities", label: "Vulnerabilities" },
-      { path: "/patches", label: "Patches" },
-      { path: "/security-config", label: "Security Configuration" },
-      { path: "/zero-trust", label: "Zero Trust" },
+      { path: "/vulnerabilities", label: "Vulnerabilities", feature: "SP_VULNERABILITIES" },
+      { path: "/patches", label: "Patches", feature: "SP_PATCHES" },
+      { path: "/security-config", label: "Security Configuration", feature: "SP_SECURITY_CONFIG" },
+      { path: "/zero-trust", label: "Zero Trust", feature: "SP_ZERO_TRUST" },
       // EDR (Lite) hidden from the menu — every agent had it disabled first (see
       // edrEnabled on the Agent model), so no endpoint is actively scanning even though
       // the route/page still exists for direct navigation if it's ever re-enabled.
@@ -77,11 +81,22 @@ export const NAV_MODULES: NavModule[] = [
     licenseModule: "DATA_MANAGER",
     items: [
       { path: "/data-types", label: "Data Types" },
-      { path: "/data-discovery", label: "Data Discovery" },
-      { path: "/dlp", label: "DLP" },
-      { path: "/data-movement", label: "Data Movement" },
-      { path: "/epm", label: "EPM" },
+      { path: "/data-discovery", label: "Data Discovery", feature: "DG_DISCOVERY" },
+      { path: "/dlp", label: "DLP", feature: "DG_DLP" },
+      { path: "/data-movement", label: "Data Movement", feature: "DG_MOVEMENT" },
+      { path: "/epm", label: "EPM", feature: "EPM" },
       { path: "/access-exceptions", label: "Access Exceptions" },
+    ],
+  },
+  {
+    key: "ai-guard",
+    label: "AI Guard",
+    licenseModule: "AI_GUARD",
+    items: [
+      { path: "/ai-guard/apps", label: "AI Tools" },
+      { path: "/ai-guard/extensions", label: "AI Extensions", feature: "AI_EXTENSIONS" },
+      { path: "/ai-guard/policies", label: "Policies" },
+      { path: "/ai-guard/overview", label: "AI Usage" },
     ],
   },
   {
@@ -100,8 +115,8 @@ export const NAV_MODULES: NavModule[] = [
     label: "Identity Governance",
     licenseModule: "USER_MANAGER",
     items: [
-      { path: "/user-productivity", label: "User Productivity" },
-      { path: "/user-risk", label: "User Risk", permission: "USER_RISK" },
+      { path: "/user-productivity", label: "User Productivity", feature: "IG_PRODUCTIVITY" },
+      { path: "/user-risk", label: "User Risk", permission: "USER_RISK", feature: "IG_USER_RISK" },
       { path: "/admin-logs", label: "Admin Logs", superAdminOnly: true },
     ],
   },

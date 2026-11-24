@@ -81,6 +81,11 @@ export async function clearUninstallPassword(): Promise<AgentSecurityStatus> {
 // No password configured at all => nothing to check against => allow (protection is
 // opt-in, off until an admin sets one - same "off by default" convention as
 // LICENSE_ENFORCEMENT_ENABLED). Once set, only a correct password passes.
+// Whether tamper protection has an uninstall password (uninstalling from the PC needs one).
+export async function hasUninstallPassword(): Promise<boolean> {
+  return !!(await getSettings())?.uninstallPasswordHash;
+}
+
 export async function verifyUninstallPassword(password: string): Promise<boolean> {
   const settings = await getSettings();
   if (!settings?.uninstallPasswordHash) return true;

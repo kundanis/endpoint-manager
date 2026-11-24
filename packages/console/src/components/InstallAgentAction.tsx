@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useAgentSecurityStatus, useEnrollmentTokens, useMe, useRemoteInstallJob, useStartRemoteInstall } from "../api/hooks";
 import RemoteInstallStatusTable from "./RemoteInstallStatusTable";
 import { Button } from "./ui";
+import { useFeatureLicensed } from "../licenseFeatures";
 
 // Per-host "Install agent" on an unmanaged device - same underlying WinRM-based remote
 // install as Enrollment Tokens' "Install on endpoint" panel, just triggered with the target
@@ -17,6 +18,7 @@ import { Button } from "./ui";
 // With a remote install account saved (Asset settings -> Remote install) no login is asked:
 // the server uses the saved account. "Use another account" still lets an admin type one.
 export default function InstallAgentAction({ hostname, ipAddress }: { hostname: string | null; ipAddress: string }) {
+  const installLicensed = useFeatureLicensed().licensed("EH_REMOTE_INSTALL");
   const startInstall = useStartRemoteInstall();
   const [open, setOpen] = useState(false);
   const [useOther, setUseOther] = useState(false);
@@ -66,7 +68,13 @@ export default function InstallAgentAction({ hostname, ipAddress }: { hostname: 
   if (!open) {
     return (
       <div className="app-stack-sm">
-        <Button size="sm" icon={Download} disabled={startInstall.isPending} onClick={() => setOpen(true)} title={savedAccount ? `Installs as ${savedAccount}` : undefined}>
+        <Button
+          size="sm"
+          icon={Download}
+          disabled={startInstall.isPending || !installLicensed}
+          onClick={() => setOpen(true)}
+          title={!installLicensed ? "Remote agent install isn't included in your licence" : savedAccount ? `Installs as ${savedAccount}` : undefined}
+        >
           {startInstall.isPending ? "Starting…" : "Install agent"}
         </Button>
         {startInstall.isError && <span className="ep-error">{(startInstall.error as Error).message}</span>}

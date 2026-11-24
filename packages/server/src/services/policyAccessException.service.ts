@@ -1,5 +1,7 @@
 import type { CreatePolicyAccessExceptionRequest, PolicyAccessExceptionType } from "@em/shared";
 import { prisma } from "../db";
+import { membersOfGroups } from "./groupTree.service";
+import { PERMANENT_PAUSE_MINUTES, PERMANENT_PAUSE_UNTIL } from "@em/shared";
 
 export class AgentNotFoundError extends Error {}
 export class GroupNotFoundError extends Error {}
@@ -25,6 +27,8 @@ async function getPolicyName(policyType: PolicyAccessExceptionType, policyId: st
       return (await prisma.dlpPolicy.findUnique({ where: { id: policyId }, select: { name: true } }))?.name ?? null;
     case "SCREENSHOT_BLOCK":
       return (await prisma.screenshotBlockPolicy.findUnique({ where: { id: policyId }, select: { name: true } }))?.name ?? null;
+    case "AI_GUARD":
+      return (await prisma.aiGuardPolicy.findUnique({ where: { id: policyId }, select: { name: true } }))?.name ?? null;
   }
 }
 
@@ -46,7 +50,7 @@ export async function createRequest(params: CreatePolicyAccessExceptionRequest, 
   if (params.groupId) {
     const group = await prisma.assetGroup.findUnique({ where: { id: params.groupId }, select: { id: true } });
     if (!group) throw new GroupNotFoundError();
-    agentIds = (await prisma.agentGroupMembership.findMany({ where: { groupId: params.groupId }, select: { agentId: true } })).map((m) => m.agentId);
+    agentIds = (await membersOfGroups([params.groupId])).map((m) => m.agentId);
     if (agentIds.length === 0) throw new GroupEmptyError();
   } else {
     const agent = await prisma.agent.findUnique({ where: { id: params.agentId! }, select: { id: true } });
@@ -105,7 +109,8 @@ export async function approveRequest(id: string, approvedByAdminId: string, reso
       approvedByAdminId,
       resolvedAt: now,
       resolutionNote: resolutionNote ?? null,
-      expiresAt: new Date(now.getTime() + existing.durationMinutes * 60 * 1000),
+      // A permanent pause (asked for from the endpoint) lasts until an administrator ends it.
+      expiresAt: existing.durationMinutes === PERMANENT_PAUSE_MINUTES ? new Date(PERMANENT_PAUSE_UNTIL) : new Date(now.getTime() + existing.durationMinutes * 60 * 1000),
     },
   });
   return serialize(request, await getPolicyName(request.policyType as PolicyAccessExceptionType, request.policyId));

@@ -381,7 +381,7 @@ export default function CommandsPage() {
                       onChange={() => toggleGroup(g.id)}
                       label={
                         <>
-                          {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                          {g.path ?? g.name} <span className="app-muted ep-num">({g.memberCount})</span>
                         </>
                       }
                     />

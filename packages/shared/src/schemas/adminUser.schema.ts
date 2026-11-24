@@ -16,6 +16,7 @@ export const ADMIN_MODULE_KEYS = [
   "DATA_MANAGER",
   "USER_MANAGER",
   "THREAT_PROTECTION",
+  "AI_GUARD",
 ] as const;
 export type AdminModuleKey = (typeof ADMIN_MODULE_KEYS)[number];
 

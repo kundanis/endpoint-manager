@@ -19,6 +19,7 @@ import {
   Tabs,
 } from "./ui";
 import { formatDateTime } from "../format";
+import { groupsBelow } from "../groupTree";
 
 // Shared building blocks for every policy page (EPM categories, DLP content and email
 // policies): one consistent list → detail workflow. Each page keeps its own hooks and rule
@@ -286,7 +287,9 @@ export function AssignmentEditor({
   const assignedGroupIds = new Set((assignments ?? []).map((a) => a.groupId).filter((id): id is string => !!id));
   const assignedAgentIds = new Set((assignments ?? []).map((a) => a.agentId).filter((id): id is string => !!id));
   const groups = allGroups?.filter((g) => !assignedGroupIds.has(g.id));
-  const agents = allAgents?.filter((a) => !assignedAgentIds.has(a.id) && !a.groups.some((g) => assignedGroupIds.has(g.id)));
+  // An endpoint in a sub group of an assigned group is covered too.
+  const coveredGroupIds = groupsBelow(allGroups, assignedGroupIds);
+  const agents = allAgents?.filter((a) => !assignedAgentIds.has(a.id) && !a.groups.some((g) => coveredGroupIds.has(g.id)));
   const hiddenCount = (allAgents?.length ?? 0) - (agents?.length ?? 0) + (allGroups?.length ?? 0) - (groups?.length ?? 0);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -355,7 +358,7 @@ export function AssignmentEditor({
                 onChange={() => setSelectedGroupIds((prev) => toggle(prev, g.id))}
                 label={
                   <>
-                    {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                    {g.path ?? g.name} <span className="app-muted ep-num">({g.memberCount})</span>
                   </>
                 }
               />

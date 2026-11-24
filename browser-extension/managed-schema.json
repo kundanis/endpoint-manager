@@ -5,6 +5,16 @@
       "title": "Endpoint IQ server URL",
       "description": "Base URL of the Endpoint IQ server, for example https://epp.example.com. Set by the Endpoint IQ agent through browser policy.",
       "type": "string"
+    },
+    "endpointId": {
+      "title": "Endpoint IQ endpoint ID",
+      "description": "This computer's endpoint ID in Endpoint IQ, for AI Guard prompt protection. Set by the Endpoint IQ agent through browser policy.",
+      "type": "string"
+    },
+    "endpointKey": {
+      "title": "Endpoint IQ endpoint key",
+      "description": "Key for AI Guard prompt protection calls from this computer. Set by the Endpoint IQ agent through browser policy.",
+      "type": "string"
     }
   }
 }

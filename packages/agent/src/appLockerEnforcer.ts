@@ -31,8 +31,12 @@ const execFileAsync = promisify(execFile);
 // Allowlist (an allowlist policy): the Exe (program) collection gets only allow rules - Windows and
 // what it needs, the agent, the options and the policy's rules - so Windows blocks every other
 // program a user starts. The Msi (Windows Installer) collection likewise allows only Windows' own
-// installer cache (and administrators), so no new setup can be run by a user. A device whose
-// collections already have someone else's rules keeps them and their mode.
+// installer cache (and administrators), so no new setup can be run by a user. The Appx (packaged
+// app) collection allows Windows' and Microsoft's own packaged apps and the computer and chip
+// makers' (once program rules are enforced, Windows blocks packaged apps no rule allows -
+// Calculator, Photos, the new Notepad, Paint and Snipping Tool, Terminal, the Store...); every
+// other Store app is blocked like any other program. A device whose collections already have
+// someone else's rules keeps them and their mode.
 //
 // Needs the Application Identity service (AppIDSvc), which the agent starts. Windows 10/11 Pro,
 // Enterprise and Education all enforce AppLocker (edition checks were removed in 2022, KB5024351).
@@ -86,6 +90,8 @@ const BASELINE_IDS = {
   dotnetFolder: "e1d0a11c-0000-4000-8000-000000000111",
   msiCache: "e1d0a11c-0000-4000-8000-000000000112",
   msiAdministrators: "e1d0a11c-0000-4000-8000-000000000113",
+  signedPackagedApps: "e1d0a11c-0000-4000-8000-000000000114",
+  internetExplorer: "e1d0a11c-0000-4000-8000-000000000115",
   windows: "e1d0a11c-0000-4000-8000-000000000101",
   programFiles: "e1d0a11c-0000-4000-8000-000000000102",
   administrators: "e1d0a11c-0000-4000-8000-000000000103",
@@ -93,8 +99,27 @@ const BASELINE_IDS = {
   microsoftAll: "e1d0a11c-0000-4000-8000-000000000105",
 };
 const EVERYONE = "S-1-1-0";
-// Hardware vendors whose driver tools live under Program Files (only administrators can write there).
+// Hardware makers whose tools live under Program Files (only administrators can write there, so a
+// folder rule can't be used to slip a program in): chip and driver makers, and computer makers'
+// own utilities (support, updates, power, audio, keyboard and display settings). Both Program
+// Files folders are covered (%PROGRAMFILES% means both in AppLocker).
 const DRIVER_VENDOR_FOLDERS = ["Intel", "Realtek", "NVIDIA Corporation", "AMD", "Synaptics", "Elantech", "Conexant", "Waves", "Dolby", "DTS", "Qualcomm", "MediaTek", "Broadcom"];
+const HARDWARE_MAKER_FOLDERS = [
+  "Dell", "HP", "Hewlett-Packard", "HP Inc", "Lenovo", "ASUS", "ASUSTeK Computer Inc", "Acer", "MSI", "Toshiba", "Dynabook",
+  "Fujitsu", "Samsung", "Panasonic", "LG Electronics", "Huawei", "GIGABYTE", "Microsoft Surface",
+  "ELAN", "Alps", "Cirrus Logic", "Goodix", "Rivet Networks", "Killer Networking", "Thunderbolt", "Wacom",
+];
+// Microsoft's packaged apps: Windows' own (Start, Settings, Photos...) and Microsoft's Store apps
+// (Calculator, Notepad, Paint, Terminal, Store, Teams, Outlook...).
+const MICROSOFT_PACKAGE_PUBLISHERS = [
+  "CN=MICROSOFT WINDOWS, O=MICROSOFT CORPORATION, L=REDMOND, S=WASHINGTON, C=US",
+  "CN=MICROSOFT CORPORATION, O=MICROSOFT CORPORATION, L=REDMOND, S=WASHINGTON, C=US",
+];
+// Computer and chip makers' Microsoft Store apps (their Store publisher ids).
+const HARDWARE_PACKAGE_PUBLISHERS: { name: string; publisher: string }[] = [
+  { name: "Dell", publisher: "CN=F005DA31-7CE1-4D3E-ABEE-08A4AFF4F592" },
+  { name: "Intel", publisher: "CN=EB51A5DA-0E72-4863-82E4-EA21C1F8DFE3" },
+];
 // The product name on Windows' own files (as Windows reads it, in upper case).
 const WINDOWS_PRODUCT = "MICROSOFT\u00ae WINDOWS\u00ae OPERATING SYSTEM";
 const ADMINISTRATORS = "S-1-5-32-544";
@@ -111,8 +136,8 @@ interface DenyRule {
 interface Desired {
   denies: DenyRule[];
   allows: string[];
-  // Allowlist: the Exe and Msi collections' allow rules (XML) and the mode; null without an allowlist.
-  exe: { rules: string[]; msiRules: string[]; mode: "Enabled" | "AuditOnly" } | null;
+  // Allowlist: the Exe, Msi and Appx collections' allow rules (XML) and the mode; null without an allowlist.
+  exe: { rules: string[]; msiRules: string[]; appxRules: string[]; mode: "Enabled" | "AuditOnly" } | null;
 }
 
 interface SavedState {
@@ -191,10 +216,14 @@ export function allowlistExeRules(a: AllowlistWire): string[] {
     publisherRule(BASELINE_IDS.webView2, "Microsoft Edge WebView2", MICROSOFT_PUBLISHER, "MICROSOFT EDGE WEBVIEW2", "*", "*", "*"),
     publisherRule(BASELINE_IDS.edgeUpdate, "Microsoft Edge Update", MICROSOFT_PUBLISHER, "MICROSOFT EDGE UPDATE", "*", "*", "*"),
     publisherRule(BASELINE_IDS.dotnet, ".NET", MICROSOFT_PUBLISHER, ".NET", "*", "*", "*"),
+    // Part of Windows, signed under its own product name (opens Edge, or IE mode for old sites).
+    publisherRule(BASELINE_IDS.internetExplorer, "Internet Explorer", MICROSOFT_PUBLISHER, "INTERNET EXPLORER", "*", "*", "*"),
     pathRule(BASELINE_IDS.dotnetFolder, ".NET", EVERYONE, "%PROGRAMFILES%\\dotnet\\*"),
     pathRule(BASELINE_IDS.agent, "Endpoint IQ agent", EVERYONE, `${AGENT_FOLDER}\\*`),
     // Drivers' own tools (audio, graphics, touchpad, chipset), installed under Program Files.
     ...DRIVER_VENDOR_FOLDERS.map((f) => pathRule(stableGuid(`baseline:driver:${f.toLowerCase()}`), `Drivers: ${f}`, EVERYONE, `%PROGRAMFILES%\\${f}\\*`)),
+    // Computer makers' utilities (Dell, HP, Lenovo...), installed under Program Files.
+    ...HARDWARE_MAKER_FOLDERS.map((f) => pathRule(stableGuid(`baseline:hardware:${f.toLowerCase()}`), `Hardware: ${f}`, EVERYONE, `%PROGRAMFILES%\\${f}\\*`)),
   ];
   if (a.allowProgramFiles) out.push(pathRule(BASELINE_IDS.programFiles, "Program Files", EVERYONE, "%PROGRAMFILES%\\*"));
   if (a.exemptAdministrators) out.push(pathRule(BASELINE_IDS.administrators, "Administrators", ADMINISTRATORS, "*"));
@@ -230,6 +259,23 @@ export function allowlistExeRules(a: AllowlistWire): string[] {
   return out;
 }
 
+function packageRule(id: string, name: string, publisher: string): string {
+  return (
+    `<FilePublisherRule Id="${xmlAttr(id)}" Name="${xmlAttr(`Endpoint IQ: ${name}`.slice(0, 200))}" Description="${APPLOCKER_MARKER}" UserOrGroupSid="${EVERYONE}" Action="Allow">` +
+    `<Conditions><FilePublisherCondition PublisherName="${xmlAttr(publisher)}" ProductName="*" BinaryName="*"><BinaryVersionRange LowSection="0.0.0.0" HighSection="*" /></FilePublisherCondition></Conditions></FilePublisherRule>`
+  );
+}
+
+// Packaged apps (Microsoft Store / MSIX): Windows' and Microsoft's own, and the computer and chip
+// makers'. Without these, enforcing program rules also stops Calculator, Photos, the Store and
+// every other packaged app; any other Store app (WhatsApp, games...) stays blocked.
+export function allowlistAppxRules(): string[] {
+  return [
+    ...MICROSOFT_PACKAGE_PUBLISHERS.map((p, i) => packageRule(i === 0 ? BASELINE_IDS.signedPackagedApps : stableGuid(`baseline:appx:${p.toLowerCase()}`), i === 0 ? "Windows apps" : "Microsoft apps", p)),
+    ...HARDWARE_PACKAGE_PUBLISHERS.map((h) => packageRule(stableGuid(`baseline:appx:${h.publisher.toLowerCase()}`), `Hardware apps: ${h.name}`, h.publisher)),
+  ];
+}
+
 // Installers: Windows' own installer cache (repairs and updates of installed software), and
 // administrators when they choose to. Any other .msi a user starts is blocked.
 export function allowlistMsiRules(a: AllowlistWire): string[] {
@@ -256,7 +302,12 @@ export function desiredAppLocker(advancedRules: AppControlRuleWire[], rules: App
     else if (r.ruleType === "ALLOW_PATH") allows.push(allowPattern(r.value));
   }
   const exe = allowlist
-    ? { rules: allowlistExeRules(allowlist), msiRules: allowlistMsiRules(allowlist), mode: allowlist.enforce ? ("Enabled" as const) : ("AuditOnly" as const) }
+    ? {
+        rules: allowlistExeRules(allowlist),
+        msiRules: allowlistMsiRules(allowlist),
+        appxRules: allowlistAppxRules(),
+        mode: allowlist.enforce ? ("Enabled" as const) : ("AuditOnly" as const),
+      }
     : null;
   return { denies, allows: [...new Set(allows)], exe };
 }
@@ -298,7 +349,11 @@ export function buildApplyScript(d: Desired, probes: { id: string; path: string 
     })
     .join("\n");
   const exeCall = d.exe
-    ? `Add-Allowlist 'Exe' '${d.exe.mode}' '${psEscape(`<r>${d.exe.rules.join("")}</r>`)}'\nAdd-Allowlist 'Msi' '${d.exe.mode}' '${psEscape(`<r>${d.exe.msiRules.join("")}</r>`)}'`
+    ? [
+        `Add-Allowlist 'Exe' '${d.exe.mode}' '${psEscape(`<r>${d.exe.rules.join("")}</r>`)}'`,
+        `Add-Allowlist 'Msi' '${d.exe.mode}' '${psEscape(`<r>${d.exe.msiRules.join("")}</r>`)}'`,
+        `Add-Allowlist 'Appx' '${d.exe.mode}' '${psEscape(`<r>${d.exe.appxRules.join("")}</r>`)}'`,
+      ].join("\n")
     : "";
   const probeList = probes.map((p) => `@{ id = '${psEscape(p.id)}'; path = '${psEscape(p.path)}' }`).join(", ");
   return `
@@ -351,8 +406,8 @@ function Add-Rules($type, $allowAll, $denies) {
   foreach ($n in @($doc.r.ChildNodes)) { [void]$c.AppendChild($xml.ImportNode($n, $true)) }
 }
 
-# Allowlist: allow rules only in the Exe and Msi collections; anything else a user starts is
-# blocked. Someone else's rules there stay, with their own mode. Runs before the block rules, so a
+# Allowlist: allow rules only in the Exe, Msi and Appx collections; anything else a user starts is
+# blocked (Appx: every signed packaged app is allowed). Someone else's rules there stay, with their own mode. Runs before the block rules, so a
 # collection the allowlist uses never gets the "allow everything" rule.
 function Add-Allowlist($type, $mode, $allows) {
   $c = @($root.RuleCollection) | Where-Object { $_ -and $_.Type -eq $type } | Select-Object -First 1

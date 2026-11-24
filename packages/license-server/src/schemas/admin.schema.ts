@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { licenseModuleSchema, licenseProductSchema, validityTypeSchema } from "@license/shared";
+import { licenseFeatureListSchema, licenseModuleSchema, licenseProductSchema, validityTypeSchema } from "@license/shared";
 
 // Admin-console-facing request shapes. Deliberately NOT part of @license/shared —
 // that package is the cross-system wire contract between License Server and each
@@ -21,6 +21,17 @@ export const issueLicenseKeyRequestSchema = z.object({
   maxAgents: z.number().int().positive(),
   validityType: validityTypeSchema,
   modules: z.array(licenseModuleSchema).min(1, "Select at least one module"),
+  // Features within the modules; null or absent = everything in them.
+  features: licenseFeatureListSchema.optional(),
+});
+
+// A change to an activated key, pushed to its deployment to accept or reject.
+export const createChangeRequestRequestSchema = z.object({
+  modules: z.array(licenseModuleSchema).min(1, "Select at least one module"),
+  features: licenseFeatureListSchema.optional(),
+  maxAgents: z.number().int().positive(),
+  validUntil: z.string().datetime().nullable(), // null = perpetual
+  message: z.string().max(1000).optional(),
 });
 
 export const createAdminRequestSchema = z.object({

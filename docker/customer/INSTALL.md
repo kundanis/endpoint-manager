@@ -187,6 +187,13 @@ endpoints with agent 0.2.28 or later. With licence enforcement on, it appears wh
 includes the Threat Protection module. With enforcement off, set `THREAT_PROTECTION=true` in
 `.env` and run `sudo docker compose up -d` (or `sudo THREAT_PROTECTION=true ./deploy.sh`).
 
+**AI Guard (optional, licensed separately).** Generative-AI discovery and control: which AI tools
+(ChatGPT, Gemini, Claude, DeepSeek and others) people use, and policies that allow or block them,
+for Windows endpoints. It uses what the agent's tray app already reports, so no agent update is
+needed. With licence enforcement on, it appears when your licence includes the AI Guard module.
+With enforcement off, set `AI_GUARD=true` in `.env` and run `sudo docker compose up -d` (or
+`sudo AI_GUARD=true ./deploy.sh`).
+
 **Endpoint IQ Threat Protection edition.** A bundle named `endpoint-iq-threat-protection-<version>`
 installs the separate Threat Protection product: the same server with only Endpoints, Threat
 Protection, Licensing and Administrators shown (`PRODUCT_EDITION=threat-protection` in `.env`).

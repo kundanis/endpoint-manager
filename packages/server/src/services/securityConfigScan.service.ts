@@ -2,11 +2,12 @@ import type { AssignedBenchmarkWire, SecurityConfigScanResultPayload, SecurityRu
 import { prisma } from "../db";
 import { evaluateRule } from "./securityConfigEvaluate.util";
 import { isAgentPaused } from "./pause.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 export async function resolveAssignedBenchmarksForAgent(agentId: string): Promise<AssignedBenchmarkWire[]> {
   if (await isAgentPaused(agentId)) return [];
 
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
 
   const assignments = await prisma.securityBenchmarkAssignment.findMany({

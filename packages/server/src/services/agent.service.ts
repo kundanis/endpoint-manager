@@ -1,6 +1,7 @@
 import { removeAgentImages } from "./screenCaptureImage.service";
 import type { UpdateAssetDetailsRequest } from "@em/shared";
 import { prisma } from "../db";
+import { assertCanSetGroups } from "./policyExclusivity.service";
 import { createCommandJob } from "./command.service";
 import { isProtectedSystemSoftware } from "./softwareClassify.util";
 import { buildUninstallScript, UNINSTALL_TIMEOUT_SEC } from "./vulnerabilityRemediation.service";
@@ -32,6 +33,8 @@ export async function updateAssetDetails(agentId: string, params: UpdateAssetDet
 }
 
 export async function setAgentGroups(agentId: string, groupIds: string[]): Promise<void> {
+  // The new groups mustn't give the endpoint a second policy of an allow/block module.
+  await assertCanSetGroups(agentId, groupIds);
   await prisma.$transaction([
     prisma.agentGroupMembership.deleteMany({ where: { agentId } }),
     ...groupIds.map((groupId) => prisma.agentGroupMembership.create({ data: { agentId, groupId } })),
@@ -101,7 +104,7 @@ export async function uninstallSoftwareOnAgent(
 // with no process-tree relationship to anything running right now, so it survives the agent
 // being torn down and finishes the real cleanup afterward. The dispatched command itself reports SUCCESS almost immediately
 // (registering a task is near-instant), well before the actual removal happens.
-function buildUninstallAgentScript(): string {
+export function buildUninstallAgentScript(): string {
   const taskName = "EndpointProAgent"; // agents before 0.2.23
   const serviceName = "EndpointIQAgent";
   const watchdogTaskName = "EndpointProWatchdog";

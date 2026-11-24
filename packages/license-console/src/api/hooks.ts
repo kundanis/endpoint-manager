@@ -6,6 +6,7 @@ import type {
   EntityDetail,
   EntityListItem,
   IssuedLicenseKey,
+  LicenseChangeRequestItem,
   LicenseKeyListItem,
   UnlockRequestListItem,
 } from "./types";
@@ -75,6 +76,7 @@ export function useIssueLicenseKey() {
       maxAgents: number;
       validityType: ValidityType;
       modules: LicenseModule[];
+      features: string[];
     }) =>
       api.post<IssuedLicenseKey>("/admin/license-keys", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["licenseKeys"] }),
@@ -144,5 +146,41 @@ export function useChangeAdminPassword() {
   return useMutation({
     mutationFn: ({ id, password, otp }: { id: string; password: string; otp: string }) =>
       api.post(`/admin/admins/${id}/password`, { password, otp }),
+  });
+}
+
+export function useLicenseChangeRequests(licenseKeyId: string | null) {
+  return useQuery({
+    queryKey: ["licenseChangeRequests", licenseKeyId],
+    queryFn: () => api.get<LicenseChangeRequestItem[]>(`/admin/license-keys/${licenseKeyId}/change-requests`),
+    enabled: !!licenseKeyId,
+    // Shows the customer's answer and delivery progress without reloading.
+    refetchInterval: 15000,
+  });
+}
+
+export function useCreateLicenseChangeRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (p: { licenseKeyId: string; modules: LicenseModule[]; features: string[]; maxAgents: number; validUntil: string | null; message?: string }) =>
+      api.post<LicenseChangeRequestItem>(`/admin/license-keys/${p.licenseKeyId}/change-requests`, {
+        modules: p.modules,
+        features: p.features,
+        maxAgents: p.maxAgents,
+        validUntil: p.validUntil,
+        message: p.message,
+      }),
+    onSuccess: (_d, p) => {
+      qc.invalidateQueries({ queryKey: ["licenseChangeRequests", p.licenseKeyId] });
+      qc.invalidateQueries({ queryKey: ["licenseKeys"] });
+    },
+  });
+}
+
+export function useCancelLicenseChangeRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<LicenseChangeRequestItem>(`/admin/license-keys/change-requests/${id}/cancel`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["licenseChangeRequests"] }),
   });
 }

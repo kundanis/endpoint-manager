@@ -1,4 +1,4 @@
-// Endpoint IQ Mail Guard - attachment scanner. Reads a file's text inside the browser (it never
+// Endpoint IQ Browser Guard - personal-data scanner (email attachments, and AI prompts for AI Guard). Reads a file's text inside the browser (it never
 // leaves the device) and returns the personal-data categories found among the ones the policy
 // asks for. Same catalogue, file types and rules as the Outlook add-in
 // (packages/server/public/outlook-addin/commands.js) and packages/shared/src/data/piiPatterns.ts -
@@ -145,5 +145,108 @@
     return text ? findMatches(text, patternKeys) : [];
   }
 
-  globalThis.EmailGuardScanner = { scanFiles, scanText };
+  // ---- AI Guard prompt protection (aiguard.js) ----------------------------------------------
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // Letter-and-digit IDs matched in any case in AI prompts (attachments keep the exact patterns).
+  const ANY_CASE_IN_PROMPTS = ["PAN_INDIA", "GSTIN", "IFSC_CODE", "PASSPORT_INDIA", "IBAN"];
+
+  // Every match with its position: personal-data patterns and the policy's keyword data types
+  // (whole words, any case). [{ label, start, end }], at most `limit`.
+  function findDetailed(text, patternKeys, keywordTypes, limit) {
+    const out = [];
+    const max = limit || 200;
+    for (const def of PII_PATTERN_CATALOG) {
+      if (!patternKeys.includes(def.key)) continue;
+      let re;
+      try {
+        // People type IDs in lower case in a chat box ("abcde1234f"): any case for prompts.
+        re = new RegExp(def.pattern, ANY_CASE_IN_PROMPTS.includes(def.key) ? "gi" : "g");
+      } catch (e) {
+        continue;
+      }
+      let m;
+      while ((m = re.exec(text)) !== null && out.length < max) {
+        if (m[0].length === 0) {
+          re.lastIndex++;
+          continue;
+        }
+        if (def.key === "CREDIT_CARD" && !passesLuhn(m[0])) continue;
+        // Separators the pattern allows after the last digit aren't part of the value.
+        const value = m[0].replace(/[\s-]+$/, "");
+        out.push({ label: def.label, start: m.index, end: m.index + value.length });
+      }
+    }
+    for (const type of keywordTypes || []) {
+      for (const word of type.values || []) {
+        const w = String(word).trim();
+        if (w.length < 2) continue;
+        const edge = /^\w/.test(w) ? "(?<![\\w])" : "";
+        const tail = /\w$/.test(w) ? "(?![\\w])" : "";
+        const re = new RegExp(edge + escapeRegExp(w) + tail, "gi");
+        let m;
+        while ((m = re.exec(text)) !== null && out.length < max) out.push({ label: type.label, start: m.index, end: m.index + m[0].length });
+      }
+    }
+    return out.sort((a, b) => a.start - b.start);
+  }
+
+  // "4111 1111 1111 1111" -> "4111 •••• •••• 1111": first and last few characters kept.
+  function maskValue(value) {
+    const keep = value.length >= 12 ? 4 : value.length >= 6 ? 2 : 1;
+    let seen = 0;
+    const total = value.replace(/[\s-]/g, "").length;
+    return value
+      .split("")
+      .map((c) => {
+        if (/[\s-]/.test(c)) return c;
+        seen++;
+        return seen <= keep || seen > total - keep ? c : "•";
+      })
+      .join("");
+  }
+
+  // The text with every match masked.
+  function redactText(text, matches) {
+    let out = "";
+    let at = 0;
+    for (const m of matches) {
+      if (m.start < at) continue; // overlapping matches: the first wins
+      out += text.slice(at, m.start) + maskValue(text.slice(m.start, m.end));
+      at = m.end;
+    }
+    return out + text.slice(at);
+  }
+
+  // Up to three masked matches, for the event report (never the text around them).
+  function maskedSample(text, matches) {
+    return matches
+      .slice(0, 3)
+      .map((m) => maskValue(text.slice(m.start, m.end)))
+      .join(", ")
+      .slice(0, 300);
+  }
+
+  function scanPrompt(text, patternKeys, keywordTypes) {
+    if (!text) return { labels: [], matches: [], sample: "" };
+    const matches = findDetailed(text, patternKeys, keywordTypes);
+    return { labels: [...new Set(matches.map((m) => m.label))], matches, sample: maskedSample(text, matches) };
+  }
+
+  // Files uploaded to an AI website: [{ name, labels, sample }] for each that contains something.
+  async function scanPromptFiles(files, patternKeys, keywordTypes) {
+    const hits = [];
+    for (const file of files) {
+      const text = await extractText(file).catch(() => "");
+      if (!text) continue;
+      const r = scanPrompt(text, patternKeys, keywordTypes);
+      if (r.labels.length > 0) hits.push({ name: file.name || "file", labels: r.labels, sample: r.sample });
+    }
+    return hits;
+  }
+
+  globalThis.EmailGuardScanner = { scanFiles, scanText, scanPrompt, scanPromptFiles, redactText };
 })();

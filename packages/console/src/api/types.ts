@@ -38,7 +38,8 @@ export type LicenseModuleKey =
   | "SECURITY_MANAGER"
   | "DATA_MANAGER"
   | "USER_MANAGER"
-  | "THREAT_PROTECTION";
+  | "THREAT_PROTECTION"
+  | "AI_GUARD";
 
 // Org-wide "hidden for everyone" state — a third, most-authoritative layer on top of
 // license modules (LicenseStatusView.modules) and per-admin grants (MeView.moduleGrants).
@@ -110,6 +111,8 @@ export interface LicenseStatusView {
   maxAgents?: number;
   validityType?: LicenseValidityType;
   modules?: LicenseModuleKey[];
+  // Features within the modules (licensing below the module); null = everything in them.
+  features?: string[] | null;
   validUntil?: string | null;
   status?: LicenseActivationStatus;
   activatedAt?: string;
@@ -124,6 +127,7 @@ export interface LicenseStatusView {
 export interface AgentGroupRef {
   id: string;
   name: string;
+  path?: string; // "Mumbai › Andheri" (group hierarchy)
 }
 
 export interface WindowsEolInfo {
@@ -200,6 +204,7 @@ export interface AgentListItem {
   deviceTypeOverride: DeviceType | null;
   quarantined: boolean;
   // Latest quarantine/release job when it's still waiting to run or failed (null once it succeeded).
+  consent?: EndpointConsentView | null; // endpoint user consent (DPDP); null when not asked
   quarantineActivity?: QuarantineActivity | null;
   paused: boolean;
   pausedAt: string | null;
@@ -619,6 +624,8 @@ export interface AssetGroupListItem {
   id: string;
   name: string;
   description: string | null;
+  parentId: string | null; // the group above it (null = a main group)
+  path: string; // "Mumbai › Andheri"
   memberCount: number;
   createdAt: string;
 }
@@ -2094,7 +2101,7 @@ export interface EventTimelineView {
 export interface EventOptionsView {
   types: { type: string; label: string; category: EventCategory }[];
   agents: { id: string; hostname: string }[];
-  groups: { id: string; name: string }[];
+  groups: { id: string; name: string; path?: string }[];
 }
 
 // ---- Threat Protection (Microsoft Defender management)
@@ -2216,4 +2223,180 @@ export interface ThreatPolicySyncAgent {
 export interface QuarantineActivity {
   action: "QUARANTINE" | "RELEASE";
   state: "PENDING" | "FAILED";
+}
+
+// A licence change the License Server sent (Licensing page). current/proposed are null for a
+// revocation.
+export interface LicenseTermsView {
+  features?: string[] | null; // features within the modules; null/absent = everything in them
+  maxAgents: number;
+  validityType: string;
+  validUntil: string | null;
+  modules: string[];
+}
+
+export interface LicenseChangeNoticeView {
+  id: string;
+  kind: "ADDITION" | "REDUCTION" | "REVOKE";
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "AUTO_APPLIED" | "CANCELLED" | "APPLIED";
+  message: string | null;
+  current: LicenseTermsView | null;
+  proposed: LicenseTermsView | null;
+  requestedAt: string;
+  autoApplyAt: string | null;
+  receivedAt: string;
+  respondedAt: string | null;
+  respondedByEmail: string | null;
+  responseReason: string | null;
+  appliedAt: string | null;
+  canAccept: boolean;
+  canReject: boolean;
+}
+
+// ---- AI Guard (licence module AI_GUARD) ----
+
+export type AiAppRisk = "LOW" | "MEDIUM" | "HIGH";
+export type AiAction = "ALLOW" | "BLOCK";
+
+export interface AiAppView {
+  key: string; // built-in key, or "custom:<id>"
+  name: string;
+  vendor: string;
+  category: string;
+  risk: AiAppRisk;
+  riskNote: string;
+  domains: string[];
+  executables: string[];
+  installedNames: string[];
+  custom: boolean;
+}
+
+export interface AiUsageAppRow {
+  key: string;
+  name: string;
+  vendor: string;
+  category: string;
+  risk: AiAppRisk;
+  riskNote: string;
+  custom: boolean;
+  users: number;
+  endpoints: number;
+  activeSeconds: number;
+  lastUsed: string | null;
+  installedOn: number;
+  blockedOn: number;
+  blockedLaunches: number;
+  topUsers: { username: string; hostname: string; activeSeconds: number; lastUsed: string }[];
+}
+
+export interface AiUsageView {
+  from: string;
+  to: string;
+  totals: { tools: number; users: number; endpoints: number; activeSeconds: number; blockedLaunches: number };
+  apps: AiUsageAppRow[];
+  users: { username: string; hostnames: string[]; activeSeconds: number; apps: { key: string; name: string; risk: AiAppRisk; activeSeconds: number }[] }[];
+}
+
+export interface AiGuardPolicyView {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  defaultAction: AiAction;
+  appActions: Record<string, AiAction>;
+  promptProtection: boolean;
+  promptDataTypes: string[]; // "pii:<key>" | "type:<DataType id>"
+  promptAction: AiPromptAction;
+  createdAt: string;
+  updatedAt: string;
+  assignments: { id: string; agentId: string | null; groupId: string | null; name: string; kind: "ENDPOINT" | "GROUP" }[];
+}
+
+export type AiPromptAction = "WARN" | "BLOCK" | "REDACT";
+
+export interface AiPromptDataTypeOption {
+  value: string; // "type:<data type id>" or "pii:<pattern key>"
+  label: string;
+  group: string;
+  kind: "PII_PATTERN" | "KEYWORD" | "FILE_EXTENSION";
+  count?: number;
+  preview?: string; // first few values
+  builtIn?: boolean;
+}
+
+export interface AiPromptEventView {
+  id: string;
+  occurredAt: string;
+  agentId: string;
+  hostname: string;
+  username: string | null;
+  appName: string;
+  host: string;
+  channel: "PASTE" | "SEND" | "UPLOAD" | "CLIPBOARD";
+  action: "BLOCKED" | "REDACTED" | "WARNED_CANCELLED" | "WARNED_CONTINUED";
+  dataTypes: string[];
+  maskedSample: string | null;
+  fileName: string | null;
+  policyName: string | null;
+}
+
+// AI Guard phase 3 - AI add-ons found on endpoints.
+export interface AiComponentView {
+  key: string; // the policy key: "addon:<kind>:<host>:<identifier>"
+  kind: "BROWSER_EXTENSION" | "IDE_EXTENSION" | "CLI_TOOL";
+  host: string; // chrome | edge | vscode | cursor | windsurf | vscodium | npm
+  identifier: string;
+  name: string;
+  versions: string[];
+  // blocked: blocked on this endpoint only; policyBlocked: blocked by the endpoint's AI Guard policy.
+  endpoints: { agentId: string; hostname: string; blocked: boolean; policyBlocked: boolean; reportedAt: string }[];
+  users: string[];
+  lastSeenAt: string;
+  enforceable: boolean; // can be blocked (Chrome, Edge, VS Code)
+  blockedOn: number;
+}
+
+export interface AiAlertSettingsView {
+  enabled: boolean;
+  recipients: string[];
+  alertOnPrompts: boolean;
+  alertOnBlockedApps: boolean;
+  weeklySummary: boolean;
+  lastAlertSentAt: string | null;
+  lastWeeklySentAt: string | null;
+  lastError: string | null;
+  mailServerConfigured: boolean;
+}
+
+// ---- Endpoint user consent (DPDP) ----
+
+export type ConsentDecision = "PENDING" | "AGREED" | "DECLINED";
+
+export interface EndpointConsentView {
+  state: "NOT_REQUIRED" | "ACTIVE" | "PENDING" | "DECLINED" | null;
+  needsAgentUpdate: boolean;
+  users: { account: string; decision: ConsentDecision; current: boolean }[];
+}
+
+export interface ConsentNoticeView {
+  saved: boolean;
+  required: boolean;
+  version: number;
+  title: string;
+  body: string;
+  grievanceContact: string;
+  updatedAt: string | null;
+}
+
+export interface EndpointConsentRecords {
+  required: boolean;
+  version: number;
+  users: {
+    account: string;
+    decision: ConsentDecision;
+    answeredVersion: number | null;
+    answeredDecision: ConsentDecision;
+    decidedAt: string | null;
+    lastActiveAt: string;
+  }[];
 }

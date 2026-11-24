@@ -14,6 +14,7 @@ import { buildLicenseServerClient } from "../licenseServerClient";
 import { decryptField, encryptField } from "../utils/fieldEncryption";
 import { getAgentConnectionSettings } from "./agentConnection.service";
 import { LicenseServerUnreachableError, getConfiguredServerUrl } from "./licenseServerConfig.service";
+import { isFeatureLicensed as featureLicensed, normalizeFeatures } from "@license/shared";
 
 export { LicenseServerUnreachableError };
 export class NotLicensedError extends Error {}
@@ -34,6 +35,8 @@ export interface LicenseStatus {
   maxAgents?: number;
   validityType?: string;
   modules?: LicenseModule[];
+  // Features within the modules; null = everything in them.
+  features?: string[] | null;
   validUntil?: Date | null;
   status?: string;
   activatedAt?: Date;
@@ -47,6 +50,17 @@ export interface LicenseStatus {
 
 function parseModules(raw: string): LicenseModule[] {
   return JSON.parse(raw);
+}
+
+// null = everything in the licensed modules.
+function parseFeatures(raw: string | null): string[] | null {
+  return raw ? (JSON.parse(raw) as string[]) : null;
+}
+
+// The JSON stored for the licence's features: null when they include everything in its modules.
+export function storedFeatures(modules: readonly string[], features: readonly string[] | null | undefined): string | null {
+  const list = normalizeFeatures(modules, features ?? null);
+  return list === null ? null : JSON.stringify(list);
 }
 
 // The single source of truth for "is there a currently-valid license right now" — used
@@ -82,6 +96,7 @@ export async function getStatus(): Promise<LicenseStatus> {
     maxAgents: existing.maxAgents,
     validityType: existing.validityType,
     modules: parseModules(existing.modules),
+    features: parseFeatures(existing.features),
     validUntil: existing.validUntil,
     status: existing.status,
     activatedAt: existing.activatedAt,
@@ -122,6 +137,7 @@ export async function activate(keyString: string): Promise<LicenseStatus> {
     maxAgents: data.maxAgents,
     validityType: data.validityType,
     modules: JSON.stringify(data.modules),
+    features: storedFeatures(data.modules, data.features),
     validUntil: data.validUntil ? new Date(data.validUntil) : null,
     keyStringEncrypted: encryptField(keyString),
     bindingTokenEncrypted: encryptField(data.bindingToken),
@@ -244,15 +260,26 @@ export async function registerCallback(): Promise<void> {
 // A revoke notice pushed by the License Server (routes/licenseCallback.routes.ts). Only
 // accepted for this deployment and with the secret it handed us at registration.
 export async function applyRevokeNotice(deploymentId: string, revocationSecret: string): Promise<boolean> {
+  if (!(await verifyLicenseServerSecret(deploymentId, revocationSecret))) return false;
+  const existing = await prisma.licenseActivation.findUnique({ where: { id: SINGLETON_ID } });
+  if (existing?.status !== "REVOKED") {
+    await prisma.licenseActivation.update({ where: { id: SINGLETON_ID }, data: { status: "REVOKED" } });
+    // Shown under Licensing as an alert explaining what happened (licenseChange.service.ts).
+    await prisma.licenseChangeNotice.create({
+      data: { remoteId: `revoke:${crypto.randomUUID()}`, kind: "REVOKE", status: "APPLIED", requestedAt: new Date(), appliedAt: new Date() },
+    });
+  }
+  return true;
+}
+
+// True when a push really comes from the License Server this deployment registered with:
+// right deployment, and the secret it handed out at registration (only its hash is kept here).
+export async function verifyLicenseServerSecret(deploymentId: string, secret: string): Promise<boolean> {
   const existing = await prisma.licenseActivation.findUnique({ where: { id: SINGLETON_ID } });
   if (!existing?.revocationSecretHash || existing.deploymentId !== deploymentId) return false;
-
-  const a = Buffer.from(hashSecret(revocationSecret), "hex");
+  const a = Buffer.from(hashSecret(secret), "hex");
   const b = Buffer.from(existing.revocationSecretHash, "hex");
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
-
-  await prisma.licenseActivation.update({ where: { id: SINGLETON_ID }, data: { status: "REVOKED" } });
-  return true;
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 // The only function the enrollment path actually calls. A no-op when enforcement is
@@ -297,4 +324,14 @@ export async function isModuleLicensed(moduleKey: LicenseModule): Promise<boolea
   if (!license) return false;
 
   return parseModules(license.modules).includes(moduleKey);
+}
+
+// Gate for a sub-module or feature (@license/shared features): its module must be licensed, and
+// the feature with every sellable feature above it - unless the licence has no feature list
+// (everything in its modules). Always true while licence enforcement is off.
+export async function isFeatureLicensed(featureKey: string): Promise<boolean> {
+  if (!config.licenseEnforcementEnabled) return true;
+  const license = await getEffectiveLicense();
+  if (!license) return false;
+  return featureLicensed(featureKey, parseModules(license.modules), parseFeatures(license.features));
 }

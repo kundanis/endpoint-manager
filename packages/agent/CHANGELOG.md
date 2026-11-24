@@ -6,6 +6,67 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.39
+- When the PC isn't connected, the tray app says why: the licence's endpoint limit has been reached,
+  the server's licence isn't active, the enrollment token was rejected, the PC was removed from the
+  console, the server can't be reached or its certificate isn't trusted. The agent keeps running and
+  retries every minute instead of exiting when the server refuses it.
+- The tray app shows the groups the PC belongs to.
+- Pause requests can be permanent (until an administrator ends them).
+- Uninstall agent… in the tray icon's menu: removes the agent with the organisation's uninstall
+  password (not offered when no password is set).
+- The agent keeps trying to open its channel to the tray app if the port is briefly taken (after an
+  update), instead of leaving the tray app showing "isn't running".
+
+## 0.2.38
+- Application allowlisting: Store apps are allowed only when Windows, Microsoft or a hardware maker
+  (Dell, Intel) publishes them; other Store apps are blocked like any other program. Computer
+  makers' utilities installed under Program Files (Dell, HP, Lenovo, ASUS, Acer, MSI, Microsoft
+  Surface and others) are allowed with the chip and driver makers' tools.
+
+## 0.2.37
+- Application allowlisting: Windows' packaged apps (Calculator, Photos, the new Notepad, Paint and
+  Snipping Tool, Terminal, Microsoft Store, the new Teams and Outlook, Clock...) keep working for
+  every user - the allowlist now allows every signed packaged app, as Windows blocks them otherwise
+  once program rules are enforced. Internet Explorer's launcher (signed as its own product) is
+  allowed with the rest of Windows.
+
+## 0.2.36
+- Endpoint user consent: the consent window no longer opens by itself. Users open it from the tray
+  icon (Privacy consent, or a click on the icon while an answer is needed), or it opens when an
+  administrator selects Ask for consent in the console.
+- The tray app logs an unexpected error to %LOCALAPPDATA%\EndpointIQ\tray.log and keeps running
+  instead of closing.
+
+## 0.2.35
+- Endpoint user consent (DPDP): when the organisation asks for consent, the tray app shows its notice
+  to each Windows user at sign-in (and on clicking the icon); the user ticks I agree and saves, or
+  declines, and can change their answer later from the menu (Privacy consent). Until every signed-in
+  user has agreed, the agent sends only its check-ins - no inventory, usage, screen capture, DLP or
+  other monitoring data (dropped, not sent later) - and keeps applying the security policies.
+
+## 0.2.34
+- AI Guard: looks for AI add-ons every 15 minutes instead of every 6 hours (reported when something
+  was installed, removed or updated), and at once when an admin selects Scan now on the AI
+  Extensions page - so a removed extension disappears from the list quickly.
+
+## 0.2.33
+- AI Guard: finds AI browser extensions (Chrome, Edge), AI extensions in code editors (VS Code,
+  Cursor, Windsurf, VSCodium) and command-line AI tools installed with npm, for every user on the
+  PC, and reports them (names and versions only). AI browser extensions an AI Guard policy blocks
+  are disabled through the browsers' extension blocklist; blocked VS Code extensions through VS
+  Code's AllowedExtensions policy. Entries the organisation set itself are never removed.
+- AI Guard prompt protection for AI desktop apps (ChatGPT, Claude and other AI programs): when one
+  comes to the front while the clipboard holds data the policy protects, the tray app warns, takes
+  the text off the clipboard, or swaps in a masked copy - as the policy says - and puts the
+  original back when the user switches away. Reported with a masked sample only.
+
+## 0.2.32
+- AI Guard prompt protection: the agent gives the Endpoint IQ Browser Guard extension (Chrome and
+  Edge) this endpoint's identity, so the extension can check what is pasted into, sent to or
+  uploaded to AI websites against the endpoint's AI Guard policy. The extension is installed
+  automatically while an AI Guard policy with prompt protection applies to the endpoint.
+
 ## 0.2.31
 - Security: the agent only acts on replies signed by its server, and remembers the server's key
   from the first signed reply, so another device on the network can't pose as the server and send

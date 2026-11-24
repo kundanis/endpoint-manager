@@ -170,6 +170,10 @@ model Agent {
   dataDiscoveryScanStates  DataDiscoveryScanState[]
   dlpEvents      DlpEvent[]
   dlpAssignments DlpPolicyAssignment[]
+  aiGuardAssignments AiGuardPolicyAssignment[]
+  aiGuardPromptEvents AiGuardPromptEvent[]
+  aiComponents AgentAiComponent[]
+  userConsents EndpointUserConsent[]
   dataMovementEvents      DataMovementEvent[]
   dataMovementAssignments DataMovementPolicyAssignment[]
   screenCaptureEvents      ScreenCaptureEvent[]
@@ -553,14 +557,20 @@ model VulnerabilitySyncRun {
 
 model AssetGroup {
   id          String   @id @default(uuid())
-  name        String   @unique @db.NVarChar(200)
+  name        String   @db.NVarChar(200)
   description String?  @db.NVarChar(1000)
   createdAt   DateTime @default(now())
+  // Group hierarchy: the group above this one (null = a main group). Any depth; endpoints can be
+  // in a group at any level. Policies on a group apply to every group below it (groupTree.service).
+  parentId    String?
+  parent      AssetGroup?  @relation("AssetGroupTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children    AssetGroup[] @relation("AssetGroupTree")
   members     AgentGroupMembership[]
   securityBenchmarkAssignments SecurityBenchmarkAssignment[]
   zeroTrustAssignments ZeroTrustPolicyAssignment[]
   dataDiscoveryAssignments DataDiscoveryPolicyAssignment[]
   dlpAssignments DlpPolicyAssignment[]
+  aiGuardAssignments AiGuardPolicyAssignment[]
   appControlAssignments AppControlPolicyAssignment[]
   webBlockAssignments   WebBlockPolicyAssignment[]
   piiBlockAssignments   PiiBlockPolicyAssignment[]
@@ -573,6 +583,10 @@ model AssetGroup {
   threatProtectionAssignments ThreatProtectionPolicyAssignment[]
   vulnerabilityExceptions VulnerabilityException[]
   enrollmentTokens   EnrollmentToken[]
+
+  // Names are unique among the groups under the same parent (and among main groups).
+  @@unique([parentId, name])
+  @@index([parentId])
 }
 
 model AgentGroupMembership {
@@ -1972,6 +1986,9 @@ model LicenseActivation {
   // access to everything the moment this ships, before its next revalidate() confirms
   // the real value from the License Server.
   modules               String    @default("[\"ENDPOINT_MANAGER\",\"NETWORK_MANAGER\",\"SOFTWARE_MANAGER\",\"SECURITY_MANAGER\",\"DATA_MANAGER\",\"USER_MANAGER\"]") @db.NVarChar(1000)
+  // JSON array of the features included within those modules (@license/shared features);
+  // null = everything in them (licences sold by whole modules, and every one before features).
+  features              String?   @db.NVarChar(2000)
   validityType          String    @db.NVarChar(20) // ONE_YEAR | TWO_YEAR | THREE_YEAR | PERPETUAL
   validUntil            DateTime?
   keyStringEncrypted    String    @db.NVarChar(500)
@@ -1997,6 +2014,29 @@ model LicenseActivation {
   totalAgentsUninstalled Int      @default(0)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+}
+
+// A licence change the License Server sent this deployment (see @license/shared
+// changeRequest.schema.ts), shown under Licensing for a super admin to accept or reject, plus
+// a REVOKE row recording a revocation so it can be explained there. remoteId is the License
+// Server's request id (unique; "revoke:<uuid>" for revocations).
+model LicenseChangeNotice {
+  id                 String    @id @default(uuid())
+  remoteId           String    @unique @db.NVarChar(100)
+  kind               String    @db.NVarChar(20) // ADDITION | REDUCTION | REVOKE
+  status             String    @db.NVarChar(20) // PENDING | ACCEPTED | REJECTED | AUTO_APPLIED | CANCELLED | APPLIED (revoke)
+  message            String?   @db.NVarChar(1000)
+  currentTerms       String?   @db.NVarChar(2000) // JSON LicenseTerms (null for REVOKE)
+  proposedTerms      String?   @db.NVarChar(2000)
+  requestedAt        DateTime
+  autoApplyAt        DateTime?
+  receivedAt         DateTime  @default(now())
+  respondedAt        DateTime?
+  respondedByAdminId String?   @db.NVarChar(64)
+  responseReason     String?   @db.NVarChar(1000)
+  appliedAt          DateTime?
+
+  @@index([status])
 }
 
 // An admin-defined data type (Data Governance -> Data types): a named list of file
@@ -2215,4 +2255,155 @@ model PostureSnapshot {
 
   @@index([day, agentId])
   @@index([agentId, day])
+}
+
+// ---- AI Guard (licence module AI_GUARD): generative-AI discovery and control. Usage comes from
+// UserAppUsageDaily (the tray app's foreground program / active browser tab); the built-in AI tool
+// catalogue is code (@em/shared AI_APP_CATALOG), plus the admin's own tools below.
+
+model AiGuardPolicy {
+  id               String                    @id @default(uuid())
+  name             String                    @db.NVarChar(200)
+  description      String?                   @db.NVarChar(1000)
+  enabled          Boolean                   @default(true)
+  // What happens to an AI tool the policy doesn't list in appActions: ALLOW | BLOCK.
+  defaultAction    String                    @default("ALLOW") @db.NVarChar(10)
+  // JSON { "<tool key>": "ALLOW" | "BLOCK" } - built-in keys, or "custom:<AiGuardCustomApp.id>".
+  appActions       String                    @default("{}") @db.NVarChar(Max)
+  // Phase 2 - prompt protection in the Browser Guard extension on AI websites: what is checked
+  // (JSON: "pii:<PII_PATTERN key>" or "type:<DataType id>" of a KEYWORD data type) and what
+  // happens when it's found in a paste, a sent prompt or an uploaded file: WARN | BLOCK | REDACT.
+  promptProtection Boolean                   @default(false)
+  promptDataTypes  String                    @default("[]") @db.NVarChar(Max)
+  promptAction     String                    @default("WARN") @db.NVarChar(10)
+  createdByAdminId String?                   @db.NVarChar(64)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  assignments      AiGuardPolicyAssignment[]
+  promptEvents     AiGuardPromptEvent[]
+}
+
+model AiGuardPolicyAssignment {
+  id        String        @id @default(uuid())
+  policyId  String
+  policy    AiGuardPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  agentId   String?
+  agent     Agent?        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     AssetGroup?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+  // The endpoint's last website-block sync that carried this policy (see webBlockScan.service
+  // recordSyncResult) - a health snapshot like WebBlockPolicyAssignment's.
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?   @db.NVarChar(20)
+  lastSyncError  String?   @db.NVarChar(1000)
+
+  @@index([policyId])
+  @@index([agentId])
+  @@index([groupId])
+}
+
+// An AI tool the admin added (not in the built-in catalogue).
+model AiGuardCustomApp {
+  id               String   @id @default(uuid())
+  name             String   @db.NVarChar(200)
+  category         String   @db.NVarChar(40)
+  risk             String   @default("MEDIUM") @db.NVarChar(10) // LOW | MEDIUM | HIGH
+  domains          String   @default("[]") @db.NVarChar(2000) // JSON string[]
+  executables      String   @default("[]") @db.NVarChar(1000) // JSON string[] of file names
+  createdByAdminId String?  @db.NVarChar(64)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// Sensitive data the Browser Guard extension caught in an AI prompt (a paste, a sent prompt or an
+// uploaded file). Never the prompt itself: the data type names and a masked sample only.
+model AiGuardPromptEvent {
+  id           String         @id @default(uuid())
+  agentId      String
+  agent        Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policyId     String?
+  policy       AiGuardPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  appKey       String?        @db.NVarChar(100)
+  host         String         @db.NVarChar(255)
+  channel      String         @db.NVarChar(10) // PASTE | SEND | UPLOAD
+  action       String         @db.NVarChar(30) // BLOCKED | REDACTED | WARNED_CANCELLED | WARNED_CONTINUED
+  dataTypes    String         @default("[]") @db.NVarChar(1000) // JSON labels
+  maskedSample String?        @db.NVarChar(500)
+  fileName     String?        @db.NVarChar(300)
+  username     String?        @db.NVarChar(300)
+  occurredAt   DateTime       @default(now())
+
+  @@index([occurredAt])
+  @@index([agentId])
+}
+
+// AI Guard phase 3 - email alerts (singleton). Uses the mail server set under User Risk -> Email.
+// lastAlertAt is the newest event already emailed, so each digest only covers what's new.
+model AiGuardAlertSettings {
+  id                   String    @id @default("singleton")
+  enabled              Boolean   @default(false)
+  recipients           String    @default("[]") @db.NVarChar(4000) // JSON string[]
+  alertOnPrompts       Boolean   @default(true)  // sensitive data caught in AI prompts
+  alertOnBlockedApps   Boolean   @default(true)  // blocked AI desktop app launches
+  weeklySummary        Boolean   @default(false)
+  lastAlertAt          DateTime?
+  lastAlertSentAt      DateTime?
+  lastWeeklySentAt     DateTime?
+  lastError            String?   @db.NVarChar(500)
+  updatedAt            DateTime  @updatedAt
+}
+
+// AI Guard phase 3 - AI add-ons found on an endpoint, replaced on every agent report: AI browser
+// extensions (Chrome/Edge), AI extensions in code editors (VS Code, Cursor, Windsurf, VSCodium) and
+// command-line AI tools installed with npm. Only items recognised as AI are kept.
+model AgentAiComponent {
+  id          String   @id @default(uuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  kind        String   @db.NVarChar(20)  // BROWSER_EXTENSION | IDE_EXTENSION | CLI_TOOL
+  host        String   @db.NVarChar(20)  // chrome | edge | vscode | cursor | windsurf | vscodium | npm
+  identifier  String   @db.NVarChar(200) // extension id / publisher.name / npm package
+  name        String   @db.NVarChar(300)
+  version     String?  @db.NVarChar(100)
+  userName    String?  @db.NVarChar(300)
+  lastSeenAt  DateTime @default(now())
+  // Blocked on this endpoint only (AI Extensions page), on top of what its AI Guard policy blocks.
+  // Kept across rescans, and kept even when the add-on is no longer found (so a browser that
+  // removed a blocked extension doesn't get it back).
+  blocked     Boolean  @default(false)
+
+  @@index([agentId])
+  @@index([kind, identifier])
+}
+
+// Endpoint user consent (DPDP): the notice the Windows tray app shows each user, and their answers.
+// One row per version - the text a user agreed to is kept unchanged. The newest row is in force;
+// none means consent isn't required yet (the console shows a built-in starting text to edit).
+model ConsentNotice {
+  id               String   @id @default(uuid())
+  version          Int      @unique
+  required         Boolean  @default(false) // users must answer before their data is collected
+  title            String   @db.NVarChar(200)
+  body             String   @db.NVarChar(Max)
+  grievanceContact String   @db.NVarChar(500) // who users contact about their data (DPDP grievance officer)
+  createdByAdminId String?  @db.NVarChar(64)
+  createdAt        DateTime @default(now())
+}
+
+// Each Windows user's answer on each endpoint. decision PENDING = signed in, not answered yet (or
+// the notice changed since). lastActiveAt = last time the agent reported this user signed in.
+model EndpointUserConsent {
+  id            String    @id @default(uuid())
+  agentId       String
+  agent         Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  account       String    @db.NVarChar(300) // DOMAIN\user
+  decision      String    @default("PENDING") @db.NVarChar(10) // PENDING | AGREED | DECLINED
+  noticeVersion Int?
+  decidedAt     DateTime?
+  lastActiveAt  DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  @@unique([agentId, account])
+  @@index([agentId])
 }

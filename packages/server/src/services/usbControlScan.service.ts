@@ -2,9 +2,10 @@ import type { AssignedUsbControlResponse, UsbControlEventBatchPayload, UsbContro
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
 import { isAgentPaused } from "./pause.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   return memberships.map((m) => m.groupId);
 }
 

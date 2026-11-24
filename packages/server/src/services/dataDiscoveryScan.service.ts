@@ -3,11 +3,12 @@ import { prisma } from "../db";
 import { isAgentPaused } from "./pause.service";
 import { resolveDiscoveryDataTypes } from "./dataDiscoveryPolicy.service";
 import { listDataTypes } from "./dataTypes.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 export async function resolveAssignedPoliciesForAgent(agentId: string): Promise<AssignedDataDiscoveryPolicyWire[]> {
   if (await isAgentPaused(agentId)) return [];
 
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
 
   const assignments = await prisma.dataDiscoveryPolicyAssignment.findMany({

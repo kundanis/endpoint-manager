@@ -8,6 +8,7 @@ import { isIgnoredScreenshotOpener } from "@em/shared";
 import { prisma } from "../db";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 type PolicyRow = NonNullable<Awaited<ReturnType<typeof prisma.screenCapturePolicy.findUnique>>>;
 
@@ -285,7 +286,7 @@ const DEFAULT_THRESHOLD = 10;
 const DEFAULT_QUICK_DELETE_MINUTES = 10;
 
 async function endpointLimits(agentId: string) {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
   const assignments = await prisma.screenCapturePolicyAssignment.findMany({
     where: { OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] },

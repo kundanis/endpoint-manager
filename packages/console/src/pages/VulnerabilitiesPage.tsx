@@ -128,7 +128,7 @@ function MarkExceptionDialog({
   const [reviewDate, setReviewDate] = useState("");
 
   const where =
-    scope === "AGENT" ? filterAgent?.hostname ?? "this endpoint" : scope === "GROUP" ? `group ${groups?.find((g) => g.id === groupId)?.name ?? ""}`.trim() : "every endpoint";
+    scope === "AGENT" ? filterAgent?.hostname ?? "this endpoint" : scope === "GROUP" ? `group ${groups?.find((g) => g.id === groupId)?.path ?? ""}`.trim() : "every endpoint";
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -185,7 +185,7 @@ function MarkExceptionDialog({
                 <option value="">Choose a group</option>
                 {(groups ?? []).map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.name}
+                    {g.path ?? g.name}
                   </option>
                 ))}
               </select>
@@ -562,7 +562,7 @@ export default function VulnerabilitiesPage() {
             <option value="">Group: All</option>
             {(groups ?? []).map((g) => (
               <option key={g.id} value={g.id}>
-                {g.name}
+                {g.path ?? g.name}
               </option>
             ))}
           </select>

@@ -28,6 +28,7 @@ export interface LicenseKeyListItem {
   maxAgents: number;
   validityType: ValidityType;
   modules: LicenseModule[];
+  features: string[] | null; // features within the modules; null = everything in them
   validUntil: string | null;
   status: LicenseKeyStatus;
   boundDeploymentId: string | null;
@@ -56,4 +57,31 @@ export interface UnlockRequestListItem {
   resolvedAt: string | null;
   resolutionNote: string | null;
   licenseKey: LicenseKeyListItem;
+}
+
+// A licence change request (see @license/shared changeRequest.schema.ts) as the vendor sees it.
+export interface LicenseTermsView {
+  maxAgents: number;
+  validityType: ValidityType;
+  validUntil: string | null;
+  modules: LicenseModule[];
+  features?: string[] | null; // null/absent = everything in the modules
+}
+
+export interface LicenseChangeRequestItem {
+  id: string;
+  licenseKeyId: string;
+  kind: "ADDITION" | "REDUCTION";
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "AUTO_APPLIED" | "CANCELLED";
+  message: string | null;
+  current: LicenseTermsView;
+  proposed: LicenseTermsView;
+  createdAt: string;
+  autoApplyAt: string | null;
+  delivered: boolean;
+  deliveredAt: string | null;
+  lastDeliveryError: string | null;
+  respondedAt: string | null;
+  responseReason: string | null;
+  appliedAt: string | null;
 }

@@ -1,4 +1,7 @@
-# Publishing Endpoint IQ Mail Guard
+# Publishing Endpoint IQ Browser Guard
+
+(Formerly Endpoint IQ Mail Guard - same extension and store IDs; version 0.5.0 renamed it and
+added AI Guard prompt protection on AI websites. Submit it as an update to the existing listings.)
 
 Mail Guard is published once to the **Chrome Web Store** and once to **Microsoft Edge Add-ons**,
 as an **unlisted** item: it doesn't appear in search and can only be installed by its ID. The
@@ -68,24 +71,29 @@ and released, the agent installs nothing.
 
 ## Listing text
 
-**Name:** Endpoint IQ Mail Guard
+**Name:** Endpoint IQ Browser Guard
 
-**Single purpose:** Stops personal data, such as card numbers or PAN, from being sent from Gmail
-when the user's organization has a policy against it.
+**Single purpose:** Stops personal or confidential data, such as card numbers or PAN, from being
+sent from Gmail or shared with AI websites when the user's organization has a policy against it.
 
 **Description:**
 
-> Endpoint IQ Mail Guard is for organizations that use Endpoint IQ. It is installed and set up by
-> your organization's IT team, and does nothing on its own.
+> Endpoint IQ Browser Guard is for organizations that use Endpoint IQ. It is installed and set up
+> by your organization's IT team, and does nothing on its own.
 >
-> When your organization's Email attachment blocking policy covers your Gmail address, Mail Guard
+> On AI websites such as ChatGPT, Gemini and Claude, when your organization's AI Guard policy turns
+> on prompt protection for your computer, Browser Guard checks text you paste, prompts you send and
+> files you upload for the kinds of data the policy protects. It then warns you, stops it, or masks
+> the sensitive part, as your organization's policy says.
+>
+> When your organization's Email attachment blocking policy covers your Gmail address, Browser Guard
 > checks attachments (text, Word, Excel, PowerPoint and PDF files) and the text of your message for
 > the kinds of personal data the policy protects, such as card numbers, PAN, Aadhaar or bank
 > details. If it finds any, the attachment or email is stopped and you're told why.
 >
-> Everything is checked on your computer. Your emails and files are never sent anywhere. When
-> something is blocked, only the file name and the kind of data found are reported to your
-> organization's own Endpoint IQ server.
+> Everything is checked on your computer. Your emails, prompts and files are never sent anywhere.
+> When something is blocked, only the file name, the kind of data found and (for AI websites) a
+> masked sample are reported to your organization's own Endpoint IQ server.
 
 ## Permission justifications
 
@@ -95,6 +103,10 @@ when the user's organization has a policy against it.
   can be checked on the device.
 - **Host permission, mail.google.com:** Checks attachments and message text in Gmail before
   they're sent.
+- **Host permissions, AI websites (chatgpt.com, claude.ai, gemini.google.com and the other AI
+  tools listed in the manifest):** Checks text pasted, prompts sent and files uploaded to these AI
+  websites, on the device, when the organization's AI Guard policy turns on prompt protection; and
+  loads the PDF reader into the tab when a PDF is uploaded.
 - **Optional host permission, http and https addresses:** Not granted at install. The extension
   reads its policy from and reports blocks to the organization's own Endpoint IQ server, through
   ordinary cross-origin requests the server allows. Every organization runs its own server at its

@@ -1,3 +1,4 @@
+import ConsentBadge from "../components/ConsentBadge";
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Download, KeyRound, Lock, LockOpen, Monitor, Network, Radar, SearchX, Wifi, WifiOff } from "lucide-react";
@@ -40,6 +41,8 @@ import {
 } from "../components/ui";
 import { formatBytes, formatDate, formatDateTime, formatRelative } from "../format";
 import { downloadCsv } from "../csv";
+import { groupsBelow } from "../groupTree";
+import { useFeatureLicensed } from "../licenseFeatures";
 
 // Pattern B — list page (design-system/docs/PAGE_PATTERNS.md, reference/endpoints-list.html).
 
@@ -221,6 +224,7 @@ function cellFor(key: ColumnKey, agent: AgentListItem, hidden: { vulnerabilities
           ) : (
             <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
           )}
+          <ConsentBadge consent={agent.consent} />
           {agent.paused && <Badge tone="med">Paused</Badge>}
         </div>
       );
@@ -263,7 +267,7 @@ function cellFor(key: ColumnKey, agent: AgentListItem, hidden: { vulnerabilities
       return agent.groups.length > 0 ? (
         <div className="app-badge-row">
           {agent.groups.map((g) => (
-            <Tag key={g.id}>{g.name}</Tag>
+            <Tag key={g.id}>{g.path ?? g.name}</Tag>
           ))}
         </div>
       ) : (
@@ -493,6 +497,7 @@ export default function AgentsPage() {
   // One search box across hostname, IP and logged-on user.
   const [search, setSearch] = useState("");
   const [columns, setColumns] = useState<ColumnKey[]>(loadColumns);
+  const { licensed } = useFeatureLicensed();
   const quarantine = useQuarantineAgent();
   const release = useReleaseAgent();
   const bulkQuarantine = useBulkQuarantine();
@@ -508,8 +513,10 @@ export default function AgentsPage() {
   const unmanagedCount = networkDeviceSummary?.unmanagedHosts.length ?? 0;
 
   const term = search.trim().toLowerCase();
+  // A group filter covers its sub groups (Mumbai includes Andheri and Ghatkopar).
+  const groupFilterIds = groupFilter ? groupsBelow(groups, [groupFilter]) : null;
   const filteredAgents = (agents ?? [])
-    .filter((agent) => !groupFilter || agent.groups.some((g) => g.id === groupFilter))
+    .filter((agent) => !groupFilterIds || agent.groups.some((g) => groupFilterIds.has(g.id)))
     .filter((agent) => (statusFilter === "QUARANTINED" ? agent.quarantined : statusFilter === "all" || agent.status === statusFilter))
     .filter((agent) => !deviceTypeFilter || agent.deviceType === deviceTypeFilter)
     // Same "Unknown" fallback the Dashboard's OS chart uses (dashboard.service.ts).
@@ -791,7 +798,7 @@ export default function AgentsPage() {
               <option value="">Group: All</option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.name}
+                  {g.path ?? g.name}
                 </option>
               ))}
             </select>
@@ -811,9 +818,11 @@ export default function AgentsPage() {
             variant="danger"
             icon={Lock}
             onClick={handleQuarantineAll}
-            disabled={toQuarantine.length === 0 || bulkQuarantine.isPending}
+            disabled={toQuarantine.length === 0 || bulkQuarantine.isPending || !licensed("EH_QUARANTINE")}
             title={
-              filtersApplied
+              !licensed("EH_QUARANTINE")
+                ? "Quarantine isn't included in your licence"
+                : filtersApplied
                 ? "Quarantine the Windows endpoints in the filtered list"
                 : "Quarantine every Windows endpoint (filter the list first to quarantine only some)"
             }
@@ -895,7 +904,8 @@ export default function AgentsPage() {
                               size="sm"
                               variant={agent.quarantined ? "secondary" : "danger"}
                               icon={agent.quarantined ? LockOpen : Lock}
-                              disabled={pendingAgentId === agent.id || agent.quarantineActivity?.state === "PENDING"}
+                              disabled={pendingAgentId === agent.id || agent.quarantineActivity?.state === "PENDING" || (!agent.quarantined && !licensed("EH_QUARANTINE"))}
+                              title={!agent.quarantined && !licensed("EH_QUARANTINE") ? "Quarantine isn't included in your licence" : undefined}
                               onClick={() => handleQuarantineToggle(agent)}
                             >
                               {pendingAgentId === agent.id

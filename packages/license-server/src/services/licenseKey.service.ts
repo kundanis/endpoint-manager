@@ -1,9 +1,11 @@
+import { storedFeatures } from "./features.util";
 import type { LicenseModule, LicenseProduct, ValidityType } from "@license/shared";
 import { prisma } from "../db";
 import { generateLicenseKey, keySuffix } from "../utils/licenseKeyGenerator";
 import { hashToken } from "../utils/tokens";
 import { EntityNotFoundError } from "./entity.service";
 import { deliverRevokeNotice } from "./revokeNotice.service";
+import { cancelOpenRequestsForKey } from "./changeRequest.service";
 
 export class LicenseKeyNotFoundError extends Error {}
 export class LicenseKeyNotRevocableError extends Error {}
@@ -26,11 +28,12 @@ function computeValidUntil(validityType: ValidityType, from: Date): Date | null 
 // modules and callbackUrls are stored as denormalized JSON strings (see schema.prisma's
 // comment) - every API consumer should only ever see real string[]s, never the raw JSON
 // text. revocationSecret never leaves this server except on the revoke notice itself.
-function toApiRow<T extends { modules: string; callbackUrls: string | null; revocationSecret: string | null }>(row: T) {
+function toApiRow<T extends { modules: string; features: string | null; callbackUrls: string | null; revocationSecret: string | null }>(row: T) {
   const { revocationSecret: _secret, ...rest } = row;
   return {
     ...rest,
     modules: JSON.parse(row.modules) as LicenseModule[],
+    features: row.features ? (JSON.parse(row.features) as string[]) : null, // null = everything in the modules
     callbackUrls: row.callbackUrls ? (JSON.parse(row.callbackUrls) as string[]) : [],
   };
 }
@@ -41,6 +44,7 @@ export interface IssueLicenseKeyInput {
   maxAgents: number;
   validityType: ValidityType;
   modules: LicenseModule[];
+  features?: string[] | null; // null/absent = everything in the modules
   issuedByAdminId: string;
 }
 
@@ -63,6 +67,7 @@ export async function issueLicenseKey(input: IssueLicenseKeyInput) {
       maxAgents: input.maxAgents,
       validityType: input.validityType,
       modules: JSON.stringify(input.modules),
+      features: storedFeatures(input.modules, input.features),
       validUntil,
       issuedByAdminId: input.issuedByAdminId,
     },
@@ -99,6 +104,7 @@ export async function revokeLicenseKey(id: string) {
     data: { status: "REVOKED", revokedAt: new Date() },
   });
   if (result.count !== 1) throw new LicenseKeyNotRevocableError();
+  await cancelOpenRequestsForKey(id);
   // Activated deployments never poll, so the revoke only reaches them via this notice.
   // Waited on so the console shows straight away whether it landed; a failure is retried.
   await deliverRevokeNotice(id);

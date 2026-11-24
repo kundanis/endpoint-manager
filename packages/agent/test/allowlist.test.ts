@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AllowlistWire } from "@em/shared";
-import { allowlistExeRules, allowlistMsiRules, desiredAppLocker, parseFqbn } from "../src/appLockerEnforcer";
+import { allowlistAppxRules, allowlistExeRules, allowlistMsiRules, buildApplyScript, desiredAppLocker, parseFqbn } from "../src/appLockerEnforcer";
 
 const base: AllowlistWire = {
   enforce: false,
@@ -68,6 +68,25 @@ test("publisher, hash and path allow rules", () => {
   assert.ok(xml.includes(`<FileHash Type="SHA256" Data="0x${"AB".repeat(32)}" SourceFileName="tool.exe" SourceFileLength="1234" />`));
   assert.ok(xml.includes('Id="a3"') && xml.includes('Path="D:\\ERP\\*"'));
   assert.ok(!xml.includes('Id="a4"'));
+});
+
+test("Windows' packaged apps and Internet Explorer keep working for every user", () => {
+  // Calculator, Photos, the new Notepad, Store... - Microsoft's and Windows' packaged apps, and the
+  // hardware makers'; not every signed one (other Store apps stay blocked).
+  const appx = allowlistAppxRules().join("");
+  assert.ok(appx.includes('UserOrGroupSid="S-1-1-0"') && appx.includes('Action="Allow"'));
+  assert.ok(appx.includes('PublisherName="CN=MICROSOFT WINDOWS, O=MICROSOFT CORPORATION, L=REDMOND, S=WASHINGTON, C=US"'));
+  assert.ok(appx.includes('PublisherName="CN=MICROSOFT CORPORATION, O=MICROSOFT CORPORATION, L=REDMOND, S=WASHINGTON, C=US"'));
+  assert.ok(!appx.includes('PublisherName="*"'));
+  const d = desiredAppLocker([], [], { ...base, enforce: true });
+  assert.deepEqual(d.exe?.appxRules, allowlistAppxRules());
+  assert.ok(buildApplyScript(d, []).includes("Add-Allowlist 'Appx' 'Enabled'"));
+  // Internet Explorer's launcher is signed as its own product, not as Windows.
+  assert.ok(joined({ ...base, microsoftSigned: "OFF" }).includes('ProductName="INTERNET EXPLORER"'));
+  // Computer makers' utilities under Program Files, but not Program Files as a whole.
+  const strict = joined({ ...base, allowProgramFiles: false, exemptAdministrators: false, microsoftSigned: "OFF" });
+  assert.ok(strict.includes('Path="%PROGRAMFILES%\\Dell\\*"') && strict.includes('Path="%PROGRAMFILES%\\Lenovo\\*"') && strict.includes('Path="%PROGRAMFILES%\\HP\\*"'));
+  assert.ok(!strict.includes('Path="%PROGRAMFILES%\\*"'));
 });
 
 test("installers: only Windows' installer cache, and administrators when allowed", () => {

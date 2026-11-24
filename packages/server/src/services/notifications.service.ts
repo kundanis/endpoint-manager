@@ -1,5 +1,6 @@
 import type { AdminModuleKey } from "@em/shared";
 import { prisma } from "../db";
+import { countOpenLicenseChangeNotices } from "./licenseChange.service";
 import { isModuleLicensed } from "./licenseActivation.service";
 import { isModuleHidden } from "./moduleVisibility.service";
 import { getPolicyReport } from "./screenCapturePolicy.service";
@@ -64,12 +65,13 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
   // Never opened (or longer ago than the window): everything in the window counts as new.
   const since = sinceParam && sinceParam > windowStart ? sinceParam : windowStart;
 
-  const [data, security, users, userRisk, threats] = await Promise.all([
+  const [data, security, users, userRisk, threats, aiGuard] = await Promise.all([
     canOpen(viewer, "DATA_MANAGER"),
     canOpen(viewer, "SECURITY_MANAGER"),
     canOpen(viewer, "USER_MANAGER"),
     canOpen(viewer, "USER_MANAGER", "USER_RISK"),
     canOpen(viewer, "THREAT_PROTECTION"),
+    canOpen(viewer, "AI_GUARD"),
   ]);
 
   const jobs: Promise<NotificationGroup | null>[] = [];
@@ -108,6 +110,7 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
     );
     jobs.push(pauseRequestGroup(since));
   }
+  if (viewer.role === "SUPER_ADMIN") jobs.push(licenseRequestGroup(since));
   if (security) {
     add(
       { key: "edr", module: "EDR", title: "High and critical threat detections", path: "/edr", tone: "crit" },
@@ -120,6 +123,12 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
       eventGroup(prisma.threatDetection, "detectedAt", {}, windowStart, since),
     );
   }
+  if (aiGuard) {
+    add(
+      { key: "ai-prompts", module: "AI Guard", title: "Sensitive data caught in AI prompts", path: "/ai-guard/overview", tone: "high" },
+      eventGroup(prisma.aiGuardPromptEvent, "occurredAt", {}, windowStart, since),
+    );
+  }
   if (users && userRisk) {
     add(
       { key: "user-risk", module: "User risk", title: "High and critical user risk alerts", path: "/user-risk/alerts", tone: "crit" },
@@ -130,6 +139,23 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
   const groups = (await Promise.all(jobs)).filter((g): g is NotificationGroup => !!g);
   groups.sort((a, b) => b.newCount - a.newCount || (b.latestAt ?? "").localeCompare(a.latestAt ?? ""));
   return { since: since.toISOString(), groups };
+}
+
+// Licence changes from the License Server waiting for a super admin's answer.
+async function licenseRequestGroup(since: Date): Promise<NotificationGroup | null> {
+  const open = await countOpenLicenseChangeNotices();
+  if (open.total === 0) return null;
+  return {
+    key: "licence-requests",
+    module: "Licensing",
+    title: "Licence change requests waiting for your answer",
+    path: "/licensing",
+    tone: "high",
+    total: open.total,
+    newCount: open.newSince(since),
+    endpoints: null,
+    latestAt: open.latestAt?.toISOString() ?? null,
+  };
 }
 
 // Users over a screen capture policy's daily limit (user-days, last 7 days).

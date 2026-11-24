@@ -3,6 +3,7 @@ import { DASHBOARD_TOPICS, ENDPOINT_HUB_TOPICS } from "./content/endpointHub";
 import { ADMIN_TOPICS, IDENTITY_TOPICS } from "./content/identityAdmin";
 import { NETWORK_APP_TOPICS, SECURITY_TOPICS } from "./content/security";
 import { THREAT_TOPICS } from "./content/threatProtection";
+import { AI_GUARD_TOPICS } from "./content/aiGuard";
 import type { HelpTarget, HelpTopic, HowTo } from "./types";
 
 export type { HelpStep, HelpTarget, HelpTopic, HowTo } from "./types";
@@ -15,6 +16,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   ...NETWORK_APP_TOPICS.filter((t) => t.module !== "App Center"),
   ...SECURITY_TOPICS,
   ...DATA_TOPICS,
+  ...AI_GUARD_TOPICS,
   ...THREAT_TOPICS,
   ...IDENTITY_TOPICS,
   ...NETWORK_APP_TOPICS.filter((t) => t.module === "App Center"),

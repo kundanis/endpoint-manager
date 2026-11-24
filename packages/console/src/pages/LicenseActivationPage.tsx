@@ -34,6 +34,8 @@ import {
   Tag,
 } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
+import LicenseRequestsPanel from "../components/LicenseRequestsPanel";
+import LicenseContents from "../components/LicenseContents";
 
 // Pattern C — licensing (design-system/docs/PAGE_PATTERNS.md): forms on the left, read-only
 // license facts (.ep-kv) on the right, a usage KPI strip on top.
@@ -224,6 +226,7 @@ export default function LicenseActivationPage() {
   const { data: serverConfig } = useLicenseServerConfig();
   const { data: status, isLoading, error: statusError, refetch: refetchStatus } = useLicenseStatus();
   const activate = useActivateLicense();
+  const { data: me } = useMe();
   const requestUnlock = useRequestLicenseUnlock();
 
   const [keyString, setKeyString] = useState("");
@@ -297,6 +300,14 @@ export default function LicenseActivationPage() {
         >
           {(statusError as Error).message}
         </Alert>
+      )}
+
+      {status?.activated && (
+        <LicenseRequestsPanel
+          isSuperAdmin={me?.role === "SUPER_ADMIN"}
+          enforcementEnabled={!!status.enforcementEnabled}
+          enrolledCount={status.currentAgentCount ?? 0}
+        />
       )}
 
       {status?.activated && (
@@ -470,6 +481,7 @@ export default function LicenseActivationPage() {
               </EmptyState>
             </Card>
           )}
+          {status?.activated && <LicenseContents status={status} />}
           <Alert tone="info">
             This deployment must activate a license key (issued by the vendor's central License Server) before it can
             enroll new agents. Activation is one-time-use — once a key is redeemed here, it locks to this deployment.

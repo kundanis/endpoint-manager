@@ -318,7 +318,7 @@ function AutomaticModePanel() {
                     onChange={() => toggleGroup(g.id)}
                     label={
                       <>
-                        {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                        {g.path ?? g.name} <span className="app-muted ep-num">({g.memberCount})</span>
                       </>
                     }
                   />
@@ -545,7 +545,7 @@ export default function PatchesPage() {
             <option value="">Group: All</option>
             {groups?.map((g) => (
               <option key={g.id} value={g.id}>
-                {g.name}
+                {g.path ?? g.name}
               </option>
             ))}
           </select>
@@ -751,7 +751,7 @@ export default function PatchesPage() {
                               onChange={() => toggleGroup(g.id)}
                               label={
                                 <>
-                                  {g.name} <span className="app-muted ep-num">({g.memberCount})</span>
+                                  {g.path ?? g.name} <span className="app-muted ep-num">({g.memberCount})</span>
                                 </>
                               }
                             />

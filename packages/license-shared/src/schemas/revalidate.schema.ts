@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { licenseModuleSchema, validityTypeSchema } from "./common.schema";
+import { licenseFeatureListSchema } from "../features";
 
 // Called periodically (not per-agent-enrollment) by an already-activated deployment to
 // confirm its license hasn't been revoked/expired centrally, and to pick up any change
@@ -19,5 +20,6 @@ export const revalidateResponseSchema = z.object({
   validityType: validityTypeSchema,
   validUntil: z.string().nullable(),
   modules: z.array(licenseModuleSchema),
+  features: licenseFeatureListSchema.optional(), // see activate.schema.ts
 });
 export type RevalidateResponse = z.infer<typeof revalidateResponseSchema>;

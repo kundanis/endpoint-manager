@@ -26,7 +26,7 @@
 # and ADMIN_PASSWORD in the environment (CUSTOM_CREDENTIALS=no, or no terminal = defaults).
 #
 # Env overrides: INSTALL_DIR (default /opt/endpoint-one), ADMIN_EMAIL (first install only),
-#                APP_PORT (default 4000), ADVANCED_APP_CONTROL, THREAT_PROTECTION (true/false),
+#                APP_PORT (default 4000), ADVANCED_APP_CONTROL, THREAT_PROTECTION, AI_GUARD (true/false),
 #                PRODUCT_EDITION (full / threat-protection; a first install takes the bundle's
 #                EDITION file when not given).
 set -euo pipefail
@@ -559,6 +559,8 @@ ADVANCED_APP_CONTROL=${ADVANCED_APP_CONTROL:-false}
 PRODUCT_EDITION=${PRODUCT_EDITION:-$BUNDLE_EDITION}
 # Threat Protection (Microsoft Defender management) while licence enforcement is off.
 THREAT_PROTECTION=${THREAT_PROTECTION:-false}
+# AI Guard (generative-AI discovery and control) while licence enforcement is off.
+AI_GUARD=${AI_GUARD:-false}
 APP_VERSION=${RELEASE_VERSION}
 EOF
   )
@@ -588,6 +590,9 @@ fi
 # full Endpoint IQ - data and agents stay).
 if [ -n "${THREAT_PROTECTION:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
   env_set THREAT_PROTECTION "$THREAT_PROTECTION"
+fi
+if [ -n "${AI_GUARD:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
+  env_set AI_GUARD "$AI_GUARD"
 fi
 if [ -n "${PRODUCT_EDITION:-}" ] && [ "$FIRST_INSTALL" -eq 0 ]; then
   case "$PRODUCT_EDITION" in

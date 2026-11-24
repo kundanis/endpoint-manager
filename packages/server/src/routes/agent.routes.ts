@@ -3,6 +3,11 @@ import { recordReport as recordScreenshotBlockReport, resolveAssignedForAgent as
 import { storeImage as storeScreenCaptureImage } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
 import express, { Router } from "express";
+import { z } from "zod";
+import { AI_COMPONENT_HOSTS, AI_COMPONENT_KINDS } from "@em/shared";
+import { agentAssignment, aiAppForProcess, recordComponents } from "../services/aiGuardAddons.service";
+import { recordPromptEvent } from "../services/aiGuardPrompt.service";
+import { agentConsent, ConsentError, recordDecision, touchSignedInUsers } from "../services/consent.service";
 import rateLimit from "express-rate-limit";
 import {
   agentUpdateStatusPayloadSchema,
@@ -41,6 +46,7 @@ import {
 } from "@em/shared";
 import { agentUpdatePackageFor } from "../services/agentBuild.service";
 import { prisma } from "../db";
+import { logger } from "../logger";
 import { AgentUpdateTaskNotOwnedError, recordAgentUpdateStatus } from "../services/agentUpdate.service";
 import { handleCheckin, recordInventory } from "../services/checkin.service";
 import { CommandTaskNotOwnedError, recordCommandResult } from "../services/command.service";
@@ -97,7 +103,7 @@ import {
 } from "../services/usbControlScan.service";
 import { recordAppUsage, recordScanResult as recordUserProductivityScanResult } from "../services/userProductivity.service";
 import { isEnabledForAgent as isEdrEnabledForAgent, recordScanResult as recordEdrScanResult } from "../services/edr.service";
-import { verifyUninstallPassword } from "../services/agentSecurity.service";
+import { hasUninstallPassword, verifyUninstallPassword } from "../services/agentSecurity.service";
 import { confirmAgentUninstalled } from "../services/agent.service";
 import {
   PolicyNotApplicableError,
@@ -105,6 +111,9 @@ import {
   listApplicablePolicies,
   listPauseRequestsForAgent,
 } from "../services/endpointPauseRequest.service";
+import { isFeatureLicensed } from "../services/licenseActivation.service";
+import { buildUninstallAgentScript } from "../services/agent.service";
+import { groupPaths } from "../services/groupTree.service";
 
 export const agentRouter = Router();
 
@@ -121,6 +130,7 @@ agentRouter.post("/checkin", async (req, res, next) => {
       payload.macAddress ?? null,
       payload.agentVersion ?? null,
     );
+    if (payload.signedInUsers) await touchSignedInUsers(req.agentId!, payload.signedInUsers).catch(() => {});
     res.json(response);
   } catch (err) {
     next(err);
@@ -285,7 +295,7 @@ agentRouter.post("/patches/tasks/:taskId/result", async (req, res, next) => {
 
 agentRouter.get("/security-config/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedBenchmarksForAgent(req.agentId!));
+    res.json(await resolveAssignedBenchmarksForAgent(await licensedAgentId(req.agentId!, "SP_SECURITY_CONFIG")));
   } catch (err) {
     next(err);
   }
@@ -303,7 +313,7 @@ agentRouter.post("/security-config/scan-result", async (req, res, next) => {
 
 agentRouter.get("/zero-trust/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedPoliciesForAgent(req.agentId!));
+    res.json(await resolveAssignedPoliciesForAgent(await licensedAgentId(req.agentId!, "SP_ZERO_TRUST")));
   } catch (err) {
     next(err);
   }
@@ -321,7 +331,7 @@ agentRouter.post("/zero-trust/scan-result", async (req, res, next) => {
 
 agentRouter.get("/data-discovery/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedDataDiscoveryPoliciesForAgent(req.agentId!));
+    res.json(await resolveAssignedDataDiscoveryPoliciesForAgent(await licensedAgentId(req.agentId!, "DG_DISCOVERY")));
   } catch (err) {
     next(err);
   }
@@ -339,7 +349,7 @@ agentRouter.post("/data-discovery/scan-result", async (req, res, next) => {
 
 agentRouter.get("/dlp/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedDlpPoliciesForAgent(req.agentId!));
+    res.json(await resolveAssignedDlpPoliciesForAgent(await licensedAgentId(req.agentId!, "DG_DLP_CONTENT")));
   } catch (err) {
     next(err);
   }
@@ -357,7 +367,7 @@ agentRouter.post("/dlp/events", async (req, res, next) => {
 
 agentRouter.get("/data-movement/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedDataMovementPoliciesForAgent(req.agentId!));
+    res.json(await resolveAssignedDataMovementPoliciesForAgent(await licensedAgentId(req.agentId!, "DG_MOVEMENT_FILES")));
   } catch (err) {
     next(err);
   }
@@ -375,7 +385,7 @@ agentRouter.post("/data-movement/scan-result", async (req, res, next) => {
 
 agentRouter.get("/screen-capture/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveScreenCaptureForAgent(req.agentId!));
+    res.json(await resolveScreenCaptureForAgent(await licensedAgentId(req.agentId!, "DG_MOVEMENT_SCREEN")));
   } catch (err) {
     next(err);
   }
@@ -471,9 +481,9 @@ agentRouter.post("/web-block/sync-result", async (req, res, next) => {
   }
 });
 
-agentRouter.get("/mail-guard", async (_req, res, next) => {
+agentRouter.get("/mail-guard", async (req, res, next) => {
   try {
-    res.json(await mailGuardAgentSettings());
+    res.json(await mailGuardAgentSettings(req.agentId!));
   } catch (err) {
     next(err);
   }
@@ -481,7 +491,7 @@ agentRouter.get("/mail-guard", async (_req, res, next) => {
 
 agentRouter.get("/pii-block/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedPiiBlockRulesForAgent(req.agentId!));
+    res.json(await resolveAssignedPiiBlockRulesForAgent(await licensedAgentId(req.agentId!, "DG_DLP_PII")));
   } catch (err) {
     next(err);
   }
@@ -500,7 +510,7 @@ agentRouter.post("/pii-block/sync-result", async (req, res, next) => {
 // EPM -> Screenshot blocking: what this endpoint blocks, and the blocked attempts (+ sync status).
 agentRouter.get("/screenshot-block/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveScreenshotBlockForAgent(req.agentId!));
+    res.json(await resolveScreenshotBlockForAgent(await licensedAgentId(req.agentId!, "EPM_SCREENSHOT")));
   } catch (err) {
     next(err);
   }
@@ -545,7 +555,7 @@ agentRouter.post("/threat-protection/task-result", async (req, res, next) => {
 
 agentRouter.get("/ip-block/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedIpBlockRulesForAgent(req.agentId!));
+    res.json(await resolveAssignedIpBlockRulesForAgent(await licensedAgentId(req.agentId!, "EPM_IP")));
   } catch (err) {
     next(err);
   }
@@ -563,7 +573,7 @@ agentRouter.post("/ip-block/sync-result", async (req, res, next) => {
 
 agentRouter.get("/usb-control/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedUsbControlRulesForAgent(req.agentId!));
+    res.json(await resolveAssignedUsbControlRulesForAgent(await licensedAgentId(req.agentId!, "EPM_USB")));
   } catch (err) {
     next(err);
   }
@@ -629,7 +639,7 @@ agentRouter.post("/uninstalled", async (req, res, next) => {
 
 agentRouter.get("/command-block/assigned", async (req, res, next) => {
   try {
-    res.json(await resolveAssignedCommandBlockRulesForAgent(req.agentId!));
+    res.json(await resolveAssignedCommandBlockRulesForAgent(await licensedAgentId(req.agentId!, "EPM_COMMAND")));
   } catch (err) {
     next(err);
   }
@@ -717,6 +727,147 @@ agentRouter.post("/pause-requests", async (req, res, next) => {
     res.status(201).json(await createPauseRequests(req.agentId!, payload));
   } catch (err) {
     if (err instanceof PolicyNotApplicableError) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+});
+
+// ---- AI Guard phase 3 (Windows agent 0.2.33+) -------------------------------------------------
+
+// What this endpoint applies: blocked AI browser / VS Code extensions, and the tray's clipboard check.
+agentRouter.get("/ai-guard/assigned", async (req, res, next) => {
+  try {
+    res.json(await agentAssignment(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const aiComponentsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        kind: z.enum(AI_COMPONENT_KINDS),
+        host: z.enum(AI_COMPONENT_HOSTS),
+        identifier: z.string().min(1).max(200),
+        name: z.string().max(300).default(""),
+        version: z.string().max(100).nullable().default(null),
+        userName: z.string().max(300).nullable().default(null),
+      }),
+    )
+    .max(5000),
+});
+
+// Every browser extension, code-editor extension and npm command-line tool the agent found; the
+// server keeps the AI ones.
+agentRouter.post("/ai-guard/components", async (req, res, next) => {
+  try {
+    const { items } = aiComponentsSchema.parse(req.body);
+    res.json({ kept: await recordComponents(req.agentId!, items) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const clipboardEventSchema = z.object({
+  process: z.string().min(1).max(260),
+  action: z.enum(["BLOCKED", "REDACTED", "WARNED_CONTINUED"]),
+  dataTypes: z.array(z.string().max(100)).min(1).max(20),
+  maskedSample: z.string().max(500).nullish(),
+});
+
+// The tray app's clipboard check caught sensitive data on its way into an AI desktop app.
+agentRouter.post("/ai-guard/clipboard-events", async (req, res, next) => {
+  try {
+    const e = clipboardEventSchema.parse(req.body);
+    const app = await aiAppForProcess(e.process);
+    await recordPromptEvent(req.agentId!, {
+      host: e.process.toLowerCase().slice(0, 255),
+      appKey: app?.key ?? null,
+      channel: "CLIPBOARD",
+      action: e.action,
+      dataTypes: e.dataTypes,
+      maskedSample: e.maskedSample ?? null,
+    });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---- Endpoint user consent (Windows agent 0.2.35+) ---------------------------------------------------
+
+// The notice in force and this endpoint's answers - the agent sends monitoring data only while every
+// signed-in user has agreed.
+agentRouter.get("/consent", async (req, res, next) => {
+  try {
+    res.json(await agentConsent(req.agentId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const consentDecisionSchema = z.object({
+  account: z.string().min(1).max(300),
+  decision: z.enum(["AGREED", "DECLINED"]),
+  version: z.number().int().positive(),
+});
+
+// A user answered in the tray app (the agent vouches for which user - see localApi.ts).
+agentRouter.post("/consent", async (req, res, next) => {
+  try {
+    const d = consentDecisionSchema.parse(req.body);
+    await recordDecision(req.agentId!, d.account, d.decision, d.version);
+    res.json(await agentConsent(req.agentId!));
+  } catch (err) {
+    if (err instanceof ConsentError) return res.status(409).json({ error: err.message });
+    next(err);
+  }
+});
+
+// Licensing below the module: a feature that isn't licensed applies nothing on endpoints. The
+// resolvers are plain reads, so asking for an id no endpoint has gives exactly the answer of an
+// endpoint with no policies (the same empty shape every agent version already handles).
+const NO_ENDPOINT = "00000000-0000-0000-0000-unlicensed00";
+async function licensedAgentId(agentId: string, featureKey: string): Promise<string> {
+  return (await isFeatureLicensed(featureKey)) ? agentId : NO_ENDPOINT;
+}
+
+// ---- Tray app: details and uninstall from the PC (Windows agent 0.2.39+) --------------------------
+
+// What the tray app shows about this endpoint: the groups it was put in ("Mumbai › Andheri").
+agentRouter.get("/info", async (req, res, next) => {
+  try {
+    const [direct, paths] = await Promise.all([
+      prisma.agentGroupMembership.findMany({ where: { agentId: req.agentId! }, select: { groupId: true } }),
+      groupPaths(),
+    ]);
+    res.json({ groups: direct.map((m) => paths.get(m.groupId) ?? m.groupId).sort() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const selfUninstallSchema = z.object({
+  password: z.string().min(1).max(200),
+  requestedBy: z.string().max(300).optional(),
+});
+
+// A user uninstalls the agent from the tray app with the uninstall password (Asset Settings ->
+// Tamper protection). Without a password set, uninstalling from the PC isn't allowed at all - only
+// from the console. Same rate limit as the setup's password check.
+agentRouter.post("/self-uninstall", uninstallPasswordRateLimiter, async (req, res, next) => {
+  try {
+    const { password, requestedBy } = selfUninstallSchema.parse(req.body);
+    if (!(await hasUninstallPassword())) {
+      return res.status(409).json({ error: "Your organisation hasn't set an uninstall password, so the agent can't be removed from this PC. Ask your IT administrator to uninstall it from the console." });
+    }
+    if (!(await verifyUninstallPassword(password))) {
+      logger.warn({ agentId: req.agentId, requestedBy }, "Uninstall from the endpoint refused: wrong password");
+      return res.status(403).json({ error: "Incorrect uninstall password." });
+    }
+    logger.info({ agentId: req.agentId, requestedBy }, "Agent uninstalled from the endpoint with the uninstall password");
+    res.json({ script: buildUninstallAgentScript() });
+  } catch (err) {
     next(err);
   }
 });

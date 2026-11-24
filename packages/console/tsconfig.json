@@ -7,7 +7,7 @@
     "jsx": "react-jsx",
     "moduleResolution": "Bundler",
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "..",
     "noEmit": true
   },
   "include": ["src"]

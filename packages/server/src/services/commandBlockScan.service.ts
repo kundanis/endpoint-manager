@@ -9,6 +9,7 @@ import { commandProtection, type CommandProtectionOs } from "@em/shared";
 import { prisma } from "../db";
 import { isPolicyExcepted } from "./policyAccessException.service";
 import { isAgentPaused } from "./pause.service";
+import { effectiveMemberships } from "./groupTree.service";
 
 // Flat, deduped across every enabled, non-excepted policy assigned to this agent (directly
 // or via a group) — each match is independently attributable to the rule that fired, so
@@ -16,7 +17,7 @@ import { isAgentPaused } from "./pause.service";
 // The policies this agent enforces: assigned directly or via a group, enabled, not excepted for
 // it, and none while the agent is paused.
 async function activePolicyIdsForAgent(agentId: string): Promise<{ policyIds: string[]; groupIds: string[] }> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   const groupIds = memberships.map((m) => m.groupId);
   if (await isAgentPaused(agentId)) return { policyIds: [], groupIds };
 

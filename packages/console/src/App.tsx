@@ -11,6 +11,7 @@ import AgentUpdatesPage from "./pages/AgentUpdatesPage";
 import PatchesPage from "./pages/PatchesPage";
 import VulnerabilitiesPage from "./pages/VulnerabilitiesPage";
 import AssetSettingsPage from "./pages/AssetSettingsPage";
+import UserConsentPage from "./pages/UserConsentPage";
 import SoftwareLicensesPage from "./pages/SoftwareLicensesPage";
 import NetworkScanPage from "./pages/NetworkScanPage";
 import SecurityConfigPage from "./pages/SecurityConfigPage";
@@ -36,6 +37,7 @@ import IpBlockPage from "./pages/IpBlockPage";
 import UsbControlPage from "./pages/UsbControlPage";
 import ScreenshotBlockPage from "./pages/ScreenshotBlockPage";
 import { ThreatActivityPage, ThreatOverviewPage, ThreatPoliciesPage, ThreatsPage } from "./pages/ThreatProtectionPage";
+import { AiGuardAppsPage, AiGuardExtensionsPage, AiGuardPoliciesPage, AiGuardUsagePage } from "./pages/AiGuardPage";
 import AccessExceptionsPage from "./pages/AccessExceptionsPage";
 import UserProductivityPage from "./pages/UserProductivityPage";
 import EdrPage from "./pages/EdrPage";
@@ -45,6 +47,7 @@ import RequireAuth from "./components/RequireAuth";
 import RequireModule from "./components/RequireModule";
 import RequireSuperAdmin from "./components/RequireSuperAdmin";
 import Layout from "./components/Layout";
+import { FeatureGate } from "./licenseFeatures";
 
 export default function App() {
   return (
@@ -64,52 +67,57 @@ export default function App() {
         <Route path="/endpoints" element={<RequireModule module="ENDPOINT_MANAGER"><AgentsPage /></RequireModule>} />
         <Route path="/endpoints/:id" element={<RequireModule module="ENDPOINT_MANAGER"><AgentDetailPage /></RequireModule>} />
         <Route path="/enrollment-tokens" element={<RequireModule module="ENDPOINT_MANAGER"><EnrollmentTokensPage /></RequireModule>} />
-        <Route path="/commands" element={<RequireModule module="ENDPOINT_MANAGER"><CommandsPage /></RequireModule>} />
-        <Route path="/packages" element={<RequireModule module="ENDPOINT_MANAGER"><PackagesPage /></RequireModule>} />
+        <Route path="/commands" element={<RequireModule module="ENDPOINT_MANAGER" feature="EH_COMMANDS"><CommandsPage /></RequireModule>} />
+        <Route path="/packages" element={<RequireModule module="ENDPOINT_MANAGER" feature="EH_PACKAGES"><PackagesPage /></RequireModule>} />
         <Route path="/agent-updates" element={<RequireModule module="ENDPOINT_MANAGER"><AgentUpdatesPage /></RequireModule>} />
         <Route path="/asset-settings" element={<RequireModule module="ENDPOINT_MANAGER"><AssetSettingsPage /></RequireModule>} />
-        <Route path="/patches" element={<RequireModule module="SECURITY_MANAGER"><PatchesPage /></RequireModule>} />
-        <Route path="/vulnerabilities" element={<RequireModule module="SECURITY_MANAGER"><VulnerabilitiesPage /></RequireModule>} />
-        <Route path="/security-config" element={<RequireModule module="SECURITY_MANAGER"><SecurityConfigPage /></RequireModule>} />
-        <Route path="/zero-trust" element={<RequireModule module="SECURITY_MANAGER"><ZeroTrustPage /></RequireModule>} />
+        <Route path="/user-consent" element={<RequireModule module="ENDPOINT_MANAGER"><UserConsentPage /></RequireModule>} />
+        <Route path="/patches" element={<RequireModule module="SECURITY_MANAGER" feature="SP_PATCHES"><PatchesPage /></RequireModule>} />
+        <Route path="/vulnerabilities" element={<RequireModule module="SECURITY_MANAGER" feature="SP_VULNERABILITIES"><VulnerabilitiesPage /></RequireModule>} />
+        <Route path="/security-config" element={<RequireModule module="SECURITY_MANAGER" feature="SP_SECURITY_CONFIG"><SecurityConfigPage /></RequireModule>} />
+        <Route path="/zero-trust" element={<RequireModule module="SECURITY_MANAGER" feature="SP_ZERO_TRUST"><ZeroTrustPage /></RequireModule>} />
         <Route path="/edr" element={<RequireModule module="SECURITY_MANAGER"><EdrPage /></RequireModule>} />
         <Route path="/software-licenses" element={<RequireModule module="SOFTWARE_MANAGER"><SoftwareLicensesPage /></RequireModule>} />
         <Route path="/network-scan" element={<RequireModule module="NETWORK_MANAGER"><NetworkScanPage /></RequireModule>} />
         <Route path="/data-types" element={<RequireModule module="DATA_MANAGER"><DataTypesPage /></RequireModule>} />
-        <Route path="/data-discovery" element={<RequireModule module="DATA_MANAGER"><DataDiscoveryPage /></RequireModule>} />
-        <Route path="/dlp" element={<RequireModule module="DATA_MANAGER"><DlpPage /></RequireModule>}>
+        <Route path="/data-discovery" element={<RequireModule module="DATA_MANAGER" feature="DG_DISCOVERY"><DataDiscoveryPage /></RequireModule>} />
+        <Route path="/dlp" element={<RequireModule module="DATA_MANAGER" feature="DG_DLP"><DlpPage /></RequireModule>}>
           <Route index element={<Navigate to="content-policies" replace />} />
-          <Route path="content-policies" element={<DlpContentPoliciesPage />} />
-          <Route path="pii-block" element={<PiiBlockPage />} />
+          <Route path="content-policies" element={<FeatureGate feature="DG_DLP_CONTENT"><DlpContentPoliciesPage /></FeatureGate>} />
+          <Route path="pii-block" element={<FeatureGate feature="DG_DLP_PII"><PiiBlockPage /></FeatureGate>} />
           {/* Moved: email attachment blocking to EPM, screen capture to Data movement. Old links still work. */}
           <Route path="email-attachment-block" element={<Navigate to="/epm/email-attachment-block" replace />} />
           <Route path="screen-capture" element={<Navigate to="/data-movement/screen-capture" replace />} />
         </Route>
-        <Route path="/data-movement" element={<RequireModule module="DATA_MANAGER"><DataMovementLayout /></RequireModule>}>
+        <Route path="/data-movement" element={<RequireModule module="DATA_MANAGER" feature="DG_MOVEMENT"><DataMovementLayout /></RequireModule>}>
           <Route index element={<Navigate to="files" replace />} />
-          <Route path="files" element={<DataMovementPage />} />
-          <Route path="screen-capture" element={<ScreenCapturePage />} />
+          <Route path="files" element={<FeatureGate feature="DG_MOVEMENT_FILES"><DataMovementPage /></FeatureGate>} />
+          <Route path="screen-capture" element={<FeatureGate feature="DG_MOVEMENT_SCREEN"><ScreenCapturePage /></FeatureGate>} />
         </Route>
         <Route path="/threat-protection" element={<Navigate to="/threat-protection/overview" replace />} />
         <Route path="/threat-protection/overview" element={<RequireModule module="THREAT_PROTECTION"><ThreatOverviewPage /></RequireModule>} />
         <Route path="/threat-protection/threats" element={<RequireModule module="THREAT_PROTECTION"><ThreatsPage /></RequireModule>} />
         <Route path="/threat-protection/activity" element={<RequireModule module="THREAT_PROTECTION"><ThreatActivityPage /></RequireModule>} />
         <Route path="/threat-protection/policies" element={<RequireModule module="THREAT_PROTECTION"><ThreatPoliciesPage /></RequireModule>} />
-        <Route path="/epm" element={<RequireModule module="DATA_MANAGER"><EpmPage /></RequireModule>}>
+        <Route path="/ai-guard/overview" element={<RequireModule module="AI_GUARD"><AiGuardUsagePage /></RequireModule>} />
+        <Route path="/ai-guard/policies" element={<RequireModule module="AI_GUARD"><AiGuardPoliciesPage /></RequireModule>} />
+        <Route path="/ai-guard/apps" element={<RequireModule module="AI_GUARD"><AiGuardAppsPage /></RequireModule>} />
+        <Route path="/ai-guard/extensions" element={<RequireModule module="AI_GUARD" feature="AI_EXTENSIONS"><AiGuardExtensionsPage /></RequireModule>} />
+        <Route path="/epm" element={<RequireModule module="DATA_MANAGER" feature="EPM"><EpmPage /></RequireModule>}>
           <Route index element={<Navigate to="app-control" replace />} />
-          <Route path="app-control" element={<AppControlPage />} />
-          <Route path="web-block" element={<WebBlockPage />} />
-          <Route path="email-attachment-block" element={<EmailAttachmentBlockPage />} />
+          <Route path="app-control" element={<FeatureGate feature="EPM_APP"><AppControlPage /></FeatureGate>} />
+          <Route path="web-block" element={<FeatureGate feature="EPM_WEB"><WebBlockPage /></FeatureGate>} />
+          <Route path="email-attachment-block" element={<FeatureGate feature="EPM_EMAIL_ATTACH"><EmailAttachmentBlockPage /></FeatureGate>} />
           {/* PII data blocking moved to DLP; old links still work. */}
           <Route path="pii-block" element={<Navigate to="/dlp/pii-block" replace />} />
-          <Route path="command-block" element={<CommandBlockPage />} />
-          <Route path="ip-block" element={<IpBlockPage />} />
-          <Route path="usb-control" element={<UsbControlPage />} />
-          <Route path="screenshot-block" element={<ScreenshotBlockPage />} />
+          <Route path="command-block" element={<FeatureGate feature="EPM_COMMAND"><CommandBlockPage /></FeatureGate>} />
+          <Route path="ip-block" element={<FeatureGate feature="EPM_IP"><IpBlockPage /></FeatureGate>} />
+          <Route path="usb-control" element={<FeatureGate feature="EPM_USB"><UsbControlPage /></FeatureGate>} />
+          <Route path="screenshot-block" element={<FeatureGate feature="EPM_SCREENSHOT"><ScreenshotBlockPage /></FeatureGate>} />
         </Route>
         <Route path="/access-exceptions" element={<RequireModule module="DATA_MANAGER"><AccessExceptionsPage /></RequireModule>} />
-        <Route path="/user-productivity" element={<RequireModule module="USER_MANAGER"><UserProductivityPage /></RequireModule>} />
-        <Route path="/user-risk" element={<RequireModule module="USER_MANAGER" permission="USER_RISK"><UserRiskPage /></RequireModule>}>
+        <Route path="/user-productivity" element={<RequireModule module="USER_MANAGER" feature="IG_PRODUCTIVITY"><UserProductivityPage /></RequireModule>} />
+        <Route path="/user-risk" element={<RequireModule module="USER_MANAGER" feature="IG_USER_RISK" permission="USER_RISK"><UserRiskPage /></RequireModule>}>
           <Route index element={<Navigate to="users" replace />} />
           <Route path="users" element={<UserRiskUsersTab />} />
           <Route path="alerts" element={<UserRiskAlertsTab />} />

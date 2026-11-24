@@ -4,6 +4,7 @@ import { generateToken, hashToken } from "../utils/tokens";
 import { decryptField, encryptField } from "../utils/fieldEncryption";
 import { assertCanEnroll } from "./licenseActivation.service";
 import { addGroupMembers } from "./assetGroup.service";
+import { PolicyConflictError } from "./policyExclusivity.service";
 
 export class InvalidEnrollmentTokenError extends Error {}
 
@@ -172,7 +173,11 @@ export async function enrollAgent(payload: EnrollRequest): Promise<EnrollRespons
   // Additive even on a re-enrollment - addGroupMembers doesn't touch group memberships this
   // agent already has from before.
   if (consumedToken.groupId) {
-    await addGroupMembers(consumedToken.groupId, [agent.id]);
+    // A re-enrolled endpoint that already has its own policies could conflict with the group's
+    // (one allow/block policy per endpoint): then it simply isn't added to the group.
+    await addGroupMembers(consumedToken.groupId, [agent.id]).catch((err) => {
+      if (!(err instanceof PolicyConflictError)) throw err;
+    });
   }
 
   return { agentId: agent.id, apiKey };

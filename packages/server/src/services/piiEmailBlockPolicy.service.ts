@@ -11,6 +11,7 @@ import type {
 } from "@em/shared";
 import { MAIL_GUARD_CHROME_STORE_ID, MAIL_GUARD_EDGE_STORE_ID } from "@em/shared";
 import { prisma } from "../db";
+import { browserGuardKeyFor, promptProtectionAppliesTo } from "./aiGuardPrompt.service";
 
 export async function createPolicy(params: CreatePiiEmailBlockPolicyRequest, createdByAdminId: string) {
   const policy = await prisma.piiEmailBlockPolicy.create({
@@ -166,11 +167,21 @@ export async function getPolicyForEmail(emailAddress: string): Promise<PiiEmailB
 
 // Whether agents should install the Mail Guard browser extension: only while some enabled
 // policy with at least one category has a mailbox assigned. The extension then checks per mailbox.
-export async function mailGuardAgentSettings(): Promise<MailGuardAgentSettings> {
+// What the agent applies for the Browser Guard extension: install it while email attachment blocking
+// is in use, or while AI Guard prompt protection applies to this endpoint; and the endpoint id/key the
+// extension uses for AI Guard (aiGuardPrompt.service.ts).
+export async function mailGuardAgentSettings(agentId: string): Promise<MailGuardAgentSettings> {
   const active = await prisma.piiEmailBlockPolicy.count({
     where: { enabled: true, assignments: { some: {} }, rules: { some: { ruleType: "PII_PATTERN" } } },
   });
-  return { install: active > 0, chromeExtensionId: MAIL_GUARD_CHROME_STORE_ID, edgeExtensionId: MAIL_GUARD_EDGE_STORE_ID };
+  const aiPrompt = await promptProtectionAppliesTo(agentId);
+  return {
+    install: active > 0 || aiPrompt,
+    chromeExtensionId: MAIL_GUARD_CHROME_STORE_ID,
+    edgeExtensionId: MAIL_GUARD_EDGE_STORE_ID,
+    endpointId: agentId,
+    endpointKey: browserGuardKeyFor(agentId),
+  };
 }
 
 // Best-effort append from the add-in after every send it evaluated. Deliberately tolerant

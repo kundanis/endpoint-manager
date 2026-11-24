@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { isModuleLicensed } from "./licenseActivation.service";
 import { getModuleVisibility, isModuleHidden } from "./moduleVisibility.service";
 import { RULES as USER_RISK_RULES } from "./userRisk/rules";
+import { membersOfGroups } from "./groupTree.service";
 
 // Events: one place for everything the agents and the console record - threats, policy
 // matches and blocks, compliance failures, user risk alerts and software changes (admin
@@ -32,6 +33,8 @@ export interface EventFilter {
   to: Date;
   agentId?: string;
   groupId?: string;
+  // The endpoints of groupId and its sub groups (filled in by withGroupMembers).
+  groupAgentIds?: string[];
   categories?: EventCategory[];
   severities?: EventSeverity[];
   types?: string[]; // source ids
@@ -472,7 +475,7 @@ export function sourceWhere(source: Source, f: EventFilter, groupKey?: Row): Row
   // Endpoint or group filter: kinds not tied to an endpoint drop out.
   if (f.agentId || f.groupId) {
     if (!source.perEndpoint) return null;
-    and.push(f.agentId ? { agentId: f.agentId } : { agent: { groupMemberships: { some: { groupId: f.groupId } } } });
+    and.push(f.agentId ? { agentId: f.agentId } : { agentId: { in: f.groupAgentIds ?? [] } });
   }
   // Severity: fixed per source, or from a field.
   if (f.severities?.length) {
@@ -535,7 +538,14 @@ export const MAX_GROUP_ENDPOINTS = 200;
 
 // ---- by event
 
-export async function getEventGroups(viewer: Viewer, f: EventFilter) {
+// A group filter covers the group's sub groups too.
+async function withGroupMembers(f: EventFilter): Promise<EventFilter> {
+  if (!f.groupId || f.agentId || f.groupAgentIds) return f;
+  return { ...f, groupAgentIds: (await membersOfGroups([f.groupId])).map((m) => m.agentId) };
+}
+
+export async function getEventGroups(viewer: Viewer, filter: EventFilter) {
+  const f = await withGroupMembers(filter);
   const sources = await visibleSources(viewer);
   const perSource = await Promise.all(
     sources.map(async (source) => {
@@ -624,7 +634,8 @@ export const TIMELINE_PAGE = 100;
 
 // Newest first. `before` (the last row's time) pages back; each source gives at most one page,
 // then they are merged.
-export async function getEventTimeline(viewer: Viewer, f: EventFilter, opts: { before?: Date; event?: string; limit?: number }) {
+export async function getEventTimeline(viewer: Viewer, filter: EventFilter, opts: { before?: Date; event?: string; limit?: number }) {
+  const f = await withGroupMembers(filter);
   const limit = Math.min(Math.max(opts.limit ?? TIMELINE_PAGE, 1), 500);
   const sources = await visibleSources(viewer);
   const decoded = opts.event ? decodeEventKey(opts.event) : null;

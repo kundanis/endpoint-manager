@@ -11,3 +11,5 @@ export * from "./data/mailGuard";
 export * from "./endpointSafety";
 export * from "./peFileInfo";
 export * from "./data/appCatalog";
+export * from "./data/aiApps";
+export * from "./data/consent";

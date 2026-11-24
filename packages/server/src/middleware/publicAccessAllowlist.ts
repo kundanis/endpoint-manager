@@ -27,7 +27,7 @@ import { behindCloudflare, clientAddress } from "./clientAddress";
 
 // /api/license-callback/ receives revoke notices from the License Server (usually in the
 // cloud); it accepts nothing but a notice carrying this deployment's revocation secret.
-const PUBLIC_PATH_PREFIXES = ["/outlook-addin/", "/api/email-addin/", "/api/agent/", "/api/license-callback/"];
+const PUBLIC_PATH_PREFIXES = ["/outlook-addin/", "/api/email-addin/", "/api/agent/", "/api/license-callback/", "/api/ai-guard-ext/"];
 const PUBLIC_EXACT_PATHS = new Set(["/health"]);
 
 const privateIpv4 = new net.BlockList();

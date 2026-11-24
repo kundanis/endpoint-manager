@@ -230,6 +230,15 @@ export const DATA_TOPICS: HelpTopic[] = [
     keywords: ["block app", "whitelist", "blacklist", "allowlist", "allow list", "default deny", "only allowed apps", "sha256", "hash", "ransomware", "setup", "installer", "msi", "undefined", "unknown software", "executable", "renamed", "publisher", "product", "anydesk", "telegram", "black screen", "emergency", "applocker", "dll", "powershell", "ps1", "batch", "bat", "allow", "exception"],
     sections: [
       {
+        title: "One Policy per Endpoint",
+        items: [
+          "An endpoint can have only one policy in each of these modules: Application control, Web blocking, Command blocking, IP blocking, USB control, Screenshot blocking, PII blocking, DLP content, Threat Protection and AI Guard. Two could disagree (one allows something the other blocks), so assigning a second one is refused with the name of the policy the endpoint already has.",
+          "This counts policies assigned directly and through groups: adding an endpoint to a group, or assigning a policy to a group, is refused when it would give an endpoint a second policy of the same module.",
+          "Endpoints that already had two from before show a warning under Applied Policies on their Overview; remove one of the assignments.",
+          "Zero Trust, security configuration, data discovery, data movement and screen capture policies are not limited: several of them add up.",
+        ],
+      },
+      {
         title: "Advanced Application Control (Optional)",
         items: [
           "Offered only when the server has it switched on (ADVANCED_APP_CONTROL=true in its .env). It uses Windows AppLocker; needs Windows agent 0.2.27 or later.",
@@ -244,7 +253,8 @@ export const DATA_TOPICS: HelpTopic[] = [
         title: "Allowlist Policies (Allow Only Listed Applications)",
         items: [
           "Choose Allowlist as the type when creating a policy (advanced application control must be on for this server). Needs Windows agent 0.2.30 or later and Windows Pro, Enterprise or Education; Windows Home shows Failed on the Sync status tab.",
-          "Windows and what it needs always run: everything in the Windows folder (including .NET Framework), Windows' own signed components wherever they are (such as Microsoft Defender), drivers' tools from hardware makers (Intel, Realtek, NVIDIA, AMD and others), Microsoft Edge and WebView2, .NET, Store apps and the Endpoint IQ agent.",
+          "Windows and the computer's hardware always run: everything in the Windows folder (including .NET Framework), Windows' own signed components wherever they are (such as Microsoft Defender and Internet Explorer), Windows' and Microsoft's own Store apps (Calculator, Photos, Notepad, Paint, Snipping Tool, Terminal, Store, Teams, Outlook), Microsoft Edge and WebView2, .NET, the Endpoint IQ agent, and hardware makers' tools under Program Files - chips and drivers (Intel, Realtek, NVIDIA, AMD, Synaptics, Waves and others) and computer makers' utilities (Dell, HP, Lenovo, ASUS, Acer, MSI, Microsoft Surface and others), plus Dell's and Intel's Store apps.",
+          "Everything else is blocked for every user unless the policy allows it, whether already installed or installed later: other applications and utilities, other Store apps (WhatsApp and the like), and new setups. Windows keeps running: services and drivers (antivirus engines, VPN and backup services) aren't affected, because the allowlist applies to programs users start - but their own windows and tray icons are, so allow the ones people need (for example the antivirus or VPN client).",
           "Everything else is blocked by Windows unless the policy allows it, including any new setup: programs and .msi installers from Downloads, USB drives or a user's own folders can't run. Windows shows its own message.",
           "Folders inside Windows that users can write to, such as Windows\\Temp, are not covered by the Windows allowance.",
           "Custom applications: allow a folder or file, a publisher (the signer, optionally one product, one file name and a version: any, this or newer, or exactly this), or one exact file by its hash. Read from a program file fills them in from an .exe on your computer without uploading it. It leaves Product empty, so every program the publisher signs is allowed: setups often run helpers under another product name (TeamViewer's setup runs \"TeamViewer Installer\"), and a product rule would block them.",
@@ -450,6 +460,7 @@ export const DATA_TOPICS: HelpTopic[] = [
       {
         title: "Request an Access Exception",
         items: [
+          "From the Endpoint IQ tray icon (Policies and pause requests), a user can ask for a pause of 15 minutes up to a day, or Permanent - which lasts until an administrator selects End now here (Windows agent 0.2.39 or later).",
           "Request for: choose Endpoint for one machine, or Group for every endpoint in an asset group.",
           "Use the search box to find an endpoint by hostname, signed-in user name or group, or a group by name. The best match is selected in the Endpoint (or Group) field as you type; pick another from the narrowed list if needed.",
           "A group request creates one request per endpoint in the group (the count is shown before you submit). Each is approved, rejected or ended on its own.",

@@ -17,6 +17,8 @@ import { startPresenceFlush } from "./presence/presence";
 import { scheduleUserRisk } from "./services/userRisk/userRisk.service";
 import { scheduleAuditRetention } from "./services/adminAudit.service";
 import { scheduleScreenCaptureImageRetention } from "./services/screenCaptureImage.service";
+import { scheduleLicenseReductionAutoApply } from "./services/licenseChange.service";
+import { scheduleAiGuardAlerts } from "./services/aiGuardAlerts.service";
 
 // Last-resort safety net: without this, an unhandled rejection anywhere the request/response
 // try/catch chain doesn't reach (e.g. a future bug shaped like the one just fixed in
@@ -64,6 +66,8 @@ failInterruptedSyncRuns()
   .catch((err) => logger.error({ err }, "Failed to reconcile interrupted vulnerability sync runs"));
 
 scheduleLicenseCallbackRegistration();
+scheduleLicenseReductionAutoApply();
+scheduleAiGuardAlerts();
 schedulePatchAutomation();
 scheduleStaleAgentUpdateReconciliation();
 scheduleUninstalledAgentCleanup();

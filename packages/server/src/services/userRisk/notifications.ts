@@ -103,6 +103,14 @@ function smtpOf(stored: StoredNotifications): SmtpSettings {
   return { ...stored.smtp, password: decryptFieldOrNull(stored.smtp.passwordEncrypted) ?? null };
 }
 
+// The product's mail server (set under User Risk -> Email), for other modules' emails (AI Guard
+// alerts). Null until a server and sender are saved there.
+export async function sharedMailServer(): Promise<{ smtp: SmtpSettings; consoleUrl: string | null } | null> {
+  const { stored } = await readAll();
+  if (!stored.smtp.host || !stored.smtp.from) return null;
+  return { smtp: smtpOf(stored), consoleUrl: stored.consoleUrl };
+}
+
 async function deliver(stored: StoredNotifications, subject: string, text: string, html: string) {
   try {
     await sendMail(smtpOf(stored), { to: stored.recipients, subject, text, html });

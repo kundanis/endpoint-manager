@@ -42,6 +42,7 @@ import {
   usePagedList,
 } from "../components/ui";
 import { formatDateTime } from "../format";
+import { groupDepth, groupsBelow } from "../groupTree";
 
 // Pattern E — settings (design-system/docs/PAGE_PATTERNS.md): one tab per setting group,
 // each section a Pattern C form that saves on its own.
@@ -170,25 +171,52 @@ function TamperProtectionSection() {
   );
 }
 
-function GroupSettingsPanel({ group }: { group: { id: string; name: string; description: string | null } }) {
+// The groups a group can be placed under: any group except itself and the groups below it.
+function ParentGroupSelect({ id, value, onChange, excludeId }: { id: string; value: string; onChange: (v: string) => void; excludeId?: string }) {
+  const { data: groups } = useAssetGroups();
+  const blocked = excludeId ? groupsBelow(groups, [excludeId]) : new Set<string>();
+  return (
+    <select id={id} className="ep-select" value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">None - a main group</option>
+      {(groups ?? [])
+        .filter((g) => !blocked.has(g.id))
+        .map((g) => (
+          <option key={g.id} value={g.id}>
+            {g.path}
+          </option>
+        ))}
+    </select>
+  );
+}
+
+function GroupSettingsPanel({ group }: { group: { id: string; name: string; description: string | null; parentId: string | null } }) {
   const updateGroup = useUpdateAssetGroup();
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description ?? "");
+  const [parentId, setParentId] = useState(group.parentId ?? "");
 
   useEffect(() => {
     setName(group.name);
     setDescription(group.description ?? "");
-  }, [group.id, group.name, group.description]);
+    setParentId(group.parentId ?? "");
+  }, [group.id, group.name, group.description, group.parentId]);
 
   function handleSave(e: FormEvent) {
     e.preventDefault();
-    updateGroup.mutate({ id: group.id, name, description: description.trim() || null });
+    updateGroup.mutate({ id: group.id, name, description: description.trim() || null, parentId: parentId || null });
   }
 
   return (
     <form className="ep-card" onSubmit={handleSave}>
-      <FormSection title="Group Settings" description="Rename the group or change its description.">
+      <FormSection title="Group Settings" description="Rename the group, change its description, or move it under another group.">
         <div className="app-stack">
+          <Field
+            label="Parent group"
+            htmlFor={`group-parent-${group.id}`}
+            help="Moving a group moves its sub groups and endpoints with it: they get the policies of the groups above its new place."
+          >
+            <ParentGroupSelect id={`group-parent-${group.id}`} value={parentId} onChange={setParentId} excludeId={group.id} />
+          </Field>
           <Field label="Name" htmlFor={`group-name-${group.id}`} required>
             <input id={`group-name-${group.id}`} className="ep-input" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
@@ -225,6 +253,7 @@ function GroupsSection() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [parentId, setParentId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>();
   const [memberPickerAgentIds, setMemberPickerAgentIds] = useState<string[]>([]);
 
@@ -234,7 +263,7 @@ function GroupsSection() {
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     createGroup.mutate(
-      { name, description: description || null },
+      { name, description: description || null, parentId: parentId || null },
       { onSuccess: () => { setName(""); setDescription(""); } },
     );
   }
@@ -316,8 +345,15 @@ function GroupsSection() {
                   <tbody>
                     {pagedGroups.pageItems.map((g) => (
                       <tr key={g.id} className={`app-clickable ${g.id === selectedGroupId ? "ep-sel" : ""}`} onClick={() => setSelectedGroupId(g.id)}>
-                        <td className="ep-host">
-                          <b>{g.name}</b>
+                        <td className="ep-host" style={{ paddingLeft: 12 + groupDepth(g.path) * 22 }}>
+                          <b>
+                            {groupDepth(g.path) > 0 && (
+                              <span className="app-muted" aria-hidden>
+                                └{" "}
+                              </span>
+                            )}
+                            {g.name}
+                          </b>
                           {g.description ? <span className="app-row-sub">{g.description}</span> : <span className="app-row-sub">—</span>}
                         </td>
                         <td className="ep-num" style={{ textAlign: "right" }}>
@@ -329,6 +365,14 @@ function GroupsSection() {
                               label={`Actions for ${g.name}`}
                               items={[
                                 { label: "Manage group", icon: Pencil, onSelect: () => setSelectedGroupId(g.id) },
+                                {
+                                  label: "Add sub group",
+                                  icon: ListPlus,
+                                  onSelect: () => {
+                                    setParentId(g.id);
+                                    document.getElementById("new-group-name")?.focus();
+                                  },
+                                },
                                 {
                                   label: "Delete group",
                                   icon: Trash2,
@@ -360,8 +404,14 @@ function GroupsSection() {
         </Card>
 
         <form className="ep-card" onSubmit={handleCreate}>
-          <FormSection title="Create Group" description="Groups let you target policies, packages and updates at many endpoints at once.">
+          <FormSection
+            title="Create Group"
+            description="Groups let you target policies, packages and updates at many endpoints at once. Put a group under another to build a hierarchy (Mumbai › Andheri): a policy on a group applies to every group below it."
+          >
             <div className="app-stack">
+              <Field label="Parent group" htmlFor="new-group-parent" help="Leave as None for a main group.">
+                <ParentGroupSelect id="new-group-parent" value={parentId} onChange={setParentId} />
+              </Field>
               <Field label="Name" htmlFor="new-group-name" required>
                 <input id="new-group-name" className="ep-input" value={name} onChange={(e) => setName(e.target.value)} required />
               </Field>

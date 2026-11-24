@@ -1,7 +1,9 @@
+import FeatureTree, { featureSummary, selectionOf, type LicenseSelection } from "../components/FeatureTree";
 import { useState, type FormEvent } from "react";
 import type { LicenseModule, LicenseProduct, ValidityType } from "@license/shared";
 import { useEntities, useIssueLicenseKey, useLicenseKeys, useRevokeLicenseKey } from "../api/hooks";
 import type { IssuedLicenseKey } from "../api/types";
+import ChangeRequestPanel from "../components/ChangeRequestPanel";
 
 const VALIDITY_LABELS: Record<ValidityType, string> = {
   ONE_YEAR: "1 year",
@@ -32,6 +34,7 @@ const MODULE_LABELS: Record<LicenseProduct, Record<LicenseModule, string>> = {
     DATA_MANAGER: "Data Manager",
     USER_MANAGER: "User Manager",
     THREAT_PROTECTION: "Threat Protection",
+    AI_GUARD: "AI Guard",
   },
   ENDPOINT_IQ: {
     ENDPOINT_MANAGER: "Endpoint Hub",
@@ -41,6 +44,7 @@ const MODULE_LABELS: Record<LicenseProduct, Record<LicenseModule, string>> = {
     DATA_MANAGER: "Data Governance",
     USER_MANAGER: "Identity Governance",
     THREAT_PROTECTION: "Threat Protection",
+    AI_GUARD: "AI Guard",
   },
 };
 
@@ -53,11 +57,12 @@ const IQ_MODULE_HINTS: Record<LicenseModule, string> = {
   DATA_MANAGER: "Data types, data discovery, DLP, data movement, EPM, access exceptions",
   USER_MANAGER: "User productivity, user risk, admin logs",
   THREAT_PROTECTION: "Microsoft Defender management, threats, scans and quarantine (also sold as its own edition)",
+  AI_GUARD: "Generative-AI discovery and control: which AI tools are used, by whom, and which are allowed or blocked",
 };
 
 const LICENSE_MODULES = Object.keys(MODULE_LABELS.ENDPOINT_ONE) as LicenseModule[];
-// Threat Protection is sold separately, so a new key starts without it (tick it to add it).
-const DEFAULT_MODULES = LICENSE_MODULES.filter((m) => m !== "THREAT_PROTECTION");
+// Threat Protection and AI Guard are sold separately, so a new key starts without them (tick to add).
+const DEFAULT_MODULES = LICENSE_MODULES.filter((m) => m !== "THREAT_PROTECTION" && m !== "AI_GUARD");
 
 function statusBadgeClass(status: string): string {
   if (status === "ACTIVATED") return "online";
@@ -75,18 +80,17 @@ export default function LicenseKeysPage() {
   const [product, setProduct] = useState<LicenseProduct>("ENDPOINT_IQ");
   const [maxAgents, setMaxAgents] = useState(10);
   const [validityType, setValidityType] = useState<ValidityType>("ONE_YEAR");
-  const [modules, setModules] = useState<LicenseModule[]>([...DEFAULT_MODULES]);
+  const [selection, setSelection] = useState<LicenseSelection>(() => selectionOf([...DEFAULT_MODULES], null));
+  const modules = selection.modules;
   const [justIssued, setJustIssued] = useState<IssuedLicenseKey | null>(null);
   const [copied, setCopied] = useState(false);
-
-  function toggleModule(m: LicenseModule) {
-    setModules((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
-  }
+  const [changingKeyId, setChangingKeyId] = useState<string | null>(null);
+  const changingKey = keys?.find((k) => k.id === changingKeyId) ?? null;
 
   function handleIssue(e: FormEvent) {
     e.preventDefault();
     issueKey.mutate(
-      { entityId, product, maxAgents, validityType, modules },
+      { entityId, product, maxAgents, validityType, modules, features: selection.features },
       {
         onSuccess: (result) => {
           setJustIssued(result);
@@ -105,7 +109,8 @@ export default function LicenseKeysPage() {
       <h1>License Keys</h1>
       <p>
         Each key locks to exactly one Endpoint One or Endpoint IQ deployment on first activation. Activated deployments
-        don't check back in - revoking a key sends the deployment a revoke notice.
+        don't check back in: revoking a key sends the deployment a revoke notice, and Change sends it a change
+        request that the customer accepts or rejects.
       </p>
 
       {justIssued && (
@@ -148,9 +153,9 @@ export default function LicenseKeysPage() {
               <td>{k.maxAgents}</td>
               <td>{VALIDITY_LABELS[k.validityType]}</td>
               <td>
-                {k.modules.length === LICENSE_MODULES.length
+                {k.modules.length === LICENSE_MODULES.length && k.features === null
                   ? "All"
-                  : k.modules.map((m) => MODULE_LABELS[k.product][m]).join(", ") || "None"}
+                  : featureSummary(k.modules, k.features, (m) => MODULE_LABELS[k.product][m]) || "None"}
               </td>
               <td>{k.validUntil ? new Date(k.validUntil).toLocaleDateString() : "—"}</td>
               <td>
@@ -165,6 +170,13 @@ export default function LicenseKeysPage() {
               </td>
               <td>{k.boundDeploymentId ?? "—"}</td>
               <td>
+                {k.status === "ACTIVATED" && (
+                  <>
+                    <button type="button" onClick={() => setChangingKeyId(k.id)}>
+                      Change…
+                    </button>{" "}
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => revokeKey.mutate(k.id)}
@@ -182,6 +194,16 @@ export default function LicenseKeysPage() {
           )}
         </tbody>
       </table>
+
+      {changingKey && (
+        <ChangeRequestPanel
+          key={changingKey.id}
+          licenseKey={changingKey}
+          allModules={LICENSE_MODULES}
+          moduleLabels={MODULE_LABELS[changingKey.product]}
+          onClose={() => setChangingKeyId(null)}
+        />
+      )}
 
       <form className="panel" onSubmit={handleIssue}>
         <h2>Issue a new key</h2>
@@ -223,14 +245,18 @@ export default function LicenseKeysPage() {
           </select>
         </label>
         <fieldset>
-          <legend>{PRODUCT_LABELS[product]} modules included</legend>
-          {LICENSE_MODULES.map((m) => (
-            <label key={m} className="checkbox-row">
-              <input type="checkbox" checked={modules.includes(m)} onChange={() => toggleModule(m)} />
-              {MODULE_LABELS[product][m]}
-              {product === "ENDPOINT_IQ" && <span className="module-hint"> — {IQ_MODULE_HINTS[m]}</span>}
-            </label>
-          ))}
+          <legend>{PRODUCT_LABELS[product]} modules and features included</legend>
+          <FeatureTree
+            allModules={LICENSE_MODULES}
+            moduleLabel={(m) => MODULE_LABELS[product][m]}
+            moduleHint={(m) => (product === "ENDPOINT_IQ" ? IQ_MODULE_HINTS[m] : null)}
+            value={selection}
+            onChange={setSelection}
+          />
+          <p className="module-hint">
+            Ticking a module includes all its features; untick the ones not sold. In the customer's console a module
+            that isn't licensed is hidden, and a feature that isn't licensed shows as locked.
+          </p>
           {product === "ENDPOINT_IQ" && (
             <p className="module-hint">Dashboard, Licensing and Administrators are always included.</p>
           )}

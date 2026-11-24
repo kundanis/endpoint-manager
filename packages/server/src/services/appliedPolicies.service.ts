@@ -1,6 +1,7 @@
 import type { PolicyAccessExceptionType } from "@em/shared";
 import { prisma } from "../db";
 import { isAgentPaused } from "./pause.service";
+import { effectiveMemberships, groupPaths } from "./groupTree.service";
 
 // Every policy assigned to one endpoint, directly or through one of its groups, for the
 // endpoint's Overview. Each entry says how it reaches the endpoint, whether it's in force here
@@ -146,6 +147,13 @@ const MODULES: ModuleDef[] = [
     find: (where) => prisma.screenshotBlockPolicyAssignment.findMany({ where, include: { policy: policySelect } }),
   },
   {
+    module: "AI Guard",
+    navPath: "/ai-guard/policies",
+    link: withPolicy("/ai-guard/policies"),
+    exceptionType: "AI_GUARD",
+    find: (where) => prisma.aiGuardPolicyAssignment.findMany({ where, include: { policy: policySelect } }),
+  },
+  {
     module: "Threat protection",
     navPath: "/threat-protection/policies",
     link: withPolicy("/threat-protection/policies"),
@@ -155,8 +163,9 @@ const MODULES: ModuleDef[] = [
 
 // platform: these modules run on the Windows agent only; the console marks them on other endpoints.
 export async function getAppliedPolicies(agentId: string): Promise<{ paused: boolean; platform: string | null; policies: AppliedPolicy[] }> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, include: { group: { select: { id: true, name: true } } } });
-  const groupName = new Map(memberships.map((m) => [m.groupId, m.group.name]));
+  // The endpoint's groups and every group above them ("Mumbai › Andheri").
+  const [memberships, paths] = await Promise.all([effectiveMemberships(agentId), groupPaths()]);
+  const groupName = new Map(memberships.map((m) => [m.groupId, paths.get(m.groupId) ?? m.groupId]));
   const groupIds = [...groupName.keys()];
   const where = { OR: [{ agentId }, ...(groupIds.length > 0 ? [{ groupId: { in: groupIds } }] : [])] };
 

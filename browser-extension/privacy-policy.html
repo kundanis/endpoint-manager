@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Endpoint IQ Mail Guard – Privacy policy</title>
+    <title>Endpoint IQ Browser Guard – Privacy policy</title>
     <style>
       body { font: 16px/1.6 Arial, sans-serif; color: #1f1f1f; background: #fff; margin: 0; padding: 32px 16px; }
       main { max-width: 720px; margin: 0 auto; }
@@ -15,10 +15,10 @@
   </head>
   <body>
     <main>
-      <h1>Endpoint IQ Mail Guard – Privacy policy</h1>
-      <p class="updated">Last updated: 7 November 2026</p>
+      <h1>Endpoint IQ Browser Guard – Privacy policy</h1>
+      <p class="updated">Last updated: 24 November 2026</p>
 
-      <p>Endpoint IQ Mail Guard is a browser extension for Google Chrome and Microsoft Edge. It is installed and set up by organizations that use Endpoint IQ, to stop personal data from being sent by email from Gmail against the organization's policy. It does nothing unless the user's organization has set it up.</p>
+      <p>Endpoint IQ Browser Guard (formerly Endpoint IQ Mail Guard) is a browser extension for Google Chrome and Microsoft Edge. It is installed and set up by organizations that use Endpoint IQ, to stop personal or confidential data from being sent by email from Gmail, or shared with AI websites such as ChatGPT, Gemini or Claude, against the organization's policy. It does nothing unless the user's organization has set it up.</p>
 
       <h2>What the extension reads</h2>
       <p>On Gmail (mail.google.com) only, the extension reads:</p>
@@ -27,23 +27,30 @@
         <li>the subject and text of the email the user writes, and</li>
         <li>the email addresses of its recipients, to tell whether it is going only to the organization's own domains.</li>
       </ul>
-      <p>It checks them on the user's own computer for the kinds of personal data the organization has chosen to protect, such as card numbers, PAN, Aadhaar or bank details.</p>
+      <p>On AI websites listed in the extension (for example chatgpt.com, gemini.google.com, claude.ai), and only when the organization has turned on AI prompt protection for the computer, the extension reads:</p>
+      <ul>
+        <li>text the user pastes into the AI website,</li>
+        <li>the prompt the user is about to send, and</li>
+        <li>files the user uploads to the AI website.</li>
+      </ul>
+      <p>It checks them on the user's own computer for the kinds of personal or confidential data the organization has chosen to protect, such as card numbers, PAN, Aadhaar, bank details or the organization's own keywords.</p>
 
       <h2>What the extension sends, and where</h2>
       <p>The extension sends data only to the user's organization's own Endpoint IQ server, which the organization runs and controls. It sends:</p>
       <ul>
         <li>the user's Gmail address, to find out which policy applies to them; and</li>
-        <li>when it blocks something: the Gmail address, the file name (or "Message text"), and the kind of data found, for example "PAN".</li>
+        <li>when it blocks something: the Gmail address, the file name (or "Message text"), and the kind of data found, for example "PAN";</li>
+        <li>on AI websites: the computer's Endpoint IQ identifier (set by the organization), to find out which policy applies; and, when it warns about, blocks or masks something, the AI website's address, the file name if it was a file, the kind of data found and a masked sample of it (for example "4111 •••• •••• 1111").</li>
       </ul>
-      <p>It never sends the content of emails or files, the recipients' addresses, or the personal data it found.</p>
+      <p>It never sends the content of emails, prompts or files, the recipients' addresses, or the personal data it found in readable form.</p>
 
       <h2>What the extension does not do</h2>
       <ul>
         <li>It does not sell, rent or share any data with anyone.</li>
         <li>It does not send any data to the extension's publisher or to any third party.</li>
         <li>It does not show advertising or track browsing.</li>
-        <li>It does not read or change any website other than Gmail.</li>
-        <li>It does not use data for any purpose other than applying the organization's email policy.</li>
+        <li>It does not read or change any website other than Gmail and the AI websites listed in the extension.</li>
+        <li>It does not use data for any purpose other than applying the organization's email and AI policies.</li>
       </ul>
 
       <h2>Storage and retention</h2>

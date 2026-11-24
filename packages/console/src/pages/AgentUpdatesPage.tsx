@@ -645,7 +645,7 @@ export default function AgentUpdatesPage() {
                       key={g.id}
                       checked={selectedGroupIds.includes(g.id)}
                       onChange={() => toggleGroup(g.id)}
-                      label={g.name}
+                      label={g.path ?? g.name}
                       hint={`${g.memberCount} ${g.memberCount === 1 ? "member" : "members"}`}
                     />
                   ))}

@@ -10,11 +10,13 @@ import type {
   UpdateThreatProtectionPolicyRequest,
 } from "@em/shared";
 import { prisma } from "../db";
+import { assertAssignable } from "./policyExclusivity.service";
 import { newAssignmentTargets } from "../utils/assignments";
 import { resolveTargetAgentIds } from "./agentTargeting.service";
 import { isModuleLicensed } from "./licenseActivation.service";
 import { isModuleHidden } from "./moduleVisibility.service";
 import { requestScan } from "./scanRequests";
+import { effectiveMemberships, effectiveMembershipsOf } from "./groupTree.service";
 
 // Threat Protection: Microsoft Defender managed from the console. Policies (Defender settings)
 // assigned to endpoints or groups, each endpoint's reported protection status and threats, and
@@ -39,7 +41,7 @@ const parseList = (json: string): string[] => {
 };
 
 async function groupIdsForAgent(agentId: string): Promise<string[]> {
-  const memberships = await prisma.agentGroupMembership.findMany({ where: { agentId }, select: { groupId: true } });
+  const memberships = await effectiveMemberships(agentId);
   return memberships.map((m) => m.groupId);
 }
 
@@ -136,6 +138,8 @@ export async function deletePolicy(id: string): Promise<boolean> {
 export async function assignPolicy(policyId: string, params: AssignThreatProtectionPolicyRequest) {
   const existing = await prisma.threatProtectionPolicyAssignment.findMany({ where: { policyId }, select: { agentId: true, groupId: true } });
   const fresh = newAssignmentTargets(existing, params.agentIds, params.groupIds);
+  // One THREAT_PROTECTION policy per endpoint (policyExclusivity.service.ts).
+  await assertAssignable("THREAT_PROTECTION", policyId, fresh.agentIds, fresh.groupIds);
   if (fresh.agentIds.length + fresh.groupIds.length > 0) {
     await prisma.threatProtectionPolicyAssignment.createMany({
       data: [...fresh.agentIds.map((agentId) => ({ policyId, agentId })), ...fresh.groupIds.map((groupId) => ({ policyId, groupId }))],
@@ -175,7 +179,7 @@ export async function getPolicySyncStatus(policyId: string) {
   const [agents, assignments, memberships] = await Promise.all([
     prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, hostname: true, osPlatform: true } }),
     prisma.threatProtectionPolicyAssignment.findMany({ where: { policyId } }),
-    prisma.agentGroupMembership.findMany({ where: { agentId: { in: agentIds } }, select: { agentId: true, groupId: true } }),
+    effectiveMembershipsOf(agentIds),
   ]);
   const assignmentFor = (agentId: string) =>
     assignments.find((a) => a.agentId === agentId) ??

@@ -106,6 +106,7 @@ const MODULES: Record<string, { label: string; category: string }> = {
   "user-productivity": { label: "User productivity", category: "Settings" },
   "user-risk": { label: "User risk", category: "Settings" },
   edr: { label: "EDR", category: "Policies" },
+  "ai-guard": { label: "AI Guard", category: "Policies" },
   license: { label: "Licence", category: "Settings" },
   "module-visibility": { label: "Module visibility", category: "Settings" },
   "admin-users": { label: "Administrators", category: "Administrators" },

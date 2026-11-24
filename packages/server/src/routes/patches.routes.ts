@@ -11,6 +11,7 @@ import {
   listAutoPatchPolicies,
   updateAutoPatchPolicy,
 } from "../services/autoPatchPolicy.service";
+import { requireFeature } from "../middleware/requireModule";
 
 export const patchesRouter = Router();
 
@@ -75,7 +76,7 @@ patchesRouter.delete("/auto-policies/:id", async (req, res, next) => {
   }
 });
 
-patchesRouter.post("/jobs", async (req, res, next) => {
+patchesRouter.post("/jobs", requireFeature("SP_PATCH_DEPLOY"), async (req, res, next) => {
   try {
     const payload = dispatchPatchJobRequestSchema.parse(req.body);
 

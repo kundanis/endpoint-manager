@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { licenseModuleSchema, validityTypeSchema } from "./common.schema";
+import { licenseFeatureListSchema } from "../features";
 
 // The License Server's public, rate-limited activation endpoint — called once by an
 // Endpoint Manager install to redeem a key. Deliberately minimal: no admin auth, since
@@ -20,6 +21,9 @@ export const activateResponseSchema = z.object({
   validUntil: z.string().nullable(), // null for PERPETUAL
   // Which top-level console modules this license unlocks — see common.schema.ts.
   modules: z.array(licenseModuleSchema),
+  // Features within those modules (features.ts); null or absent = everything in them. Older
+  // deployments ignore it and keep whole modules.
+  features: licenseFeatureListSchema.optional(),
   // Returned exactly once, in plaintext — the License Server never stores this value
   // itself, only its hash, and can never show it again after this response.
   bindingToken: z.string(),

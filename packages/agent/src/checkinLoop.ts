@@ -28,6 +28,8 @@ import { startScreenCaptureMonitor } from "./screenCaptureMonitor";
 import { startSecuritySignals } from "./securitySignals";
 import { startShellHealthGuard } from "./shellHealthGuard";
 import { startMailGuardPolicy } from "./mailGuardPolicy";
+import { startAiGuardAgent } from "./aiGuardAgent";
+import { signedInAccounts, startConsent } from "./consent";
 import { flushDlpEvents, syncDlpPolicy } from "./dlpBridge";
 import { runAppControlScan } from "./appControlEnforcer";
 import { runWebBlockScan } from "./webBlockEnforcer";
@@ -42,6 +44,7 @@ import { runUserProductivityScan } from "./userProductivityScanner";
 import { runEdrScan } from "./edrScanner";
 import { agentConfig } from "./config";
 import { startLocalApi } from "./localApi";
+import { describeConnectionError, setConnectionProblem } from "./connectionProblem";
 import type { AxiosInstance } from "axios";
 
 // Computed fresh on every check-in - DHCP leases, VPN connects/disconnects and NIC changes
@@ -309,9 +312,14 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
 
   async function checkinOnce() {
     try {
-      const body: CheckinRequest = { ...getLocalNetworkInfo(), agentVersion: agentConfig.agentVersion };
+      const body: CheckinRequest = {
+        ...getLocalNetworkInfo(),
+        agentVersion: agentConfig.agentVersion,
+        ...(process.platform === "win32" ? { signedInUsers: signedInAccounts() } : {}),
+      };
       const { data } = await client.post<CheckinResponse>("/api/agent/checkin", body);
       lastCheckinOkAt = new Date();
+      setConnectionProblem(null);
       pollIntervalSec = data.pollIntervalSec;
       if (data.serverUrls) setServerUrls(data.serverUrls);
 
@@ -374,6 +382,8 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
         runAgentUpdateTasks(client, data.agentUpdateTasks).catch((err) => console.error("Agent update task execution failed", err));
       }
     } catch (err) {
+      // What the tray app shows the user while the PC isn't connected.
+      setConnectionProblem(describeConnectionError(err, "checkin"));
       console.error("Check-in failed", err);
     }
   }
@@ -420,6 +430,8 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
   startSecuritySignals(client);
   startShellHealthGuard(client);
   startMailGuardPolicy(client);
+  startAiGuardAgent(client);
+  startConsent(client);
   void syncDlp();
   setInterval(syncDlp, agentConfig.dlpPolicySyncIntervalMs);
   void flushDlp();
