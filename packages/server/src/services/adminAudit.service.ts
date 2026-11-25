@@ -127,7 +127,7 @@ const VERBS: Record<string, string> = {
   "release-bulk": "Released",
   pause: "Paused",
   resume: "Resumed",
-  "uninstall-agent": "Uninstalled the agent",
+  "uninstall-agent": "Started uninstalling the agent",
   "uninstall-software": "Uninstalled software",
   "sync-inventory": "Requested a software sync",
   enable: "Enabled",

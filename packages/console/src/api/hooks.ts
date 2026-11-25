@@ -1149,9 +1149,13 @@ export function useAgentHistory(agentId: string) {
 }
 
 export function useUninstallAgent() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ agentId, password }: { agentId: string; password: string }) =>
-      api.post<{ jobId: string }>(`/admin/agents/${agentId}/uninstall-agent`, { password }),
+    // hostname: only for Admin logs, which names the endpoint.
+    mutationFn: ({ agentId, password, hostname }: { agentId: string; password: string; hostname: string }) =>
+      api.post<{ jobId: string }>(`/admin/agents/${agentId}/uninstall-agent`, { password, hostname }),
+    // The endpoint now shows "Uninstalling".
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
   });
 }
 

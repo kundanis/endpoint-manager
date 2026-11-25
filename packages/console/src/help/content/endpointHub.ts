@@ -40,7 +40,7 @@ export const DASHBOARD_TOPICS: HelpTopic[] = [
       {
         title: "Alert Bell (Top Bar, Every Page)",
         items: [
-          "The bell lists policy violations and matches from the last 7 days, one line per kind: DLP matches, files moved out, users over the screenshot limit, blocked screenshots, apps, commands and USB devices, emails with personal data, high and critical EDR detections and user risk alerts, and pause or access requests waiting for approval.",
+          "The bell lists policy violations and matches from the last 7 days, one line per kind: agents uninstalled from endpoints, DLP matches, files moved out, users over the screenshot limit, blocked screenshots, apps, commands and USB devices, emails with personal data, high and critical EDR detections and user risk alerts, and pause or access requests waiting for approval.",
           "A red dot means something new arrived since you last opened the bell; each line shows how many are new. Click a line to open its page.",
           "You only see the modules you have access to. What you have seen is remembered in this browser only, so another browser shows the last 7 days as new.",
         ],
@@ -485,8 +485,9 @@ export const ENDPOINT_HUB_TOPICS: HelpTopic[] = [
         title: "Tabs",
         items: [
           "Tamper protection: an uninstall password, checked by the server, that stops users removing the agent. After 10 wrong passwords in 15 minutes an endpoint must wait before trying again.",
-          "With a password set, a user can also remove the agent from the PC: right-click the Endpoint IQ tray icon, choose Uninstall agent… and enter the password (Windows agent 0.2.39 or later). Without a password, that option refuses and the agent can only be removed from the console.",
+          "With a password set, a user can also remove the agent from the PC: right-click the Endpoint IQ tray icon, choose Uninstall agent… and enter the password (Windows agent 0.2.41 or later). Without a password, that option refuses and the agent can only be removed from the console.",
           "However the Windows agent is removed (from the console, the tray icon or Windows' Apps list), it first takes back everything it applied: application, web, IP, USB, screenshot and AI Guard blocks, quarantine, Remote Desktop access, Mail Guard and the Defender exclusions a policy added. The endpoint then leaves the console and its licence is free again. If the PC was offline, it reports the removal when it is next on the network. If the agent's files are deleted by hand, the PC still releases everything and reports it about 20 minutes later (Windows agent 0.2.40 or later). Each removal is logged on the PC in C:\\ProgramData\\EndpointPro\\uninstall.log.",
+          "While an uninstall is running, the endpoint shows Uninstalling in Endpoints and on its page (for up to 15 minutes; the badge goes if the endpoint keeps checking in). Once it's removed, Agents uninstalled from endpoints appears in the alert bell, and Admin logs records both the start and the removal, with what was released.",
           "The tray icon's menu also shows the groups the PC belongs to, and - when it isn't connected - why: the licence's endpoint limit has been reached, the server's licence isn't active, the PC was removed from the console, or the server can't be reached. The agent keeps retrying every minute and connects by itself once the cause is fixed.",
           "Remote install: save the Windows admin account Install agent uses, so it isn't asked each time. Only super admins can save it and install with it; other admins type an account for each install. The password is stored encrypted and never shown again.",
           "Asset groups: group endpoints by team, site or role to target policies, packages and updates.",

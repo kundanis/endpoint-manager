@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Download, ScrollText } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAdminAuditFacets, useAdminAuditLog, useAdminAuditSettings, useClearAdminAudit, useSaveAdminAuditSettings, type AdminAuditFilters } from "../api/hooks";
 import type { AdminAuditEntry } from "../api/types";
@@ -165,9 +166,19 @@ function RetentionCard() {
 }
 
 export default function AdminLogsPage() {
-  const [filters, setFilters] = useState<AdminAuditFilters>({ q: "", admin: "", category: "", result: "", from: "", to: "" });
+  // ?q= opens the page already searched (the alert bell's "Agents uninstalled" link).
+  const [searchParams] = useSearchParams();
+  const [filters, setFilters] = useState<AdminAuditFilters>({ q: searchParams.get("q") ?? "", admin: "", category: "", result: "", from: "", to: "" });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  // The bell's link again while this page is open.
+  const linkedQ = searchParams.get("q");
+  useEffect(() => {
+    if (linkedQ !== null) {
+      setFilters((f) => ({ ...f, q: linkedQ }));
+      setPage(1);
+    }
+  }, [linkedQ]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const { data, isLoading, error } = useAdminAuditLog(filters, page, pageSize);

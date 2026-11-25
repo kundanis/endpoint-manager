@@ -208,6 +208,8 @@ export interface AgentListItem {
   quarantineActivity?: QuarantineActivity | null;
   paused: boolean;
   pausedAt: string | null;
+  // When an uninstall started (console, tray icon or Setup) that hasn't finished; null otherwise.
+  uninstallingSince: string | null;
   zeroTrustNonCompliantCount: number;
   openVulnerabilityCount: number;
   missingPatchCount: number;

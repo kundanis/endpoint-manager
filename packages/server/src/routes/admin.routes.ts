@@ -1,4 +1,5 @@
 import { listAgentCommands } from "../services/command.service";
+import { uninstallingSince } from "../services/agentUninstallLog.service";
 import { RemoteInstallAccountError } from "../services/agentSecurity.service";
 import { removeAgentImages } from "../services/screenCaptureImage.service";
 import fs from "node:fs";
@@ -134,6 +135,8 @@ adminRouter.get("/agents", async (_req, res, next) => {
     const quarantineActivity = await getQuarantineActivity();
     const consent = await endpointConsentStates(agents);
     const paths = await groupPaths();
+    // An uninstall started (console, tray icon or Setup) and not finished yet.
+    const uninstalling = await uninstallingSince();
 
     res.json(
       agents.map((a) => ({
@@ -163,6 +166,7 @@ adminRouter.get("/agents", async (_req, res, next) => {
         consent: consent.get(a.id) ?? null,
         paused: a.paused,
         pausedAt: a.pausedAt?.toISOString() ?? null,
+        uninstallingSince: uninstalling.get(a.id)?.toISOString() ?? null,
         zeroTrustNonCompliantCount: ztCountByAgent.get(a.id) ?? 0,
         openVulnerabilityCount: vulnCountByAgent.get(a.id) ?? 0,
         missingPatchCount: missingPatchCountByAgent.get(a.id) ?? 0,
@@ -254,6 +258,7 @@ adminRouter.get("/agents/:id", async (req, res, next) => {
       consent: (await endpointConsentStates([agent])).get(agent.id) ?? null,
       paused: agent.paused,
       pausedAt: agent.pausedAt?.toISOString() ?? null,
+      uninstallingSince: (await uninstallingSince([agent.id])).get(agent.id)?.toISOString() ?? null,
       remoteAccessEnabled: agent.remoteAccessEnabled,
       remoteAccessEnabledAt: agent.remoteAccessEnabledAt?.toISOString() ?? null,
       remoteAccessAllowedIp: agent.remoteAccessAllowedIp,

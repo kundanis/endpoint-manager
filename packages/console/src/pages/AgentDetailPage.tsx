@@ -1305,7 +1305,7 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
     if (password === null) return; // cancelled
 
     uninstall.mutate(
-      { agentId: agent.id, password },
+      { agentId: agent.id, password, hostname: agent.hostname },
       {
         onSuccess: () => toast("Uninstall scheduled - the agent will be removed within about 30 seconds."),
       },
@@ -1320,11 +1320,18 @@ function UninstallAgentPanel({ agent }: { agent: AgentDetail }) {
           be online to pick up the command, and the deployment's uninstall password if one is configured (Asset
           settings → Tamper protection).
         </p>
-        <div className="app-actions-row">
-          <Button variant="danger" onClick={handleUninstall} disabled={uninstall.isPending}>
-            {uninstall.isPending ? "Dispatching…" : "Uninstall agent"}
-          </Button>
-        </div>
+        {agent.uninstallingSince ? (
+          <Alert tone="warn" title="Uninstalling">
+            An uninstall started {formatDateTime(agent.uninstallingSince)}. The agent releases this endpoint's policies,
+            then the endpoint leaves the console and its licence is freed, usually within a minute or two.
+          </Alert>
+        ) : (
+          <div className="app-actions-row">
+            <Button variant="danger" onClick={handleUninstall} disabled={uninstall.isPending}>
+              {uninstall.isPending ? "Dispatching…" : "Uninstall agent"}
+            </Button>
+          </div>
+        )}
         {uninstall.isError && <Alert tone="critical">{(uninstall.error as Error).message}</Alert>}
       </div>
     </Card>
@@ -2371,6 +2378,11 @@ export default function AgentDetailPage() {
               <Badge tone="crit">Quarantined</Badge>
             ) : (
               <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
+            )}
+            {agent.uninstallingSince && (
+              <span title={`Uninstall started ${formatDateTime(agent.uninstallingSince)}`}>
+                <Badge tone="high">Uninstalling</Badge>
+              </span>
             )}
             {agent.paused && <Badge tone="med">Paused</Badge>}
             <span>· {agent.osEditionLabel ?? agent.osPlatform}</span>

@@ -100,13 +100,14 @@ export const IDENTITY_TOPICS: HelpTopic[] = [
     path: "/admin-logs",
     superAdminOnly: true,
     summary: "Everything administrators do, for super admins only: changes, sign-ins and views of sensitive data.",
-    keywords: ["audit", "audit trail", "who changed", "sign-in history", "compliance"],
+    keywords: ["audit", "audit trail", "who changed", "sign-in history", "compliance", "uninstalled", "agent removed"],
     sections: [
       {
         title: "What You Can Do",
         items: [
           "Filter by admin, category, result and date, or search; expand an entry for its details.",
           "Details show readable names, such as the endpoint, user, day and policy behind a view of screenshots. Internal record IDs are left out.",
+          "Agent uninstalls are logged too, with Endpoint as the admin when they were done on the PC: when an uninstall started (from the console, the tray icon or Windows' Apps list, including wrong uninstall passwords) and when the agent was removed, with what it released. Search for Agent uninstalled.",
           "Export to CSV.",
           "Set how long entries are kept (90 days minimum). Entries can't be edited or deleted one by one.",
         ],

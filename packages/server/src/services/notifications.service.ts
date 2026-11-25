@@ -4,6 +4,7 @@ import { countOpenLicenseChangeNotices } from "./licenseChange.service";
 import { isModuleLicensed } from "./licenseActivation.service";
 import { isModuleHidden } from "./moduleVisibility.service";
 import { getPolicyReport } from "./screenCapturePolicy.service";
+import { UNINSTALLED_ACTION } from "./agentUninstallLog.service";
 
 // The console's alert bell: policy violations and matches from every module over the last 7
 // days, grouped by kind (one line per kind, not per event) so the list stays short enough to
@@ -65,7 +66,8 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
   // Never opened (or longer ago than the window): everything in the window counts as new.
   const since = sinceParam && sinceParam > windowStart ? sinceParam : windowStart;
 
-  const [data, security, users, userRisk, threats, aiGuard] = await Promise.all([
+  const [endpoints, data, security, users, userRisk, threats, aiGuard] = await Promise.all([
+    canOpen(viewer, "ENDPOINT_MANAGER"),
     canOpen(viewer, "DATA_MANAGER"),
     canOpen(viewer, "SECURITY_MANAGER"),
     canOpen(viewer, "USER_MANAGER"),
@@ -78,6 +80,20 @@ export async function getNotifications(viewer: Viewer, sinceParam: Date | null):
   const add = (meta: Omit<NotificationGroup, "total" | "newCount" | "endpoints" | "latestAt">, counts: Promise<Pick<NotificationGroup, "total" | "newCount" | "endpoints" | "latestAt">>) =>
     jobs.push(counts.then((c) => (c.total > 0 ? { ...meta, ...c } : null)));
 
+  if (endpoints) {
+    // Written when an endpoint confirms the agent is gone (agentUninstallLog.service). Super admins
+    // open them in Admin logs; other admins can't, so they go to the endpoint list.
+    add(
+      {
+        key: "agents-uninstalled",
+        module: "Endpoints",
+        title: "Agents uninstalled from endpoints",
+        path: viewer.role === "SUPER_ADMIN" ? `/admin-logs?q=${encodeURIComponent("Agent uninstalled")}` : "/endpoints",
+        tone: "med",
+      },
+      eventGroup(prisma.adminAuditLog, "at", { action: UNINSTALLED_ACTION }, windowStart, since, false),
+    );
+  }
   if (data) {
     add(
       { key: "dlp", module: "DLP", title: "Files matched a DLP policy", path: "/dlp/content-policies", tone: "high" },

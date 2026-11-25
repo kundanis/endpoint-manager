@@ -6,6 +6,11 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.41
+- Fixed: uninstalling from the tray icon (with the uninstall password) did nothing. The password was
+  accepted and the tray said the agent would be removed within a minute, but the removal never
+  started. It now runs, and if it can't start, the tray says so instead.
+
 ## 0.2.40
 - However the agent is removed (Windows' Apps list, the console, the tray icon, or its files deleted
   by hand), it first takes back everything it applied: application blocks (programs blocked by name

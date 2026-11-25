@@ -105,6 +105,7 @@ import { recordAppUsage, recordScanResult as recordUserProductivityScanResult } 
 import { isEnabledForAgent as isEdrEnabledForAgent, recordScanResult as recordEdrScanResult } from "../services/edr.service";
 import { hasUninstallPassword, verifyUninstallPassword } from "../services/agentSecurity.service";
 import { confirmAgentUninstalled } from "../services/agent.service";
+import { logUninstallFromEndpoint } from "../services/agentUninstallLog.service";
 import {
   PolicyNotApplicableError,
   createPauseRequests,
@@ -618,6 +619,8 @@ agentRouter.post("/verify-uninstall-password", uninstallPasswordRateLimiter, asy
   try {
     const payload = verifyUninstallPasswordRequestSchema.parse(req.body);
     const valid = await verifyUninstallPassword(payload.password);
+    // Setup's uninstall (Windows' Apps list) goes ahead as soon as the password is accepted.
+    await logUninstallFromEndpoint(req.agentId!, "uninstaller", { ok: valid, ipAddress: req.ip });
     res.json({ valid });
   } catch (err) {
     next(err);
@@ -646,7 +649,7 @@ agentRouter.post("/uninstalled", async (req, res, next) => {
     if (report.success && report.data.how) {
       logger.info({ agentId: req.agentId, ...report.data }, "Endpoint reported that the agent was removed");
     }
-    await confirmAgentUninstalled(req.agentId!);
+    await confirmAgentUninstalled(req.agentId!, report.success ? report.data : undefined);
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -879,9 +882,11 @@ agentRouter.post("/self-uninstall", uninstallPasswordRateLimiter, async (req, re
     }
     if (!(await verifyUninstallPassword(password))) {
       logger.warn({ agentId: req.agentId, requestedBy }, "Uninstall from the endpoint refused: wrong password");
+      await logUninstallFromEndpoint(req.agentId!, "endpoint", { ok: false, user: requestedBy, ipAddress: req.ip });
       return res.status(403).json({ error: "Incorrect uninstall password." });
     }
     logger.info({ agentId: req.agentId, requestedBy }, "Agent uninstalled from the endpoint with the uninstall password");
+    await logUninstallFromEndpoint(req.agentId!, "endpoint", { ok: true, user: requestedBy, ipAddress: req.ip });
     res.json({ script: buildUninstallAgentScript("endpoint") });
   } catch (err) {
     next(err);

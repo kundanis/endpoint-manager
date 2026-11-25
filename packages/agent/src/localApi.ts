@@ -2,7 +2,7 @@ import { currentScreenshotBlockSettings, queueScreenshotBlockEvents } from "./sc
 import { currentAiClipboardSettings } from "./aiGuardAgent";
 import { consentForUser, recordConsent } from "./consent";
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { executeCommand } from "./commandExecutor";
 import { connectionProblem } from "./connectionProblem";
 import os from "node:os";
 import type { AxiosInstance } from "axios";
@@ -159,15 +159,18 @@ export function startLocalApi(client: AxiosInstance, source: AgentStatusSource):
           const b = asObject(await readBody(req));
           if (typeof b.password !== "string" || !b.password) return send(res, 400, { error: "Enter the uninstall password." });
           const { data } = await client.post<{ script: string }>("/api/agent/self-uninstall", { password: b.password, requestedBy: user!.account });
-          send(res, 202, { started: true });
           console.log(`Uninstall requested from this PC by ${user!.account} - the password was accepted, uninstalling`);
-          const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", data.script], {
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-          });
-          child.unref();
-          return;
+          // The script only sets up a separate scheduled task that does the removal (so it survives
+          // the agent stopping) and finishes in a few seconds, so wait for it and say if it failed.
+          // Not a detached launch: powershell.exe started detached has no console and exits
+          // without running anything.
+          const result = await executeCommand({ id: "tray-uninstall", jobId: "tray-uninstall", shell: "powershell", script: data.script, timeoutSec: 15 });
+          if (result.status !== "SUCCESS") {
+            const detail = (result.stderr || result.stdout).trim().slice(0, 1000);
+            console.error(`Uninstall from this PC couldn't start (${result.status}, exit ${result.exitCode}): ${detail}`);
+            return send(res, 500, { error: "The password was accepted, but the uninstall couldn't start on this PC. Ask your IT administrator to uninstall it from the console." });
+          }
+          return send(res, 202, { started: true });
         }
         case "POST /sync":
           return send(res, 202, { started: source.syncNow() });

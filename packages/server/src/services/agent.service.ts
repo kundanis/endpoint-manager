@@ -11,6 +11,7 @@ import { computeStatus } from "./agentDerived.util";
 import { effectiveLastCheckin } from "../presence/presence";
 import { decryptField } from "../utils/fieldEncryption";
 import { logger } from "../logger";
+import { logAgentUninstalled, type UninstalledReport } from "./agentUninstallLog.service";
 
 export class IncorrectUninstallPasswordError extends Error {}
 
@@ -229,13 +230,16 @@ export function buildUninstallAgentScript(how: UninstallHow = "console"): string
 // Best-effort by design: if this call never arrives (offline at that exact moment), the
 // row is simply left for the admin to remove manually later - never treated as an error
 // here since idempotent double-delete (already gone) is expected, not exceptional.
-export async function confirmAgentUninstalled(agentId: string): Promise<void> {
+export async function confirmAgentUninstalled(agentId: string, report?: UninstalledReport, confirmed = true): Promise<void> {
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { hostname: true } });
   try {
     await prisma.agent.delete({ where: { id: agentId } });
   } catch (err: any) {
     if (err?.code === "P2025") return; // already deleted - nothing to do, and already counted
     throw err;
   }
+  // Admin logs and the alert bell (the record just deleted was the only other trace of it).
+  if (agent) await logAgentUninstalled({ id: agentId, hostname: agent.hostname }, report, confirmed);
   await removeAgentImages(agentId).catch(() => undefined); // its saved screenshots
   await incrementTotalAgentsUninstalled();
 }
@@ -270,7 +274,7 @@ export async function removeRemotelyUninstalledAgents(): Promise<number> {
       continue;
     }
     if (!script.includes(UNINSTALL_HELPER_MARKER)) continue;
-    await confirmAgentUninstalled(t.agentId);
+    await confirmAgentUninstalled(t.agentId, { how: "console" }, false);
     logger.info({ agentId: t.agentId }, "Removed an endpoint whose remote uninstall finished but never confirmed");
     removed++;
   }

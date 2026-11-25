@@ -19,7 +19,7 @@ test("API calls get a readable summary, module, category and target", () => {
 
   const uninstall = describe("POST", `/agents/${ID}/uninstall-agent`, {});
   assert.equal(uninstall.category, "Endpoints");
-  assert.equal(uninstall.summary, "Endpoints: uninstalled the agent");
+  assert.equal(uninstall.summary, "Endpoints: started uninstalling the agent");
 
   const admin = describe("PATCH", `/admin-users/${ID}`, { role: "SUPER_ADMIN" });
   assert.equal(admin.category, "Administrators");

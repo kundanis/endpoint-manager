@@ -224,6 +224,11 @@ function cellFor(key: ColumnKey, agent: AgentListItem, hidden: { vulnerabilities
           ) : (
             <Pill tone={agent.status === "ONLINE" ? "ok" : "neutral"}>{agent.status === "ONLINE" ? "Online" : "Offline"}</Pill>
           )}
+          {agent.uninstallingSince && (
+            <span title={`Uninstall started ${formatDateTime(agent.uninstallingSince)}`}>
+              <Badge tone="high">Uninstalling</Badge>
+            </span>
+          )}
           <ConsentBadge consent={agent.consent} />
           {agent.paused && <Badge tone="med">Paused</Badge>}
         </div>
