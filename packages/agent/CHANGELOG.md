@@ -6,6 +6,18 @@ top-most `## <version>` section (matching whatever version is currently in
 Add a new section at the top on every version bump; never edit an already-shipped
 section after the fact.
 
+## 0.2.40
+- However the agent is removed (Windows' Apps list, the console, the tray icon, or its files deleted
+  by hand), it first takes back everything it applied: application blocks (programs blocked by name
+  no longer stay blocked), web, IP and USB blocks, screenshot blocking, AI Guard blocks, quarantine,
+  Remote Desktop access, Mail Guard and the Defender exclusions a policy added. Remote Desktop is
+  only turned off again if this product had turned it on.
+- The server is then told, so the endpoint leaves the console and its licence is free again. If the
+  PC is offline, the report waits and is sent when it is back on the network (checked every 30
+  minutes). If the agent's files are deleted without uninstalling, the PC releases everything and
+  reports it after 20 minutes.
+- Each removal is logged in C:\ProgramData\EndpointPro\uninstall.log.
+
 ## 0.2.39
 - When the PC isn't connected, the tray app says why: the licence's endpoint limit has been reached,
   the server's licence isn't active, the enrollment token was rejected, the PC was removed from the

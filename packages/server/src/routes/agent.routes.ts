@@ -628,8 +628,24 @@ agentRouter.post("/verify-uninstall-password", uninstallPasswordRateLimiter, asy
 // task calls this using the agent's own state.json credentials right before deleting the
 // install folder, so the Agent row (and its license seat) is freed immediately rather
 // than lingering forever as an unreachable "offline" row.
+// The uninstall guard (packages/shared/src/agentRelease.ts) also says how the agent was removed
+// and what it released on the PC - logged, never trusted for anything else. A report that arrives
+// late (the PC was offline when the agent was removed) is handled the same way.
+const uninstalledReportSchema = z
+  .object({
+    how: z.string().max(40).optional(),
+    uninstalledAt: z.string().max(40).optional(),
+    released: z.array(z.string().max(100)).max(30).optional(),
+    problems: z.array(z.string().max(500)).max(30).optional(),
+  })
+  .partial();
+
 agentRouter.post("/uninstalled", async (req, res, next) => {
   try {
+    const report = uninstalledReportSchema.safeParse(req.body ?? {});
+    if (report.success && report.data.how) {
+      logger.info({ agentId: req.agentId, ...report.data }, "Endpoint reported that the agent was removed");
+    }
     await confirmAgentUninstalled(req.agentId!);
     res.status(204).send();
   } catch (err) {
@@ -866,7 +882,7 @@ agentRouter.post("/self-uninstall", uninstallPasswordRateLimiter, async (req, re
       return res.status(403).json({ error: "Incorrect uninstall password." });
     }
     logger.info({ agentId: req.agentId, requestedBy }, "Agent uninstalled from the endpoint with the uninstall password");
-    res.json({ script: buildUninstallAgentScript() });
+    res.json({ script: buildUninstallAgentScript("endpoint") });
   } catch (err) {
     next(err);
   }

@@ -13,3 +13,4 @@ export * from "./peFileInfo";
 export * from "./data/appCatalog";
 export * from "./data/aiApps";
 export * from "./data/consent";
+export * from "./agentRelease";

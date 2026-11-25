@@ -74,109 +74,8 @@ if ((Test-Path $configPath) -and (Test-Path $statePath)) {
 
 $ErrorActionPreference = "SilentlyContinue"
 
-# Release any active policy enforcement before removing anything else, so a
-# quarantined/RDP-enabled/web-blocked/IP-blocked/app-blocked machine doesn't stay locked
-# down forever with no agent left to reverse it. Each removal only touches this tool's own
-# named/marked artifacts (mirrors quarantine.service.ts, remoteAccess.service.ts,
-# webBlockEnforcer.ts, ipBlockEnforcer.ts, appControlEnforcer.ts exactly) - nothing an
-# admin configured through any other means is touched. USB Control is deliberately NOT
-# included here: a device it already disabled has no scriptable re-enable (see
-# usbControlEnforcer.ts) - it would need to be physically unplugged and reinserted.
-Write-Host "Releasing any active policy enforcement..."
-
-netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound 2>$null | Out-Null
-netsh advfirewall firewall delete rule name="EM-Quarantine-DNS" 2>$null | Out-Null
-netsh advfirewall firewall delete rule name="EM-Quarantine-Server" 2>$null | Out-Null
-
-netsh advfirewall firewall delete rule name="EM-RemoteAccess-RDP" 2>$null | Out-Null
-Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 1 -ErrorAction SilentlyContinue
-
-Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Outbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Inbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-
-$hostsPath = "C:\Windows\System32\drivers\etc\hosts"
-if (Test-Path $hostsPath) {
-    $hostsContent = Get-Content $hostsPath -Raw
-    $startIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-START")
-    $endIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-END")
-    if ($startIdx -ge 0 -and $endIdx -ge 0) {
-        $before = $hostsContent.Substring(0, $startIdx).TrimEnd()
-        Set-Content -Path $hostsPath -Value "$before`r`n" -NoNewline -Encoding ASCII
-    }
-}
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
-# Mail Guard browser extension (mailGuardPolicy.ts): its server address and its force-install
-# entry, for every ID it can have - keep in step with packages/shared/src/data/mailGuard.ts.
-# Only force-install values naming one of these IDs are removed; other tools' entries stay.
-$mailGuardIds = @('lkmoggokfmdgjjjbmfachhmjdpbebebc', 'ncghjfmanemplpcikadapjgdmedgncob')
-foreach ($browserRoot in @('HKLM:\SOFTWARE\Policies\Google\Chrome', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge')) {
-    foreach ($id in $mailGuardIds) {
-        Remove-Item -Path "$browserRoot\3rdparty\extensions\$id" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    $forceList = "$browserRoot\ExtensionInstallForcelist"
-    if (Test-Path $forceList) {
-        $props = Get-ItemProperty -Path $forceList
-        foreach ($p in $props.PSObject.Properties) {
-            if ($p.Name -like 'PS*') { continue }
-            foreach ($id in $mailGuardIds) {
-                if ("$($p.Value)".StartsWith("$id;")) { Remove-ItemProperty -Path $forceList -Name $p.Name -ErrorAction SilentlyContinue }
-            }
-        }
-    }
-}
-
-$srpDisallowedPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths'
-if (Test-Path $srpDisallowedPath) {
-    Get-ChildItem -Path $srpDisallowedPath -ErrorAction SilentlyContinue | ForEach-Object {
-        $desc = (Get-ItemProperty -Path $_.PSPath -Name Description -ErrorAction SilentlyContinue).Description
-        if ($desc -and $desc.StartsWith('EM-managed:')) {
-            Remove-Item -Path $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers' -Name DefaultLevel -Value 262144 -Type DWord -ErrorAction SilentlyContinue
-
-# AppLocker rules added by advanced application control (description "Endpoint IQ managed"); the
-# device's other AppLocker rules stay. Same as REMOVE_APPLOCKER_RULES_PS in appControlPaths.ts.
-try {
-    $alx = [xml](Get-AppLockerPolicy -Local -Xml)
-    $alChanged = $false
-    foreach ($c in @($alx.AppLockerPolicy.RuleCollection)) {
-        if (-not $c) { continue }
-        $ours = @($c.ChildNodes | Where-Object { $_.Description -eq 'Endpoint IQ managed' })
-        foreach ($r in $ours) { [void]$c.RemoveChild($r); $alChanged = $true }
-        if ($ours.Count -gt 0 -and @($c.ChildNodes | Where-Object { $_.LocalName -like '*Rule' }).Count -eq 0) { $c.SetAttribute('EnforcementMode', 'NotConfigured') }
-    }
-    if ($alChanged) {
-        $alFile = Join-Path $env:TEMP ('eiq-applocker-' + [guid]::NewGuid().ToString('N') + '.xml')
-        $alx.Save($alFile)
-        Set-AppLockerPolicy -XmlPolicy $alFile
-        Remove-Item -LiteralPath $alFile -Force
-    }
-} catch {}
-
-# Defender exclusions added by a Threat Protection policy (the agent records exactly which ones it
-# added; the company's own exclusions are never touched). Defender settings are left as they are.
-try {
-    $tpState = Get-Content -Raw -LiteralPath (Join-Path $installDir "app\.state\threat-protection-state.json") -ErrorAction Stop | ConvertFrom-Json
-    foreach ($x in @($tpState.added.paths)) { if ($x) { try { Remove-MpPreference -ExclusionPath $x -ErrorAction Stop } catch {} } }
-    foreach ($x in @($tpState.added.extensions)) { if ($x) { try { Remove-MpPreference -ExclusionExtension $x -ErrorAction Stop } catch {} } }
-    foreach ($x in @($tpState.added.processes)) { if ($x) { try { Remove-MpPreference -ExclusionProcess $x -ErrorAction Stop } catch {} } }
-} catch {}
-
-# Best-effort self-report to the server so the Agent row - and its license seat - is freed
-# immediately instead of lingering forever as an unreachable "offline" row. $config/$state
-# are already loaded above if this install ever finished enrolling; any failure here
-# (offline, server down) is swallowed since local removal must proceed regardless.
-if ($config -and $state) {
-    try {
-        Invoke-RestMethod -Uri "$($config.serverUrl.TrimEnd('/'))/api/agent/uninstalled" -Method Post -TimeoutSec 10 `
-            -Headers @{ "X-Agent-Id" = $state.agentId; "X-Agent-Key" = $state.apiKey } | Out-Null
-    } catch {}
-}
-
-Write-Host "Stopping and removing the Endpoint IQ agent..."
+# Stop the agent first, so it can't put a policy back while it is being released.
+Write-Host "Stopping the Endpoint IQ agent..."
 # The watchdog first, so it can't put the service back while it's being removed.
 schtasks /change /tn $WatchdogTaskName /disable 2>$null | Out-Null
 schtasks /end /tn $WatchdogTaskName 2>$null | Out-Null
@@ -188,6 +87,112 @@ schtasks /end /tn $TaskName 2>$null | Out-Null
 schtasks /delete /tn $TaskName /f 2>$null | Out-Null
 schtasks /delete /tn $WatchdogTaskName /f 2>$null | Out-Null
 
+
+# Release every policy, rule and setting the agent applied, then tell the server, which removes the
+# endpoint and frees its licence. The uninstall guard (packages/shared/src/agentRelease.ts, kept up
+# to date by the agent) does both; if the server can't be reached now, it keeps the report and
+# delivers it when the PC is back on the network.
+Write-Host "Releasing the policies applied to this PC..."
+$guardScript = Join-Path $env:ProgramData "EndpointPro\UninstallGuard\guard.ps1"
+if (Test-Path $guardScript) {
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Mode Now -How uninstaller
+} else {
+    # An agent that never set the guard up: the release and report as before.
+    netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound 2>$null | Out-Null
+    Get-NetFirewallRule -DisplayName 'EM-Quarantine-*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+    netsh advfirewall firewall delete rule name="EM-Quarantine-DNS" 2>$null | Out-Null
+    netsh advfirewall firewall delete rule name="EM-Quarantine-Server" 2>$null | Out-Null
+
+    netsh advfirewall firewall delete rule name="EM-RemoteAccess-RDP" 2>$null | Out-Null
+    Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 1 -ErrorAction SilentlyContinue
+
+    Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Outbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+    Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Inbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+
+    $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
+    if (Test-Path $hostsPath) {
+        $hostsContent = Get-Content $hostsPath -Raw
+        $startIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-START")
+        $endIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-END")
+        if ($startIdx -ge 0 -and $endIdx -ge 0) {
+            $before = $hostsContent.Substring(0, $startIdx).TrimEnd()
+            Set-Content -Path $hostsPath -Value "$before`r`n" -NoNewline -Encoding ASCII
+        }
+    }
+    Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Google\Chrome\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue
+    # Mail Guard browser extension (mailGuardPolicy.ts): its server address and its force-install
+    # entry, for every ID it can have - keep in step with packages/shared/src/data/mailGuard.ts.
+    # Only force-install values naming one of these IDs are removed; other tools' entries stay.
+    $mailGuardIds = @('lkmoggokfmdgjjjbmfachhmjdpbebebc', 'ncghjfmanemplpcikadapjgdmedgncob')
+    foreach ($browserRoot in @('HKLM:\SOFTWARE\Policies\Google\Chrome', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge')) {
+        foreach ($id in $mailGuardIds) {
+            Remove-Item -Path "$browserRoot\3rdparty\extensions\$id" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        $forceList = "$browserRoot\ExtensionInstallForcelist"
+        if (Test-Path $forceList) {
+            $props = Get-ItemProperty -Path $forceList
+            foreach ($p in $props.PSObject.Properties) {
+                if ($p.Name -like 'PS*') { continue }
+                foreach ($id in $mailGuardIds) {
+                    if ("$($p.Value)".StartsWith("$id;")) { Remove-ItemProperty -Path $forceList -Name $p.Name -ErrorAction SilentlyContinue }
+                }
+            }
+        }
+    }
+
+    $srpDisallowedPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths'
+    if (Test-Path $srpDisallowedPath) {
+        Get-ChildItem -Path $srpDisallowedPath -ErrorAction SilentlyContinue | ForEach-Object {
+            $desc = (Get-ItemProperty -Path $_.PSPath -Name Description -ErrorAction SilentlyContinue).Description
+            if ($desc -and $desc.StartsWith('EM-managed:')) {
+                Remove-Item -Path $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers' -Name DefaultLevel -Value 262144 -Type DWord -ErrorAction SilentlyContinue
+
+    # AppLocker rules added by advanced application control (description "Endpoint IQ managed"); the
+    # device's other AppLocker rules stay. Same as REMOVE_APPLOCKER_RULES_PS in appControlPaths.ts.
+    try {
+        $alx = [xml](Get-AppLockerPolicy -Local -Xml)
+        $alChanged = $false
+        foreach ($c in @($alx.AppLockerPolicy.RuleCollection)) {
+            if (-not $c) { continue }
+            $ours = @($c.ChildNodes | Where-Object { $_.Description -eq 'Endpoint IQ managed' })
+            foreach ($r in $ours) { [void]$c.RemoveChild($r); $alChanged = $true }
+            if ($ours.Count -gt 0 -and @($c.ChildNodes | Where-Object { $_.LocalName -like '*Rule' }).Count -eq 0) { $c.SetAttribute('EnforcementMode', 'NotConfigured') }
+        }
+        if ($alChanged) {
+            $alFile = Join-Path $env:TEMP ('eiq-applocker-' + [guid]::NewGuid().ToString('N') + '.xml')
+            $alx.Save($alFile)
+            Set-AppLockerPolicy -XmlPolicy $alFile
+            Remove-Item -LiteralPath $alFile -Force
+        }
+    } catch {}
+
+    # Defender exclusions added by a Threat Protection policy (the agent records exactly which ones it
+    # added; the company's own exclusions are never touched). Defender settings are left as they are.
+    try {
+        $tpState = Get-Content -Raw -LiteralPath (Join-Path $installDir "app\.state\threat-protection-state.json") -ErrorAction Stop | ConvertFrom-Json
+        foreach ($x in @($tpState.added.paths)) { if ($x) { try { Remove-MpPreference -ExclusionPath $x -ErrorAction Stop } catch {} } }
+        foreach ($x in @($tpState.added.extensions)) { if ($x) { try { Remove-MpPreference -ExclusionExtension $x -ErrorAction Stop } catch {} } }
+        foreach ($x in @($tpState.added.processes)) { if ($x) { try { Remove-MpPreference -ExclusionProcess $x -ErrorAction Stop } catch {} } }
+    } catch {}
+
+    # Best-effort self-report to the server so the Agent row - and its license seat - is freed
+    # immediately instead of lingering forever as an unreachable "offline" row. $config/$state
+    # are already loaded above if this install ever finished enrolling; any failure here
+    # (offline, server down) is swallowed since local removal must proceed regardless.
+    if ($config -and $state) {
+        try {
+            Invoke-RestMethod -Uri "$($config.serverUrl.TrimEnd('/'))/api/agent/uninstalled" -Method Post -TimeoutSec 10 `
+                -Headers @{ "X-Agent-Id" = $state.agentId; "X-Agent-Key" = $state.apiKey } | Out-Null
+        } catch {}
+    }
+}
+
+Write-Host "Removing the Endpoint IQ agent..."
 # The agent excluded its data folder from Microsoft Defender scanning; take that back.
 try { Remove-MpPreference -ExclusionPath (Join-Path $installDir "app\.state") -ErrorAction Stop } catch {}
 
@@ -201,5 +206,9 @@ if (Test-Path $installDir) {
     icacls $installDir /reset /T /Q 2>$null | Out-Null
     Remove-Item -Path $installDir -Recurse -Force
 }
+
+# The guard task (SYSTEM) finishes anything only SYSTEM may change, then removes itself once the
+# server has been told.
+schtasks /run /tn "EndpointIQUninstallGuard" 2>$null | Out-Null
 
 Write-Host "Endpoint IQ agent removed."

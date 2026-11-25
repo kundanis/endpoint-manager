@@ -38,6 +38,7 @@ import { runScreenshotBlockSync } from "./screenshotBlockEnforcer";
 import { runThreatProtectionSync, THREAT_PROTECTION_INTERVAL_MS } from "./threatProtection";
 import { runUsbControlScan } from "./usbControlEnforcer";
 import { ensureWatchdogTaskRegistered } from "./watchdogGuard";
+import { ensureUninstallGuard } from "./uninstallGuard";
 import { ensureDefenderExclusion } from "./defenderExclusion";
 import { runCommandBlockScan } from "./commandBlockEnforcer";
 import { runUserProductivityScan } from "./userProductivityScanner";
@@ -197,6 +198,9 @@ export function startCheckinLoop(agentId: string, apiKey: string): void {
     } catch (err) {
       console.error("Watchdog task check failed", err);
     }
+    // Releases the policies and frees the licence even if the agent is removed without its
+    // uninstaller, or while the PC is offline.
+    await ensureUninstallGuard();
     // Keeps Defender from quarantining the agent's own data files (rechecked every 6 hours).
     await ensureDefenderExclusion();
   }

@@ -1,5 +1,5 @@
 import { removeAgentImages } from "./screenCaptureImage.service";
-import type { UpdateAssetDetailsRequest } from "@em/shared";
+import { UNINSTALL_GUARD_DIR_NAME, UNINSTALL_GUARD_PS, type UninstallHow, type UpdateAssetDetailsRequest } from "@em/shared";
 import { prisma } from "../db";
 import { assertCanSetGroups } from "./policyExclusivity.service";
 import { createCommandJob } from "./command.service";
@@ -95,6 +95,9 @@ export async function uninstallSoftwareOnAgent(
   });
 }
 
+// Also the name of the helper task - removeRemotelyUninstalledAgents looks for it in a command.
+const UNINSTALL_HELPER_MARKER = "EndpointProUninstallHelper";
+
 // The dispatched command runs AS a descendant of the agent - stopping the EndpointIQAgent
 // service (or, on agents before 0.2.23, ending the EndpointProAgent scheduled task) kills the
 // agent's whole process tree, which would kill this very script mid-teardown before it could
@@ -102,24 +105,26 @@ export async function uninstallSoftwareOnAgent(
 // installers generally do: this script's only job is to register a completely independent
 // one-time Scheduled Task a few seconds in the future - Task Scheduler launches that fresh,
 // with no process-tree relationship to anything running right now, so it survives the agent
-// being torn down and finishes the real cleanup afterward. The dispatched command itself reports SUCCESS almost immediately
-// (registering a task is near-instant), well before the actual removal happens.
-export function buildUninstallAgentScript(): string {
+// being torn down and finishes the real cleanup afterward. The dispatched command itself reports
+// SUCCESS almost immediately (registering a task is near-instant), well before the actual removal.
+//
+// The helper stops the agent, then runs the uninstall guard (UNINSTALL_GUARD_PS, the same script
+// Setup's uninstall uses), which releases every policy the agent applied and tells the server -
+// or, if the PC drops off the network, keeps the report and delivers it later. The server's copy
+// of the guard is sent, so agents of any version get the full release. Both scripts are written
+// to the guard folder, which only SYSTEM and administrators can change (never %TEMP%, which is
+// C:\Windows\Temp for SYSTEM and open to users).
+export function buildUninstallAgentScript(how: UninstallHow = "console"): string {
   const taskName = "EndpointProAgent"; // agents before 0.2.23
   const serviceName = "EndpointIQAgent";
   const watchdogTaskName = "EndpointProWatchdog";
-  const helperTaskName = "EndpointProUninstallHelper";
+  const helperTaskName = UNINSTALL_HELPER_MARKER;
 
-  return [
-    `$helperScriptPath = Join-Path $env:TEMP "${helperTaskName}.ps1"`,
-    `$helperScript = @'`,
-    // Without this, an unexpected terminating error partway through (e.g. Set-Content
-    // hitting a permissions issue) aborts the rest of cleanup silently - confirmed for
-    // real in testing, where a hosts-file write failure skipped the firewall reset AND
-    // the install-dir removal that were supposed to run after it. Matches the local
-    // uninstall.ps1's own $ErrorActionPreference for the exact same reason.
+  const helper = [
+    // Without this, an unexpected terminating error partway through aborts the rest of cleanup.
     `$ErrorActionPreference = 'SilentlyContinue'`,
-    // The watchdog first, so it can't put the service back while it's being removed.
+    // Stop the agent first, so it can't put a policy back while it is being released. The
+    // watchdog first, so it can't put the service back while it's being removed.
     `schtasks /change /tn "${watchdogTaskName}" /disable 2>$null | Out-Null`,
     `schtasks /end /tn "${watchdogTaskName}" 2>$null | Out-Null`,
     `schtasks /delete /tn "${watchdogTaskName}" /f 2>$null | Out-Null`,
@@ -129,70 +134,36 @@ export function buildUninstallAgentScript(): string {
     `schtasks /change /tn "${taskName}" /disable 2>$null | Out-Null`,
     `schtasks /end /tn "${taskName}" 2>$null | Out-Null`,
     `schtasks /delete /tn "${taskName}" /f 2>$null | Out-Null`,
+    `$guardScript = Join-Path $PSScriptRoot "guard.ps1"`,
+    // Release everything and tell the server (it reads the agent's identity before the folder goes).
+    `& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Mode Now -How ${how}`,
     `$installDir = Join-Path $env:ProgramData "EndpointPro\\Agent"`,
-    // Best-effort self-report to the server (see confirmAgentUninstalled) so the Agent
-    // row - and its license seat - is freed immediately instead of lingering forever as
-    // an unreachable "offline" row. Must run BEFORE the install folder is wiped below,
-    // since config.json/state.json live inside it. Any failure here (offline, server
-    // down, files missing) is swallowed - the local removal must proceed regardless.
-    `try {`,
-    `  $agentConfigPath = Join-Path $installDir "app\\config.json"`,
-    `  $agentStatePath = Join-Path $installDir "app\\.state\\state.json"`,
-    `  if ((Test-Path $agentConfigPath) -and (Test-Path $agentStatePath)) {`,
-    `    $agentConfig = Get-Content $agentConfigPath -Raw | ConvertFrom-Json`,
-    `    $agentState = Get-Content $agentStatePath -Raw | ConvertFrom-Json`,
-    `    Invoke-RestMethod -Uri "$($agentConfig.serverUrl)/api/agent/uninstalled" -Method Post -TimeoutSec 10 ` +
-      `-Headers @{ "X-Agent-Id" = $agentState.agentId; "X-Agent-Key" = $agentState.apiKey } | Out-Null`,
-    `  }`,
-    `} catch {}`,
-    // Release any active policy enforcement before the install folder is wiped, so a
-    // quarantined/RDP-enabled/web-blocked/IP-blocked/app-blocked machine doesn't stay
-    // locked down forever with no agent left to reverse it. Mirrors quarantine.service.ts,
-    // remoteAccess.service.ts, webBlockEnforcer.ts, ipBlockEnforcer.ts,
-    // appControlEnforcer.ts exactly - only this tool's own named/marked artifacts are
-    // touched. USB Control has no scriptable undo (see usbControlEnforcer.ts) and is
-    // deliberately not included here.
-    `netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound 2>$null | Out-Null`,
-    // Every rule quarantine.service creates (EM-Quarantine-Block-*, -Allow-*), plus the two
-    // names an older release used.
-    `Get-NetFirewallRule -DisplayName 'EM-Quarantine-*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
-    `netsh advfirewall firewall delete rule name="EM-Quarantine-DNS" 2>$null | Out-Null`,
-    `netsh advfirewall firewall delete rule name="EM-Quarantine-Server" 2>$null | Out-Null`,
-    `netsh advfirewall firewall delete rule name="EM-RemoteAccess-RDP" 2>$null | Out-Null`,
-    `Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name fDenyTSConnections -Value 1 -ErrorAction SilentlyContinue`,
-    `Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Outbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
-    `Get-NetFirewallRule -DisplayName "EM-IPBLOCK-Inbound" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
-    `$hostsPath = "C:\\Windows\\System32\\drivers\\etc\\hosts"`,
-    `if (Test-Path $hostsPath) {`,
-    `  $hostsContent = Get-Content $hostsPath -Raw`,
-    `  $startIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-START")`,
-    `  $endIdx = $hostsContent.IndexOf("# EM-WEBBLOCK-END")`,
-    `  if ($startIdx -ge 0 -and $endIdx -ge 0) {`,
-    `    $before = $hostsContent.Substring(0, $startIdx).TrimEnd()`,
-    `    Set-Content -Path $hostsPath -Value ($before + [System.Environment]::NewLine) -NoNewline -Encoding ASCII`,
-    `  }`,
-    `}`,
-    `Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Google\\Chrome\\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue`,
-    `Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\URLBlocklist' -Recurse -Force -ErrorAction SilentlyContinue`,
-    `$srpDisallowedPath = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers\\0\\Paths'`,
-    `if (Test-Path $srpDisallowedPath) {`,
-    `  Get-ChildItem -Path $srpDisallowedPath -ErrorAction SilentlyContinue | ForEach-Object {`,
-    `    $desc = (Get-ItemProperty -Path $_.PSPath -Name Description -ErrorAction SilentlyContinue).Description`,
-    `    if ($desc -and $desc.StartsWith('EM-managed:')) {`,
-    `      Remove-Item -Path $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue`,
-    `    }`,
-    `  }`,
-    `}`,
-    `Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers' -Name DefaultLevel -Value 262144 -Type DWord -ErrorAction SilentlyContinue`,
     `if (Test-Path $installDir) {`,
     `  takeown /F $installDir /R /D Y 2>$null | Out-Null`,
     `  icacls $installDir /reset /T /Q 2>$null | Out-Null`,
     `  Remove-Item -Path $installDir -Recurse -Force -ErrorAction SilentlyContinue`,
     `}`,
     `schtasks /delete /tn "${helperTaskName}" /f 2>$null | Out-Null`,
-    `Remove-Item -Path "$PSCommandPath" -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue`,
+    // Removes the guard folder and task once nothing is left to report.
+    `& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Mode Check`,
+  ].join("\n");
+
+  return [
+    `$ErrorActionPreference = 'Stop'`,
+    `$guardDir = Join-Path $env:ProgramData "EndpointPro\\${UNINSTALL_GUARD_DIR_NAME}"`,
+    `if (-not (Test-Path -LiteralPath $guardDir)) { New-Item -ItemType Directory -Path $guardDir -Force | Out-Null }`,
+    `$guardAcl = New-Object System.Security.AccessControl.DirectorySecurity`,
+    `$guardAcl.SetSecurityDescriptorSddlForm('D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)')`,
+    `Set-Acl -LiteralPath $guardDir -AclObject $guardAcl`,
+    `$guardPath = Join-Path $guardDir "guard.ps1"`,
+    `$helperScriptPath = Join-Path $guardDir "${helperTaskName}.ps1"`,
+    `Set-Content -LiteralPath $guardPath -Encoding UTF8 -Value @'`,
+    UNINSTALL_GUARD_PS.trim(),
     `'@`,
-    `Set-Content -Path $helperScriptPath -Value $helperScript -Encoding ASCII`,
+    `Set-Content -LiteralPath $helperScriptPath -Encoding UTF8 -Value @'`,
+    helper,
+    `'@`,
     ``,
     // XML task registration with an InvariantCulture ISO 8601 StartBoundary - the same
     // idiom install.ps1/watchdog.ps1 already use - rather than a /tr + /sd + /st
@@ -206,7 +177,7 @@ export function buildUninstallAgentScript(): string {
     // and matters here specifically because this deployment's actual locale is unknown.
     `$invariant = [System.Globalization.CultureInfo]::InvariantCulture`,
     `$startBoundary = (Get-Date).AddSeconds(20).ToString("yyyy-MM-ddTHH:mm:ss", $invariant)`,
-    `$helperTaskXmlPath = Join-Path $env:TEMP "${helperTaskName}.xml"`,
+    `$helperTaskXmlPath = Join-Path $guardDir "${helperTaskName}.xml"`,
     `$helperTaskXml = @"`,
     `<?xml version="1.0" encoding="UTF-16"?>`,
     `<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">`,
@@ -226,12 +197,9 @@ export function buildUninstallAgentScript(): string {
     `    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>`,
     // Matches install.ps1/watchdog.ps1's task XML - without these, Task Scheduler's
     // documented default for DisallowStartIfOnBatteries is true, so this task would
-    // register successfully (schtasks /create succeeds, the outer script still reports
-    // "Uninstall scheduled") and then silently never fire on any endpoint running on
-    // battery at the time - a laptop uninstall would look like it worked every time and
-    // do nothing. Confirmed for real against SSSIL-LAP-86: registration succeeded 4
-    // separate times with the agent still checking in minutes later each time, unrelated
-    // to AV (ruled out by pausing it) - the task simply never launched.
+    // register successfully and then silently never fire on any endpoint running on
+    // battery at the time. Confirmed for real against a laptop: registration succeeded 4
+    // separate times with the agent still checking in minutes later each time.
     `    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>`,
     `    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>`,
     `    <StartWhenAvailable>true</StartWhenAvailable>`,
@@ -248,7 +216,7 @@ export function buildUninstallAgentScript(): string {
     `schtasks /create /tn "${helperTaskName}" /xml $helperTaskXmlPath /f | Out-Null`,
     `Remove-Item -Path $helperTaskXmlPath -Force -ErrorAction SilentlyContinue`,
     ``,
-    `Write-Output "Uninstall scheduled - the agent and its watchdog task will be removed within about 30 seconds."`,
+    `Write-Output "Uninstall scheduled - the agent will release its policies and be removed within about a minute."`,
   ].join("\n");
 }
 
@@ -279,7 +247,6 @@ export async function confirmAgentUninstalled(agentId: string): Promise<void> {
 // the same way. An endpoint whose uninstall didn't actually happen keeps checking in, so it
 // is never touched.
 const UNINSTALL_GRACE_MS = 15 * 60_000;
-const UNINSTALL_HELPER_MARKER = "EndpointProUninstallHelper";
 
 export async function removeRemotelyUninstalledAgents(): Promise<number> {
   const now = Date.now();
