@@ -90,6 +90,10 @@ const envSchema = z.object({
   // really arrive from Cloudflare's ranges - see middleware/clientAddress.ts. Empty = the
   // server is reached directly (the default).
   TRUSTED_PROXY: z.enum(["", "cloudflare"]).default(""),
+  // Agent enrollments allowed per 15 minutes from one address. A large office behind one NAT
+  // address installing hundreds of agents at once needs more than the default (agents that are
+  // refused simply retry every minute).
+  AGENT_ENROLL_RATE_LIMIT: z.coerce.number().int().positive().default(20),
 });
 
 // Placeholder secrets shipped in the .env.example files. Anyone who has seen the repo or a
@@ -162,6 +166,7 @@ export const config = {
   threatProtection: parsed.data.THREAT_PROTECTION,
   aiGuard: parsed.data.AI_GUARD,
   trustedProxy: parsed.data.TRUSTED_PROXY,
+  agentEnrollRateLimit: parsed.data.AGENT_ENROLL_RATE_LIMIT,
   adminAllowedNetworks: parsed.data.ADMIN_ALLOWED_NETWORKS.split(",")
     .map((s) => s.trim())
     .filter(Boolean),

@@ -1,0 +1,11 @@
+{
+  "name": "@em/load-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Endpoint IQ load test tool: simulates agents against a server and reports how it copes",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "node scripts/build.mjs"
+  }
+}

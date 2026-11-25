@@ -115,6 +115,7 @@ import {
 import { isFeatureLicensed } from "../services/licenseActivation.service";
 import { buildUninstallAgentScript } from "../services/agent.service";
 import { groupPaths } from "../services/groupTree.service";
+import { readServerLoad } from "../services/serverLoad.service";
 
 export const agentRouter = Router();
 
@@ -888,6 +889,19 @@ agentRouter.post("/self-uninstall", uninstallPasswordRateLimiter, async (req, re
     logger.info({ agentId: req.agentId, requestedBy }, "Agent uninstalled from the endpoint with the uninstall password");
     await logUninstallFromEndpoint(req.agentId!, "endpoint", { ok: true, user: requestedBy, ipAddress: req.ip });
     res.json({ script: buildUninstallAgentScript("endpoint") });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---- Load test tool -------------------------------------------------------------------------------
+
+// How busy the server is (CPU, memory, event-loop delay, requests per second, database response
+// time and size), read every few seconds by the Endpoint IQ load test tool (packages/load-test)
+// through one of its test agents. Only performance figures - nothing about endpoints or users.
+agentRouter.get("/server-load", async (_req, res, next) => {
+  try {
+    res.json(await readServerLoad());
   } catch (err) {
     next(err);
   }

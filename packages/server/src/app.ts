@@ -59,6 +59,7 @@ import { licenseActivationRouter } from "./routes/licenseActivation.routes";
 import { adminUsersRouter } from "./routes/adminUsers.routes";
 import { moduleVisibilityRouter } from "./routes/moduleVisibility.routes";
 import { agentAuthMiddleware } from "./middleware/agentAuth";
+import { countRequests } from "./services/serverLoad.service";
 import { adminAuthMiddleware } from "./middleware/adminAuth";
 import { requireFeature, requireModule } from "./middleware/requireModule";
 import { requireModuleAccess, requireModuleVisible, requirePermission, requireSuperAdmin } from "./middleware/requireAdminRole";
@@ -79,6 +80,8 @@ export function createApp() {
   // Behind Cloudflare, req.ip (logs, login audit, remote-access records) is the visitor's
   // address from X-Forwarded-For - trusted only when it comes from Cloudflare's edges.
   if (behindCloudflare) app.set("trust proxy", trustCloudflare);
+  // Requests per second / in flight, for the load test tool's server figures (serverLoad.service.ts).
+  app.use(countRequests);
 
   // Security hardening (penetration test findings):
   //  - no "X-Powered-By: Express" banner;

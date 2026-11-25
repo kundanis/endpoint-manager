@@ -63,6 +63,8 @@ services:
       ADMIN_ALLOWED_NETWORKS: ${ADMIN_ALLOWED_NETWORKS:-}
       # "cloudflare" when published through Cloudflare's proxy (orange cloud) - see INSTALL.md.
       TRUSTED_PROXY: ${TRUSTED_PROXY:-}
+      # Agent enrollments allowed per 15 minutes from one address (raise for a big rollout behind one NAT).
+      AGENT_ENROLL_RATE_LIMIT: ${AGENT_ENROLL_RATE_LIMIT:-20}
       # HTTPS (set by `deploy.sh --install-cert`). With a certificate installed the server
       # serves HTTPS on 4443 (published as HTTPS_PORT, default 443) and keeps plain HTTP on
       # 4000 for agents only, so agents enrolled with an http:// address keep checking in -

@@ -66,3 +66,7 @@ docker/certs/*
 *.key
 garnet.security
 godaddy-intermediate-chain.crt
+
+# Agent load test: simulated agent identities (API keys) and results
+load-test-agents*.json
+load-test-report*.json

@@ -3,12 +3,13 @@ import rateLimit from "express-rate-limit";
 import { enrollRequestSchema } from "@em/shared";
 import { enrollAgent, InvalidEnrollmentTokenError } from "../services/enrollment.service";
 import { AgentCapExceededError, NotLicensedError } from "../services/licenseActivation.service";
+import { config } from "../config";
 
 export const agentEnrollRouter = Router();
 
 const enrollRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 20,
+  limit: config.agentEnrollRateLimit, // AGENT_ENROLL_RATE_LIMIT, default 20
   standardHeaders: true,
   legacyHeaders: false,
 });
